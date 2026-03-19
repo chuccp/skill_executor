@@ -17,6 +17,10 @@ export class CommandExecutor {
     this.workingDir = workingDir;
   }
 
+  setWorkingDir(dir: string): void {
+    this.workingDir = dir;
+  }
+
   // 执行命令
   async execute(command: string, timeout: number = 60000): Promise<CommandResult> {
     console.log('[CMD] 执行命令:', command);

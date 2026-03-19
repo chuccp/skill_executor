@@ -247,9 +247,9 @@ body {
 
 .workdir-name {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: normal;
+  word-break: break-all;
 }
 
 .workdir-empty {

@@ -6,6 +6,7 @@ import { ConfigLoader } from '../services/configLoader';
 import { CommandExecutor } from '../services/commandExecutor';
 import { streamChat } from '../services/streamChat';
 import { listDirectory } from '../services/tools';
+import { getWorkingDir, setWorkingDir } from '../services/workingDir';
 import { LLMConfig } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -18,7 +19,7 @@ export function createApiRouter(
   commandExecutor?: CommandExecutor
 ): Router {
   const router = Router();
-  let workingDir = process.cwd();
+  let workingDir = getWorkingDir();
 
   // ========== 会话管理 ==========
 
@@ -169,6 +170,10 @@ export function createApiRouter(
       return;
     }
     workingDir = resolved;
+    setWorkingDir(resolved);
+    if (commandExecutor) {
+      commandExecutor.setWorkingDir(resolved);
+    }
     res.json({ success: true, data: { path: workingDir } });
   });
 

@@ -254,7 +254,7 @@ function renderWorkdirList() {
   listEl.innerHTML = sorted.map(item => {
     const isDir = item.type === 'directory';
     const icon = isDir ? '📁' : '📄';
-    return '<button class="workdir-item ' + (isDir ? 'dir' : 'file') + '" data-name="' + escapeHtml(item.name) + '">' +
+    return '<button class="workdir-item ' + (isDir ? 'dir' : 'file') + '" data-name="' + encodeURIComponent(item.name) + '">' +
       '<span class="workdir-icon">' + icon + '</span>' +
       '<span class="workdir-name">' + escapeHtml(item.name) + '</span>' +
     '</button>';
@@ -262,7 +262,7 @@ function renderWorkdirList() {
 
   listEl.querySelectorAll('.workdir-item.dir').forEach(btn => {
     btn.onclick = () => {
-      const next = joinPath(state.workdir.path, btn.dataset.name);
+      const next = joinPath(state.workdir.path, decodeURIComponent(btn.dataset.name));
       setWorkdir(next);
     };
   });
@@ -315,14 +315,14 @@ function renderSkillManagerList() {
   }
 
   listEl.innerHTML = state.skills.map(s =>
-    '<button class="skill-item" data-name="' + escapeHtml(s.name) + '">' +
+    '<button class="skill-item" data-name="' + encodeURIComponent(s.name) + '">' +
       '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
       '<div class="skill-desc">' + escapeHtml(s.description || '') + '</div>' +
     '</button>'
   ).join('');
 
   listEl.querySelectorAll('.skill-item').forEach(btn => {
-    btn.onclick = () => showSkillDetail(btn.dataset.name);
+    btn.onclick = () => showSkillDetail(decodeURIComponent(btn.dataset.name));
   });
 }
 
@@ -472,6 +472,7 @@ async function sendMessage() {
 
     if (!res.ok) {
       showError('请求失败: ' + res.status);
+      finishStream();
       return;
     }
 
@@ -523,6 +524,7 @@ async function sendMessage() {
     loadConversations();
   } catch (error) {
     showError('连接错误: ' + error.message);
+    finishStream();
   }
 }
 
@@ -591,7 +593,9 @@ function formatContent(content) {
 function formatCodeBlocks(content) {
   return content.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
     return '<pre class="code-block"><code class="language-' + lang + '">' + escapeHtml(code.trim()) + '</code></pre>';
-  }).replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+  }).replace(/`([^`]+)`/g, (match, inline) => {
+    return '<code class="inline-code">' + escapeHtml(inline) + '</code>';
+  });
 }
 
 function appendMessage(role, content) {
@@ -698,7 +702,7 @@ function showCommandConfirm(confirmId, command) {
   };
   div.querySelector('.btn-cancel').onclick = () => {
     div.remove();
-    appendMessage('assistant', '命令已取消');
+    state.ws.send(JSON.stringify({ type: 'confirm_command', confirmId, approved: false }));
   };
 }
 
@@ -809,7 +813,11 @@ function showAskUser(askId, question, header, options) {
 
 // 任务列表（侧边栏）
 function renderTodoList(todos) {
-  if (!todos || todos.length === 0) return;
+  if (!todos || todos.length === 0) {
+    const panel = document.querySelector('.todo-panel');
+    if (panel) panel.remove();
+    return;
+  }
   
   let panel = document.querySelector('.todo-panel');
   if (!panel) {
@@ -1179,6 +1187,16 @@ function enableModalDrag(modalId) {
     saveModalState(modalId, content, false);
   });
   resizeObserver.observe(content);
+
+  window.addEventListener('resize', () => {
+    if (content.dataset.dragged === '1') {
+      const rect = content.getBoundingClientRect();
+      const clamped = clampModalPosition(rect.left, rect.top, content);
+      content.style.left = clamped.left + 'px';
+      content.style.top = clamped.top + 'px';
+      saveModalState(modalId, content, true);
+    }
+  });
 }
 
 function applyModalState(modalId, content) {
@@ -1191,11 +1209,23 @@ function applyModalState(modalId, content) {
     if (state.left !== null && state.top !== null && state.left !== undefined && state.top !== undefined) {
       content.style.position = 'fixed';
       content.style.margin = '0';
-      content.style.left = state.left + 'px';
-      content.style.top = state.top + 'px';
+      const clamped = clampModalPosition(state.left, state.top, content);
+      content.style.left = clamped.left + 'px';
+      content.style.top = clamped.top + 'px';
       content.dataset.dragged = '1';
     }
   } catch (e) {}
+}
+
+function clampModalPosition(left, top, content) {
+  const width = content.offsetWidth || 0;
+  const height = content.offsetHeight || 0;
+  const maxLeft = Math.max(8, window.innerWidth - width - 8);
+  const maxTop = Math.max(8, window.innerHeight - height - 8);
+  return {
+    left: Math.max(8, Math.min(maxLeft, left)),
+    top: Math.max(8, Math.min(maxTop, top))
+  };
 }
 
 function saveModalState(modalId, content, includePosition) {

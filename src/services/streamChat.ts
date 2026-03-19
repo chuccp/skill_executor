@@ -15,6 +15,7 @@ import {
   replaceInFile,
   TodoItem
 } from './tools';
+import { getWorkingDir } from './workingDir';
 
 // 工具定义（与 websocket.ts 保持一致）
 export const TOOLS = [
@@ -331,7 +332,8 @@ export async function* streamChat(
       let toolCalls: any[] = [];
 
       // 流式响应
-      for await (const event of llmService.chatStream(conversation.messages, systemPrompt, TOOLS)) {
+      const contextMessages = conversationManager.buildContextMessages(conversationId, content);
+      for await (const event of llmService.chatStream(contextMessages, systemPrompt, TOOLS)) {
         if (event.type === 'text' && event.content) {
           currentResponse += event.content;
           yield { type: 'text', data: event.content };
@@ -490,7 +492,7 @@ async function executeTool(
     }
 
     case 'list_directory': {
-      const dirPath = tool.input?.path;
+      const dirPath = tool.input?.path || getWorkingDir();
       if (!dirPath) return '错误：目录路径为空';
 
       try {
@@ -509,7 +511,7 @@ async function executeTool(
 
     case 'glob': {
       const pattern = tool.input?.pattern;
-      const searchPath = tool.input?.path || process.cwd();
+      const searchPath = tool.input?.path || getWorkingDir();
 
       if (!pattern) return '错误：模式为空';
 
@@ -525,7 +527,7 @@ async function executeTool(
 
     case 'grep': {
       const pattern = tool.input?.pattern;
-      const searchPath = tool.input?.path || process.cwd();
+      const searchPath = tool.input?.path || getWorkingDir();
       const include = tool.input?.include;
 
       if (!pattern) return '错误：搜索模式为空';

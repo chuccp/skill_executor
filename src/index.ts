@@ -10,6 +10,7 @@ import { SkillLoader } from './services/skillLoader';
 import { LLMService } from './services/llm';
 import { ConfigLoader } from './services/configLoader';
 import { CommandExecutor } from './services/commandExecutor';
+import { setWorkingDir } from './services/workingDir';
 import { createApiRouter } from './routes/api';
 import { setupWebSocket } from './services/websocket';
 import { LLMConfig } from './types';
@@ -71,6 +72,7 @@ const skillLoader = new SkillLoader(skillsDir);
 const configLoader = new ConfigLoader(settingsPath);
 const conversationManager = new ConversationManager();
 const commandExecutor = new CommandExecutor(process.cwd());
+setWorkingDir(process.cwd());
 
 // 加载预设配置，使用第一个作为默认
 const presets = configLoader.getAll();
