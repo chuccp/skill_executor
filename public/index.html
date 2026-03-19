@@ -16,7 +16,7 @@
 
       <div class="sidebar-section">
         <h3>会话</h3>
-        <button id="new-conversation" class="btn btn-primary">新建</button>
+        <button id="new-conversation-btn" class="btn btn-primary">新建</button>
         <ul id="conversation-list" class="conversation-list"></ul>
       </div>
 
@@ -36,6 +36,7 @@
         <div class="workdir-actions">
           <button id="workdir-set" class="btn btn-primary">切换</button>
           <button id="workdir-up" class="btn">上一级</button>
+          <button id="workdir-refresh" class="btn">刷新</button>
         </div>
         <div id="workdir-list" class="workdir-list"></div>
       </div>
@@ -74,7 +75,22 @@
     </main>
   </div>
 
-  <script src="/js/app.js"></script>
+  <!-- 模块化 JS 加载 -->
+  <script src="/js/modules/state.js"></script>
+  <script src="/js/modules/utils.js"></script>
+  <script src="/js/modules/notify.js"></script>
+  <script src="/js/modules/message.js"></script>
+  <script src="/js/modules/todo.js"></script>
+  <script src="/js/modules/stream.js"></script>
+  <script src="/js/modules/workdir.js"></script>
+  <script src="/js/modules/skill.js"></script>
+  <script src="/js/modules/conversation.js"></script>
+  <script src="/js/modules/preset.js"></script>
+  <script src="/js/modules/api.js"></script>
+  <script src="/js/modules/websocket.js"></script>
+  <script src="/js/modules/modal.js"></script>
+  <script src="/js/modules/events.js"></script>
+  <script src="/js/modules/main.js"></script>
 
   <!-- 配置模态框 -->
   <div id="config-modal" class="modal">
