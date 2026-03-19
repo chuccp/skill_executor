@@ -196,6 +196,9 @@ body {
   border-radius: var(--radius-sm);
   color: var(--text);
   font-size: 0.85rem;
+  resize: vertical;
+  min-height: 44px;
+  line-height: 1.4;
 }
 
 .workdir-actions {

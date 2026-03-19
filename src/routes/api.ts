@@ -75,6 +75,17 @@ export function createApiRouter(
     res.json({ success: true, data: stats });
   });
 
+  // 获取记忆统计
+  router.get('/conversations/:id/memory-stats', (req: Request, res: Response) => {
+    const conversation = conversationManager.get(req.params.id);
+    if (!conversation) {
+      res.json({ success: false, error: 'Conversation not found' });
+      return;
+    }
+    const stats = conversationManager.getMemoryStats(req.params.id);
+    res.json({ success: true, data: stats });
+  });
+
   // 清理旧会话
   router.post('/conversations/cleanup', (req: Request, res: Response) => {
     const { keepCount = 50 } = req.body;

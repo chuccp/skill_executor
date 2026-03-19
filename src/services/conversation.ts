@@ -15,6 +15,7 @@ const RETRIEVAL_LIMIT = 3; // 召回的记忆片段数量
 const CONTEXT_CHAR_BUDGET = 12000; // 工作记忆字符预算（近似）
 const MAX_MEMORY_CHUNKS = 60; // 单会话最大记忆片段数
 const MEMORY_TTL_DAYS = 30; // 记忆片段过期天数
+const INDEX_SAVE_DEBOUNCE_MS = 1000;
 
 // 会话元数据（用于列表显示）
 interface ConversationMeta {
@@ -46,9 +47,12 @@ export class ConversationManager {
   private saveTimeout: NodeJS.Timeout | null = null;
   private memoryIndex: Map<string, Map<string, Set<string>>> = new Map();
   private memoryChunkMap: Map<string, Map<string, MemoryChunk>> = new Map();
+  private indexPath: string;
+  private indexSaveTimeout: NodeJS.Timeout | null = null;
 
   constructor(dataPath: string = CONVERSATIONS_FILE) {
     this.dataPath = dataPath;
+    this.indexPath = path.join(path.dirname(this.dataPath), 'memory_index.json');
     this.load();
   }
 
@@ -70,7 +74,6 @@ export class ConversationManager {
           for (const conv of data.conversations) {
             if (conv.meta && conv.messages) {
               this.conversations.set(conv.meta.id, conv);
-              this.rebuildMemoryIndex(conv.meta.id, conv.meta.memoryChunks || []);
             }
           }
         }
@@ -83,6 +86,9 @@ export class ConversationManager {
       this.memoryIndex = new Map();
       this.memoryChunkMap = new Map();
     }
+
+    this.loadMemoryIndex();
+    this.rebuildIndexFromMeta();
   }
 
   private save(): void {
@@ -113,6 +119,73 @@ export class ConversationManager {
       console.log(`[Conversation] 已保存 ${this.conversations.size} 个会话`);
     } catch (error) {
       console.error('[Conversation] 保存会话失败:', error);
+    }
+  }
+
+  private loadMemoryIndex(): void {
+    try {
+      if (!fs.existsSync(this.indexPath)) return;
+      const content = fs.readFileSync(this.indexPath, 'utf-8');
+      const data = JSON.parse(content);
+      if (!data || typeof data !== 'object') return;
+      for (const [convId, indexObj] of Object.entries<any>(data.index || {})) {
+        const map = new Map<string, Set<string>>();
+        for (const [k, ids] of Object.entries<any>(indexObj)) {
+          map.set(k, new Set(ids as string[]));
+        }
+        this.memoryIndex.set(convId, map);
+      }
+      for (const [convId, chunks] of Object.entries<any>(data.chunks || {})) {
+        const map = new Map<string, MemoryChunk>();
+        for (const c of chunks as MemoryChunk[]) {
+          map.set(c.id, c);
+        }
+        this.memoryChunkMap.set(convId, map);
+        const conv = this.conversations.get(convId);
+        if (conv && (!conv.meta.memoryChunks || conv.meta.memoryChunks.length === 0)) {
+          conv.meta.memoryChunks = Array.from(map.values());
+        }
+      }
+      console.log(`[Conversation] 已加载记忆索引`);
+    } catch (e) {
+      console.error('[Conversation] 加载记忆索引失败:', e);
+    }
+  }
+
+  private saveMemoryIndex(): void {
+    if (this.indexSaveTimeout) {
+      clearTimeout(this.indexSaveTimeout);
+    }
+    this.indexSaveTimeout = setTimeout(() => {
+      this.doSaveMemoryIndex();
+    }, INDEX_SAVE_DEBOUNCE_MS);
+  }
+
+  private doSaveMemoryIndex(): void {
+    try {
+      const indexObj: Record<string, Record<string, string[]>> = {};
+      for (const [convId, idx] of this.memoryIndex) {
+        const out: Record<string, string[]> = {};
+        for (const [k, set] of idx) {
+          out[k] = Array.from(set);
+        }
+        indexObj[convId] = out;
+      }
+      const chunksObj: Record<string, MemoryChunk[]> = {};
+      for (const [convId, map] of this.memoryChunkMap) {
+        chunksObj[convId] = Array.from(map.values());
+      }
+
+      const payload = {
+        version: 1,
+        savedAt: new Date().toISOString(),
+        index: indexObj,
+        chunks: chunksObj
+      };
+      fs.writeFileSync(this.indexPath, JSON.stringify(payload, null, 2), 'utf-8');
+      console.log(`[Conversation] 已保存记忆索引`);
+    } catch (e) {
+      console.error('[Conversation] 保存记忆索引失败:', e);
     }
   }
 
@@ -189,6 +262,7 @@ export class ConversationManager {
     if (result) {
       this.memoryIndex.delete(id);
       this.memoryChunkMap.delete(id);
+      this.saveMemoryIndex();
       this.save();
     }
     return result;
@@ -247,6 +321,7 @@ export class ConversationManager {
     this.memoryIndex.delete(id);
     this.memoryChunkMap.delete(id);
     data.meta.updatedAt = new Date().toISOString();
+    this.saveMemoryIndex();
     this.save();
     return true;
   }
@@ -258,12 +333,16 @@ export class ConversationManager {
     const data = this.conversations.get(conversationId);
     if (!data || data.messages.length <= SUMMARIZE_THRESHOLD) return;
 
-    // 保留最近的消息
-    const recentMessages = data.messages.slice(-WORKING_MEMORY_SIZE);
+    // 保留最近的消息（过滤已有系统摘要/记忆，避免重复）
+    const recentMessages = data.messages
+      .slice(-WORKING_MEMORY_SIZE)
+      .filter(m => !this.isSystemMemory(m))
+      .filter(m => !(typeof m.content === 'string' && m.content.startsWith('[工具结果]')));
     
     // 生成历史摘要
     const oldMessages = data.messages.slice(0, -WORKING_MEMORY_SIZE)
-      .filter(m => !this.isSystemMemory(m));
+      .filter(m => !this.isSystemMemory(m))
+      .filter(m => !(typeof m.content === 'string' && m.content.startsWith('[工具结果]')));
     const summary = this.generateSummary(oldMessages);
     const memoryChunks = this.mergeMemoryChunks(
       data.meta.memoryChunks || [],
@@ -285,6 +364,7 @@ export class ConversationManager {
     data.meta.memoryChunks = trimmedChunks;
     data.meta.messageCount = data.messages.length;
     this.rebuildMemoryIndex(conversationId, trimmedChunks);
+    this.saveMemoryIndex();
 
     console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩: ${oldMessages.length} 条消息已总结`);
   }
@@ -476,9 +556,21 @@ export class ConversationManager {
     this.memoryChunkMap.set(conversationId, chunkMap);
   }
 
+  private rebuildIndexFromMeta(): void {
+    for (const [id, data] of this.conversations) {
+      const chunks = data.meta.memoryChunks || [];
+      if (!chunks || chunks.length === 0) continue;
+      const idx = this.memoryIndex.get(id);
+      const map = this.memoryChunkMap.get(id);
+      const sizeMismatch = !map || map.size !== chunks.length;
+      if (!idx || idx.size === 0 || sizeMismatch) {
+        this.rebuildMemoryIndex(id, chunks);
+      }
+    }
+  }
+
   private scoreChunksByQuery(queryKeywords: string[], chunks: MemoryChunk[]): { chunk: MemoryChunk; score: number }[] {
     const scored: { chunk: MemoryChunk; score: number }[] = [];
-    const index = this.memoryIndex.get(chunks[0] ? '' : '');
     if (!chunks || chunks.length === 0) return scored;
 
     let candidateIds: Set<string> | null = null;
@@ -492,9 +584,12 @@ export class ConversationManager {
       }
     }
 
-    const candidates = candidateIds
+    let candidates = candidateIds
       ? chunks.filter(c => candidateIds!.has(c.id))
       : chunks;
+    if (candidateIds && candidates.length === 0) {
+      candidates = chunks;
+    }
 
     for (const c of candidates) {
       const overlap = c.keywords.filter(k => queryKeywords.includes(k)).length;
@@ -520,6 +615,16 @@ export class ConversationManager {
       if (data.meta.memoryChunks === chunks) return id;
     }
     return null;
+  }
+
+  // 统计召回命中率（简单）
+  getMemoryStats(conversationId: string): { chunkCount: number; indexKeys: number } {
+    const chunks = this.memoryChunkMap.get(conversationId);
+    const idx = this.memoryIndex.get(conversationId);
+    return {
+      chunkCount: chunks ? chunks.size : 0,
+      indexKeys: idx ? idx.size : 0
+    };
   }
 
   // 手动触发压缩
@@ -564,8 +669,11 @@ export class ConversationManager {
     const toDelete = allMeta.slice(keepCount);
     for (const meta of toDelete) {
       this.conversations.delete(meta.id);
+      this.memoryIndex.delete(meta.id);
+      this.memoryChunkMap.delete(meta.id);
     }
 
+    this.saveMemoryIndex();
     this.save();
     console.log(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
     return toDelete.length;
