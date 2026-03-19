@@ -419,7 +419,13 @@ export async function* streamChat(
       }
 
       if (repeatStreak >= 2) {
-        const msg = '检测到相同工具调用反复出现，已停止自动执行。请提供更具体的文件名或路径，或描述要操作的目标。';
+        const cachedResults = currentToolKeys
+          .map(k => toolCache.get(k))
+          .filter((v): v is string => !!v);
+        let msg = '检测到相同工具调用重复，我已复用上次结果并停止继续重复。请提供更具体的文件名或路径，或描述要操作的目标。';
+        if (cachedResults.length > 0) {
+          msg += '\n\n' + cachedResults.join('\n\n');
+        }
         yield { type: 'text', data: msg };
         conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n' + msg);
         break;
