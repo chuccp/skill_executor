@@ -17,6 +17,12 @@ window.setupEventListeners = function() {
   // 模型选择
   window.$('preset-select').onchange = function(e) {
     localStorage.setItem('selectedModel', e.target.value);
+    if (window.updateContextBar) window.updateContextBar();
+  };
+
+  // 技能选择
+  window.$('skill-select').onchange = function() {
+    if (window.updateContextBar) window.updateContextBar();
   };
 
   // 新建会话

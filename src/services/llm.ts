@@ -112,10 +112,22 @@ export class LLMService {
     return data.content[0].text;
   }
 
-  // Anthropic 流式
+  // Anthropic 流式（支持工具调用）
   private async *anthropicChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
     const systemMessage = messages.find(m => m.role === 'system');
     const otherMessages = messages.filter(m => m.role !== 'system');
+
+    const requestBody: any = {
+      model: this.config.model || 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemMessage?.content,
+      messages: otherMessages,
+      stream: true
+    };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools;
+    }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -125,13 +137,7 @@ export class LLMService {
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true'
       },
-      body: JSON.stringify({
-        model: this.config.model || 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: systemMessage?.content,
-        messages: otherMessages,
-        stream: true
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -148,6 +154,10 @@ export class LLMService {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    // 用于聚合工具调用
+    let currentToolCall: { id: string; name: string; inputJson: string; yielded: boolean } | null = null;
+
+    let doneSignal = false;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -157,20 +167,52 @@ export class LLMService {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            yield { type: 'done' };
-            return;
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') {
+          yield { type: 'done' };
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(data);
+
+          if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+            currentToolCall = {
+              id: parsed.index?.toString() || '0',
+              name: parsed.content_block.name,
+              inputJson: '',
+              yielded: false
+            };
           }
 
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'content_block_delta') {
-              yield { type: 'text', content: parsed.delta?.text || '' };
+          if (parsed.type === 'content_block_delta' && parsed.delta) {
+            if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
+              yield { type: 'text', content: parsed.delta.text };
+            } else if (parsed.delta.type === 'text' && parsed.delta.text) {
+              yield { type: 'text', content: parsed.delta.text };
+            } else if (parsed.delta.text && !parsed.delta.type) {
+              yield { type: 'text', content: parsed.delta.text };
             }
-          } catch {}
-        }
+
+            if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json && currentToolCall) {
+              currentToolCall.inputJson += parsed.delta.partial_json;
+            }
+          }
+
+          if (parsed.type === 'content_block_stop') {
+            if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
+              try {
+                const input = JSON.parse(currentToolCall.inputJson);
+                currentToolCall.yielded = true;
+                yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
+              } catch (e) {
+                console.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
+              }
+            }
+            currentToolCall = null;
+          }
+        } catch {}
       }
     }
 
@@ -203,9 +245,21 @@ export class LLMService {
     return data.choices[0].message.content;
   }
 
-  // OpenAI 流式
+  // OpenAI 流式（支持工具调用）
   private async *openaiChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
     const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
+
+    const requestBody: any = {
+      model: this.config.model || 'gpt-4o',
+      messages: messages,
+      max_tokens: 4096,
+      stream: true
+    };
+
+    if (tools && tools.length > 0) {
+      requestBody.tools = tools;
+      requestBody.tool_choice = 'auto';
+    }
     
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -213,12 +267,7 @@ export class LLMService {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`
       },
-      body: JSON.stringify({
-        model: this.config.model || 'gpt-4o',
-        messages: messages,
-        max_tokens: 4096,
-        stream: true
-      })
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
@@ -234,6 +283,7 @@ export class LLMService {
 
     const decoder = new TextDecoder();
     let buffer = '';
+    const toolCallBuffers: Record<number, { id: string; name: string; args: string }> = {};
 
     while (true) {
       const { done, value } = await reader.read();
@@ -244,20 +294,55 @@ export class LLMService {
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (data === '[DONE]') {
-            yield { type: 'done' };
-            return;
+        if (!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if (data === '[DONE]') {
+          doneSignal = true;
+          break;
+        }
+
+        try {
+          const parsed = JSON.parse(data);
+          const delta = parsed.choices?.[0]?.delta || {};
+
+          if (delta.content) {
+            yield { type: 'text', content: delta.content };
           }
 
-          try {
-            const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              yield { type: 'text', content };
+          const toolCalls = delta.tool_calls;
+          if (Array.isArray(toolCalls)) {
+            for (const call of toolCalls) {
+              const index = call.index ?? 0;
+              if (!toolCallBuffers[index]) {
+                toolCallBuffers[index] = {
+                  id: call.id || String(index),
+                  name: call.function?.name || '',
+                  args: ''
+                };
+              }
+              if (call.function?.name) {
+                toolCallBuffers[index].name = call.function.name;
+              }
+              if (call.function?.arguments) {
+                toolCallBuffers[index].args += call.function.arguments;
+              }
             }
-          } catch {}
+          }
+        } catch {}
+      }
+
+      if (doneSignal) break;
+    }
+
+    const toolCallEntries = Object.values(toolCallBuffers);
+    if (toolCallEntries.length > 0) {
+      for (const call of toolCallEntries) {
+        if (!call.name) continue;
+        try {
+          const input = call.args ? JSON.parse(call.args) : {};
+          yield { type: 'tool_use', toolId: call.id, toolName: call.name, toolInput: input };
+        } catch (e) {
+          console.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
         }
       }
     }

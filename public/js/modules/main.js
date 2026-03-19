@@ -29,6 +29,8 @@ async function init() {
 
   window.setupEventListeners();
   window.setupModalDrag();
+  if (window.bindContextActions) window.bindContextActions();
+  if (window.updateContextBar) window.updateContextBar();
 }
 
 // 启动应用

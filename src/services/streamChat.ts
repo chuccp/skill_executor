@@ -26,7 +26,7 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: '文件的绝对路径' },
+        file_path: { type: 'string', description: '文件路径（绝对路径，或相对当前工作目录）' },
         offset: { type: 'number', description: '可选：起始行号（0-based）' },
         limit: { type: 'number', description: '可选：读取的最大行数' }
       },
@@ -35,11 +35,11 @@ export const TOOLS = [
   },
   {
     name: 'write_file',
-    description: '创建新文件或覆盖现有文件的内容。文件路径必须是绝对路径。',
+    description: '创建新文件或覆盖现有文件的内容。',
     input_schema: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: '文件的绝对路径' },
+        file_path: { type: 'string', description: '文件路径（绝对路径，或相对当前工作目录）' },
         content: { type: 'string', description: '要写入的内容' }
       },
       required: ['file_path', 'content']
@@ -51,7 +51,7 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        file_path: { type: 'string', description: '文件的绝对路径' },
+        file_path: { type: 'string', description: '文件路径（绝对路径，或相对当前工作目录）' },
         old_string: { type: 'string', description: '要替换的原始文本（必须精确匹配）' },
         new_string: { type: 'string', description: '替换后的新文本' }
       },
@@ -64,9 +64,9 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '目录的绝对路径' }
+        path: { type: 'string', description: '目录路径（绝对路径，或相对当前工作目录）' }
       },
-      required: ['path']
+      required: []
     }
   },
   {
@@ -97,7 +97,7 @@ export const TOOLS = [
   // ========== Shell 工具 ==========
   {
     name: 'bash',
-    description: '执行 shell 命令。用于安装软件、运行脚本、Git 操作等。危险命令需要用户确认。',
+    description: '执行单条 shell 命令。用于安装软件、运行脚本、Git 操作等。避免多条命令拼接；危险命令需要用户确认。',
     input_schema: {
       type: 'object',
       properties: {
@@ -207,59 +207,82 @@ export const TOOLS = [
   }
 ];
 
-const SYSTEM_PROMPT = `你是一个强大的 AI 编程助手，可以通过工具执行各种操作。
+function buildSystemPrompt(): string {
+  const isWindows = process.platform === 'win32';
+  const osName = isWindows ? 'Windows' : 'macOS/Linux';
+  const listCmd = isWindows ? 'dir' : 'ls';
+  const catCmd = isWindows ? 'type' : 'cat';
+  const grepCmd = isWindows ? 'findstr' : 'grep';
+  const cwd = getWorkingDir();
 
-## 核心原则
+  return `你是一个高效的 AI 编程助手。
 
-1. **行动优先**：当用户请求操作时，直接调用相应工具执行，不要只是描述
-2. **避免重复**：同一操作不要重复执行，收到工具结果后判断任务是否完成
-3. **逐步执行**：复杂任务拆分成多个步骤，一步步完成
-4. **使用 Todo 跟踪**：多步骤任务使用 todo_write 跟踪进度
+## 🚨 最重要的规则 - 避免循环
 
-## 环境说明
+**绝对禁止重复相同的操作！**
+- 如果你已经执行了某个工具调用，收到结果后直接进行下一步或回复用户
+- 如果搜索文件没找到，不要重复搜索，直接告诉用户并建议解决方案
+- 如果读取文件成功，直接根据内容进行下一步操作，不要再次读取
+- 同一个 glob 模式只执行一次
+- 同一个文件只读取一次
 
-- 操作系统：Windows
-- 使用 Windows 命令：dir 代替 ls，type 代替 cat，findstr 代替 grep
-- 路径分隔符：反斜杠 \\ 或正斜杠 / 都可以
+## 常见任务快速指南
+
+### 优化技能文件
+当用户要求优化技能时：
+1. 直接使用 glob 查找：pattern: "**/*.md", path: "skills目录的绝对路径"
+2. 如果找到文件，用 read_file 读取内容
+3. 根据用户需求用 write_file 重写或 replace 修改
+4. 回复用户完成情况
+**注意：一个文件只需要读取一次，然后直接修改！**
+
+### 查找代码
+当用户要求查找代码时：
+1. 用 glob 搜索文件名，或用 grep 搜索内容
+2. 搜索结果已经给出后，直接分析并回复用户
+**注意：不要重复搜索！**
+
+### 修改文件
+1. 读取文件内容（只读一次）
+2. 使用 replace 或 write_file 修改
+3. 回复完成
+
+## 环境信息
+
+- 操作系统：${osName}
+- 当前工作目录：${cwd}
+- 常用命令：${listCmd} 列目录，${catCmd} 查看文件，${grepCmd} 搜索内容
+- 路径可使用绝对路径，或相对当前工作目录
+- 技能目录：skills/ 目录下的 .md 文件
+- 技能文件格式：
+  \`\`\`markdown
+  # 技能名称
+  描述
+  TRIGGER
+  - 触发词
+  PROMPT:
+  提示词内容
+  \`\`\`
 
 ## 可用工具
 
-### 文件系统
-- read_file: 读取文件内容
-- write_file: 创建/覆盖文件
-- replace: 精确替换文件中的文本
-- list_directory: 列出目录内容
-- glob: 使用模式搜索文件（**/*.ts, src/**/*.js）
-- grep: 在文件内容中搜索模式
+- read_file: 读取文件（绝对路径或相对当前工作目录）
+- write_file: 写入文件
+- replace: 替换文件内容（需要精确匹配）
+- glob: 搜索文件（如 **/*.md）
+- grep: 搜索文件内容
+- bash: 执行命令
+- web_search/web_fetch: 网络操作
 
-### Shell
-- bash: 执行 shell 命令
+## 执行原则
 
-### 网络
-- web_search: 网络搜索
-- web_fetch: 获取网页内容
+1. **一次性原则**：每个操作只执行一次
+2. **结果导向**：收到工具结果后，直接给出结论或进行下一步
+3. **简洁高效**：不要重复说明已经做过什么
+4. **失败处理**：操作失败时，告诉用户原因和建议，不要无限重试
 
-### 任务管理
-- todo_write: 写入任务列表
-- todo_read: 读取任务列表
-
-### 其他
-- create_skill: 创建技能文件
-- ask_user: 向用户提问
-
-## 工作流程
-
-1. 理解用户需求
-2. 如果是复杂任务，先用 todo_write 创建任务列表
-3. 按顺序执行各个步骤
-4. 完成后报告结果
-
-## 注意事项
-
-- 文件路径必须是绝对路径
-- replace 工具需要精确匹配，包含足够的上下文
-- 危险命令会要求用户确认
-- 读取文件后再进行修改，不要猜测文件内容`;
+记住：你的目标是高效完成任务，而不是反复尝试相同的操作。`;
+}
 
 // SSE 事件类型
 export interface SSEEvent {
@@ -295,11 +318,12 @@ export async function* streamChat(
   conversationManager.addMessage(conversationId, 'user', content);
 
   // 获取 skill 的 prompt
-  let systemPrompt = SYSTEM_PROMPT;
+  const basePrompt = buildSystemPrompt();
+  let systemPrompt = basePrompt;
   if (skillName) {
     const skill = skillLoader.get(skillName);
     if (skill && skill.prompt) {
-      systemPrompt = skill.prompt;
+      systemPrompt = `${skill.prompt}\n\n${basePrompt}`;
     }
   }
 
@@ -326,7 +350,10 @@ export async function* streamChat(
     let iteration = 0;
     // 累积完整的 AI 响应，只在最后发送
     let accumulatedResponse = '';
-
+    // 缓存工具结果与重复调用检测
+    const toolCache: Map<string, string> = new Map();
+    let lastToolKeys: string[] = [];
+    let repeatStreak = 0;
     while (iteration < MAX_ITERATIONS) {
       iteration++;
 
@@ -361,6 +388,40 @@ export async function* streamChat(
           yield { type: 'text', data: accumulatedResponse };
         }
         conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse);
+        break;
+      }
+
+      // 去重当前批次内完全相同的工具调用（保留首个）
+      const batchSeen = new Set<string>();
+      const uniqueToolCalls: any[] = [];
+      for (const tool of toolCalls) {
+        const toolKey = `${tool.name}:${stableStringify(tool.input || {})}`;
+        if (batchSeen.has(toolKey)) {
+          console.log(`[StreamChat] 合并重复工具调用(同批次): ${toolKey}`);
+          continue;
+        }
+        batchSeen.add(toolKey);
+        uniqueToolCalls.push(tool);
+      }
+
+      toolCalls = uniqueToolCalls;
+
+      const currentToolKeys = toolCalls.map(t => `${t.name}:${stableStringify(t.input || {})}`);
+      const isSameAsLast =
+        currentToolKeys.length > 0 &&
+        currentToolKeys.length === lastToolKeys.length &&
+        currentToolKeys.every((k, i) => k === lastToolKeys[i]);
+
+      if (isSameAsLast) {
+        repeatStreak++;
+      } else {
+        repeatStreak = 0;
+      }
+
+      if (repeatStreak >= 2) {
+        const msg = '检测到相同工具调用反复出现，已停止自动执行。请提供更具体的文件名或路径，或描述要操作的目标。';
+        yield { type: 'text', data: msg };
+        conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n' + msg);
         break;
       }
 
@@ -402,14 +463,21 @@ export async function* streamChat(
           yield { type: 'todo', data: autoProgress.tasks };
         }
 
-        const result = await executeTool(
-          tool,
-          conversationId,
-          commandExecutor,
-          skillsDir,
-          skillLoader,
-          conversationManager
-        );
+        const toolKey = `${tool.name}:${stableStringify(tool.input || {})}`;
+        let result: string;
+        if (toolCache.has(toolKey)) {
+          result = toolCache.get(toolKey) || '';
+        } else {
+          result = await executeTool(
+            tool,
+            conversationId,
+            commandExecutor,
+            skillsDir,
+            skillLoader,
+            conversationManager
+          );
+          toolCache.set(toolKey, result);
+        }
 
         // 标记任务完成
         const currentTask = autoProgress.tasks.find(t => t.status === 'in_progress');
@@ -424,6 +492,8 @@ export async function* streamChat(
         // 将工具结果添加到对话
         conversationManager.addMessage(conversationId, 'user', `[工具结果] ${result}`);
       }
+
+      lastToolKeys = currentToolKeys;
     }
 
     // 标记所有任务完成
@@ -448,7 +518,8 @@ async function executeTool(
 
   switch (tool.name) {
     case 'read_file': {
-      const filePath = tool.input?.file_path;
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
       if (!filePath) return '错误：文件路径为空';
 
       try {
@@ -473,7 +544,8 @@ async function executeTool(
     }
 
     case 'write_file': {
-      const filePath = tool.input?.file_path;
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
       const fileContent = tool.input?.content;
       if (!filePath || fileContent === undefined) return '错误：参数不完整';
 
@@ -491,7 +563,8 @@ async function executeTool(
     }
 
     case 'replace': {
-      const filePath = tool.input?.file_path;
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
       const oldString = tool.input?.old_string;
       const newString = tool.input?.new_string;
 
@@ -506,7 +579,7 @@ async function executeTool(
     }
 
     case 'list_directory': {
-      const dirPath = tool.input?.path || getWorkingDir();
+      const dirPath = resolveToWorkingDir(tool.input?.path);
       if (!dirPath) return '错误：目录路径为空';
 
       try {
@@ -525,7 +598,7 @@ async function executeTool(
 
     case 'glob': {
       const pattern = tool.input?.pattern;
-      const searchPath = tool.input?.path || getWorkingDir();
+      const searchPath = resolveToWorkingDir(tool.input?.path);
 
       if (!pattern) return '错误：模式为空';
 
@@ -541,7 +614,7 @@ async function executeTool(
 
     case 'grep': {
       const pattern = tool.input?.pattern;
-      const searchPath = tool.input?.path || getWorkingDir();
+      const searchPath = resolveToWorkingDir(tool.input?.path);
       const include = tool.input?.include;
 
       if (!pattern) return '错误：搜索模式为空';
@@ -682,6 +755,22 @@ async function executeTool(
     default:
       return `未知工具: ${tool.name}`;
   }
+}
+
+function resolveToWorkingDir(target?: string): string {
+  if (!target) return getWorkingDir();
+  return path.isAbsolute(target) ? target : path.resolve(getWorkingDir(), target);
+}
+
+function stableStringify(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (typeof value === 'object') {
+    const keys = Object.keys(value).sort();
+    const entries = keys.map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function formatBytes(bytes: number): string {

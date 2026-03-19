@@ -17,6 +17,7 @@ window.loadPresets = async function() {
       window.$('preset-select').value = window.state.presets[0].name;
       localStorage.setItem('selectedModel', window.state.presets[0].name);
     }
+    if (window.updateContextBar) window.updateContextBar();
   }
 };
 
@@ -37,6 +38,7 @@ window.loadSkills = async function() {
     window.$('skill-select').innerHTML = '<option value="">无 Skill</option>' +
       window.state.skills.map(function(s) { return '<option value="' + s.name + '">' + s.name + '</option>'; }).join('');
     window.renderSkillManagerList();
+    if (window.updateContextBar) window.updateContextBar();
   }
 };
 
@@ -48,6 +50,7 @@ window.loadWorkdir = async function() {
       window.state.workdir.path = result.data.path;
       window.$('workdir-input').value = result.data.path;
       await window.loadWorkdirList(result.data.path);
+      if (window.updateContextBar) window.updateContextBar();
     }
   } catch (e) {}
 };
@@ -64,6 +67,7 @@ window.loadWorkdirList = async function(path) {
   window.state.workdir.items = result.data.items || [];
   window.$('workdir-input').value = result.data.path;
   window.renderWorkdirList();
+  if (window.updateContextBar) window.updateContextBar();
 };
 
 window.setWorkdir = async function(path) {
@@ -81,6 +85,7 @@ window.setWorkdir = async function(path) {
   window.state.workdir.path = result.data.path;
   window.$('workdir-input').value = result.data.path;
   await window.loadWorkdirList(result.data.path);
+  if (window.updateContextBar) window.updateContextBar();
   window.showInfo('✅ 已切换目录');
 };
 
@@ -184,5 +189,6 @@ window.selectConversation = async function(id, moveToTop) {
   const result = await res.json();
   if (result.success) {
     window.renderMessages(result.data.messages || []);
+    if (window.updateContextBar) window.updateContextBar();
   }
 };

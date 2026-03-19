@@ -60,6 +60,21 @@
 
     <!-- 主内容区 -->
     <main class="main">
+      <div class="context-bar" id="context-bar">
+        <div class="context-item">
+          <span class="context-label">模型</span>
+          <span class="context-value" id="context-model">未选择</span>
+        </div>
+        <div class="context-item">
+          <span class="context-label">技能</span>
+          <span class="context-value" id="context-skill">无</span>
+        </div>
+        <div class="context-item context-workdir">
+          <span class="context-label">工作目录</span>
+          <span class="context-value" id="context-workdir">-</span>
+          <button class="btn-icon context-copy" id="context-copy-workdir" title="复制路径">⧉</button>
+        </div>
+      </div>
       <div class="chat-container">
         <div id="messages" class="messages"></div>
       </div>
@@ -88,6 +103,7 @@
   <script src="/js/modules/preset.js"></script>
   <script src="/js/modules/api.js"></script>
   <script src="/js/modules/websocket.js"></script>
+  <script src="/js/modules/context.js"></script>
   <script src="/js/modules/modal.js"></script>
   <script src="/js/modules/events.js"></script>
   <script src="/js/modules/main.js"></script>
