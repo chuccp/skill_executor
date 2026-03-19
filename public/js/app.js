@@ -9,7 +9,9 @@ const state = {
   workdir: {
     path: '',
     items: []
-  }
+  },
+  isStreaming: false,
+  abortController: null
 };
 
 const $ = id => document.getElementById(id);
@@ -238,6 +240,31 @@ async function setWorkdir(path) {
   showInfo('✅ 已切换目录');
 }
 
+// 常见二进制文件扩展名
+const BINARY_EXTENSIONS = [
+  // 图片
+  '.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.bmp', '.tiff', '.tif', '.heic', '.heif',
+  // 音视频
+  '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.webm', '.m4a', '.ogg',
+  // 可执行文件
+  '.exe', '.dll', '.so', '.dylib', '.app', '.dmg', '.deb', '.rpm',
+  // 压缩文件
+  '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz',
+  // 数据库
+  '.db', '.sqlite', '.sqlite3',
+  // Office
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  // 字体
+  '.ttf', '.otf', '.woff', '.woff2', '.eot',
+  // 其他二进制
+  '.bin', '.dat', '.iso', '.img', '.class', '.jar', '.war', '.pyc', '.pyo'
+];
+
+function isBinaryFile(filename) {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
+  return BINARY_EXTENSIONS.includes(ext);
+}
+
 function renderWorkdirList() {
   const listEl = $('workdir-list');
   if (!listEl) return;
@@ -248,7 +275,8 @@ function renderWorkdirList() {
   }
 
   const dirs = items.filter(i => i.type === 'directory');
-  const files = items.filter(i => i.type !== 'directory');
+  // 过滤掉二进制文件
+  const files = items.filter(i => i.type !== 'directory' && !isBinaryFile(i.name));
   const sorted = dirs.concat(files);
 
   listEl.innerHTML = sorted.map(item => {
@@ -423,16 +451,18 @@ async function deleteConversation(id) {
   }
 }
 
-async function selectConversation(id) {
+async function selectConversation(id, moveToTop = false) {
   state.currentConversationId = id;
   localStorage.setItem('lastConversationId', id);
   
-  // 将选中的会话移到列表第一位
-  const index = state.conversations.findIndex(c => c.id === id);
-  if (index > 0) {
-    const [selected] = state.conversations.splice(index, 1);
-    state.conversations.unshift(selected);
-    renderConversationList();
+  // 只有从"更多"弹窗选择时才移到列表第一位
+  if (moveToTop) {
+    const index = state.conversations.findIndex(c => c.id === id);
+    if (index > 0) {
+      const [selected] = state.conversations.splice(index, 1);
+      state.conversations.unshift(selected);
+      renderConversationList();
+    }
   }
   
   // 更新列表高亮
@@ -490,6 +520,12 @@ function formatTime(date) {
 
 // 消息
 async function sendMessage() {
+  // 如果正在流式输出，执行停止
+  if (state.isStreaming) {
+    stopStream();
+    return;
+  }
+
   const content = $('user-input').value.trim();
   if (!content) return;
   if (!state.currentConversationId) return;
@@ -499,12 +535,16 @@ async function sendMessage() {
   $('user-input').value = '';
   startStream();
 
+  // 创建 AbortController
+  state.abortController = new AbortController();
+
   // 使用 SSE 流式接口
   try {
     const res = await fetch(API_BASE + '/conversations/' + state.currentConversationId + '/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, skillName })
+      body: JSON.stringify({ content, skillName }),
+      signal: state.abortController.signal
     });
 
     if (!res.ok) {
@@ -560,9 +600,24 @@ async function sendMessage() {
     finishStream();
     loadConversations();
   } catch (error) {
-    showError('连接错误: ' + error.message);
+    if (error.name === 'AbortError') {
+      // 用户主动停止
+      appendMessage('assistant', '⏹️ 已停止生成');
+    } else {
+      showError('连接错误: ' + error.message);
+    }
     finishStream();
   }
+}
+
+// 停止流式输出
+function stopStream() {
+  if (state.abortController) {
+    state.abortController.abort();
+    state.abortController = null;
+  }
+  state.isStreaming = false;
+  updateSendButton();
 }
 
 // 读取文件内容
@@ -607,11 +662,39 @@ function handleSSEEvent(eventType, dataStr) {
 }
 
 function renderMessages(messages) {
-  $('messages').innerHTML = messages.map(m =>
-    '<div class="message ' + m.role + '">' +
-    '<div class="role">' + (m.role === 'user' ? '你' : 'AI') + '</div>' +
-    '<div class="content">' + formatContent(m.content) + '</div></div>'
-  ).join('');
+  // 过滤掉工具结果消息，历史摘要只显示一个简洁提示
+  let hasSummary = false;
+  const processedMessages = [];
+  
+  for (const m of messages) {
+    const content = typeof m.content === 'string' ? m.content : '';
+    
+    // 过滤工具结果
+    if (content.startsWith('[工具结果]')) continue;
+    
+    // 历史摘要只保留一个提示
+    if (content.startsWith('[历史对话摘要]')) {
+      if (!hasSummary) {
+        hasSummary = true;
+        processedMessages.push({
+          role: 'system',
+          content: '📋 已加载之前的对话记录'
+        });
+      }
+      continue;
+    }
+    
+    processedMessages.push(m);
+  }
+  
+  $('messages').innerHTML = processedMessages.map(m => {
+    if (m.role === 'system') {
+      return '<div class="message system"><div class="content">' + escapeHtml(m.content) + '</div></div>';
+    }
+    return '<div class="message ' + m.role + '">' +
+      '<div class="role">' + (m.role === 'user' ? '你' : 'AI') + '</div>' +
+      '<div class="content">' + formatContent(m.content) + '</div></div>';
+  }).join('');
   scrollToBottom();
 }
 
@@ -645,6 +728,8 @@ function appendMessage(role, content) {
 }
 
 function startStream() {
+  state.isStreaming = true;
+  updateSendButton();
   const div = document.createElement('div');
   div.className = 'message assistant streaming';
   div.innerHTML = '<div class="role">AI</div><div class="content"><span class="typing"></span></div>';
@@ -663,6 +748,9 @@ function appendStreamText(text) {
 }
 
 function finishStream() {
+  state.isStreaming = false;
+  state.abortController = null;
+  updateSendButton();
   const el = $('messages').querySelector('.streaming');
   if (el) {
     el.classList.remove('streaming');
@@ -675,7 +763,26 @@ function finishStream() {
   hideProgressPanel();
 }
 
+// 更新发送按钮状态
+function updateSendButton() {
+  const btn = $('send-btn');
+  if (!btn) return;
+  
+  if (state.isStreaming) {
+    btn.textContent = '停止';
+    btn.classList.add('btn-stop');
+    btn.classList.remove('btn-primary');
+  } else {
+    btn.textContent = '发送';
+    btn.classList.remove('btn-stop');
+    btn.classList.add('btn-primary');
+  }
+}
+
 function showError(msg) {
+  state.isStreaming = false;
+  state.abortController = null;
+  updateSendButton();
   const el = $('messages').querySelector('.streaming');
   if (el) el.remove();
   appendMessage('assistant', '❌ 错误: ' + msg);
@@ -856,39 +963,43 @@ function renderTodoList(todos) {
     return;
   }
   
+  // 只显示最近的一个任务
+  // 优先显示 in_progress，其次 pending，最后 completed/failed
+  let displayTodo = todos.find(t => t.status === 'in_progress');
+  if (!displayTodo) {
+    displayTodo = todos.find(t => t.status === 'pending');
+  }
+  if (!displayTodo) {
+    displayTodo = todos[todos.length - 1];
+  }
+  
+  // 如果所有任务完成，3秒后隐藏
+  const allCompleted = todos.every(t => t.status === 'completed');
+  
   let panel = document.querySelector('.todo-panel');
   if (!panel) {
     panel = document.createElement('div');
-    panel.className = 'todo-panel floating';
-    panel.innerHTML = '' +
-      '<div class="todo-header">' +
-        '<div class="todo-title">任务进度</div>' +
-      '</div>' +
-      '<div class="todo-list"></div>' +
-      '<div class="todo-resize" title="拖拽调整大小"></div>';
+    panel.className = 'todo-panel floating todo-single';
     document.body.appendChild(panel);
-    attachTodoPanelBehavior(panel);
   }
   
-  const listEl = panel.querySelector('.todo-list');
-  if (listEl) {
-    listEl.innerHTML = todos.map(t => {
-      const statusIcon = {
-        'pending': '⏳',
-        'in_progress': '🔄',
-        'completed': '✅',
-        'failed': '❌'
-      }[t.status] || '⏳';
-      return '<div class="todo-item ' + t.status + '">' +
-        '<span class="todo-icon">' + statusIcon + '</span>' +
-        '<span class="todo-text">' + escapeHtml(t.task) + '</span>' +
-        '</div>';
-    }).join('');
-  }
+  const statusIcon = {
+    'pending': '⏳',
+    'in_progress': '🔄',
+    'completed': '✅',
+    'failed': '❌'
+  }[displayTodo.status] || '⏳';
   
-  const allCompleted = todos.every(t => t.status === 'completed');
+  panel.innerHTML = '<div class="todo-item ' + displayTodo.status + '">' +
+    '<span class="todo-icon">' + statusIcon + '</span>' +
+    '<span class="todo-text">' + escapeHtml(displayTodo.task) + '</span>' +
+    '</div>';
+  
   if (allCompleted) {
-    setTimeout(() => { if (panel) panel.remove(); }, 3000);
+    setTimeout(() => { 
+      const p = document.querySelector('.todo-panel');
+      if (p) p.remove(); 
+    }, 3000);
   }
 }
 
@@ -1064,10 +1175,10 @@ function setupEventListeners() {
       return;
     }
     
-    // 处理选择
+    // 处理选择（从"更多"弹窗选择，排到第一位）
     const item = target.closest('.conv-modal-item');
     if (item) {
-      selectConversation(item.dataset.id);
+      selectConversation(item.dataset.id, true);
       closeConversationModal();
     }
   });

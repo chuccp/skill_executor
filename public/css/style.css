@@ -92,6 +92,18 @@ body {
   background: #000;
 }
 
+.btn-stop {
+  background: #c62828;
+  color: #fff;
+  border-color: #c62828;
+  font-weight: 600;
+}
+
+.btn-stop:hover {
+  background: #b71c1c;
+  border-color: #b71c1c;
+}
+
 /* 会话列表 */
 .conversation-list {
   list-style: none;
@@ -102,31 +114,26 @@ body {
 }
 
 .conversation-list li {
-  padding: 10px 12px;
-  margin: 4px 0;
-  background: #fff;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 0.8rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  background: #fff;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
-  border: 1px solid transparent;
 }
 
 .conversation-list li:hover {
-  background: #f3f3f3;
-  border-color: var(--border);
+  background: #f7f7f7;
+  border-color: #d6d6d6;
 }
 
 .conversation-list li.active {
   background: var(--accent-weak);
-  border-color: var(--border);
-}
-
-.conversation-list li.active .conv-preview {
-  color: var(--text);
+  border-color: #bfbfbf;
 }
 
 .conv-info {
@@ -146,7 +153,8 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--text);
+  font-size: 0.85rem;
 }
 
 .conv-delete {
@@ -158,17 +166,14 @@ body {
   border-radius: 4px;
   font-size: 1rem;
   line-height: 1;
-  transition: color 0.2s, background 0.2s, opacity 0.2s;
+  transition: color 0.2s, background 0.2s;
   opacity: 0.6;
 }
 
-.conversation-list li:hover .conv-delete {
-  opacity: 1;
-}
-
 .conv-delete:hover {
-  color: #111;
-  background: #ededed;
+  color: #c62828;
+  background: #f5f5f5;
+  opacity: 1;
 }
 
 /* 下拉选择器 */
@@ -584,20 +589,29 @@ body {
 
 /* 滚动条 */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: transparent;
+  background: #f5f5f5;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d9d9d9;
-  border-radius: 3px;
+  background: #c5c5c5;
+  border-radius: 4px;
+  border: 2px solid #f5f5f5;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c9c9c9;
+  background: #a5a5a5;
+}
+
+/* Firefox 滚动条 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c5c5c5 #f5f5f5;
 }
 
 /* Toast 提示 */
@@ -798,7 +812,6 @@ body {
   position: fixed;
   top: 64px;
   right: 16px;
-  width: 280px;
   max-height: 50vh;
   overflow-y: auto;
   margin-top: 0;
@@ -806,48 +819,13 @@ body {
   box-shadow: var(--shadow);
 }
 
-.todo-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 8px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-  cursor: move;
-}
-
-.todo-title {
-  font-size: 0.75rem;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.4px;
-}
-
-.todo-resize {
-  position: absolute;
-  right: 6px;
-  bottom: 6px;
-  width: 14px;
-  height: 14px;
-  cursor: nwse-resize;
-  background: linear-gradient(135deg, transparent 40%, #cfcfcf 40%, #cfcfcf 60%, transparent 60%);
-  opacity: 0.7;
+.todo-panel.floating.todo-single {
+  width: auto;
+  max-width: 300px;
 }
 
 .no-select {
   user-select: none;
-}
-
-.todo-panel h3 {
-  font-size: 0.75rem;
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-
-.todo-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
 }
 
 .todo-item {
