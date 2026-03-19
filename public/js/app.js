@@ -369,32 +369,71 @@ async function createConversation() {
   }
 }
 
-async function deleteConversation(id, event) {
-  event.stopPropagation();
+async function deleteConversation(id) {
+  // 在 Tauri 环境下使用 Tauri 对话框，否则使用原生 confirm
+  let confirmed = false;
+  if (window.__TAURI__) {
+    const { ask } = window.__TAURI__.dialog;
+    confirmed = await ask('确定要删除这个会话吗？', {
+      title: '确认删除',
+      kind: 'warning',
+      okLabel: '删除',
+      cancelLabel: '取消'
+    });
+  } else {
+    confirmed = confirm('确定要删除这个会话吗？');
+  }
   
-  if (!confirm('确定要删除这个会话吗？')) return;
-  
-  const res = await fetch(API_BASE + '/conversations/' + id, { method: 'DELETE' });
-  const { success } = await res.json();
-  if (success) {
-    state.conversations = state.conversations.filter(c => c.id !== id);
-    renderConversationList();
-    
-    // 如果删除的是当前会话，选择其他会话
-    if (state.currentConversationId === id) {
-      localStorage.removeItem('lastConversationId');
-      if (state.conversations.length > 0) {
-        selectConversation(state.conversations[0].id);
-      } else {
-        createConversation();
+  if (!confirmed) {
+    console.log('[DEBUG] 用户取消了删除');
+    return;
+  }
+
+  console.log('[DEBUG] 开始删除会话:', id);
+  try {
+    const res = await fetch(API_BASE + '/conversations/' + id, { method: 'DELETE' });
+    const data = await res.json();
+    console.log("[DEBUG] 删除响应:", data);
+    const success = data && data.success;
+    if (success) {
+      state.conversations = state.conversations.filter(c => c.id !== id);
+      renderConversationList();
+      // 更新会话模态框（如果打开的话）
+      const modal = $('conversation-modal');
+      if (modal && modal.classList.contains('active')) {
+        renderConversationModalList();
       }
+      
+      // 如果删除的是当前会话，选择其他会话
+      if (state.currentConversationId === id) {
+        localStorage.removeItem('lastConversationId');
+        if (state.conversations.length > 0) {
+          selectConversation(state.conversations[0].id);
+        } else {
+          createConversation();
+        }
+      }
+      showInfo('✅ 会话已删除');
+    } else {
+      showError('删除失败: ' + (data.error || '未知错误'));
     }
+  } catch (error) {
+    console.error('[DEBUG] 删除异常:', error);
+    showError('删除失败: ' + error.message);
   }
 }
 
 async function selectConversation(id) {
   state.currentConversationId = id;
   localStorage.setItem('lastConversationId', id);
+  
+  // 将选中的会话移到列表第一位
+  const index = state.conversations.findIndex(c => c.id === id);
+  if (index > 0) {
+    const [selected] = state.conversations.splice(index, 1);
+    state.conversations.unshift(selected);
+    renderConversationList();
+  }
   
   // 更新列表高亮
   document.querySelectorAll('.conversation-list li').forEach(li => {
@@ -410,7 +449,11 @@ async function selectConversation(id) {
 }
 
 function renderConversationList() {
-  $('conversation-list').innerHTML = state.conversations.map(c => {
+  const MAX_VISIBLE = 3;
+  const visibleConversations = state.conversations.slice(0, MAX_VISIBLE);
+  const hasMore = state.conversations.length > MAX_VISIBLE;
+  
+  let html = visibleConversations.map(c => {
     const date = new Date(c.updatedAt || c.createdAt);
     const timeStr = formatTime(date);
     const preview = c.firstUserMessage || c.summary || '新会话';
@@ -424,19 +467,13 @@ function renderConversationList() {
       '</li>';
   }).join('');
   
-  // 绑定点击事件
-  document.querySelectorAll('.conversation-list li').forEach(li => {
-    li.onclick = (e) => {
-      if (!e.target.classList.contains('conv-delete')) {
-        selectConversation(li.dataset.id);
-      }
-    };
-  });
+  if (hasMore) {
+    html += '<li class="conv-more" data-action="more">' +
+      '<span class="conv-more-text">更多 (' + (state.conversations.length - MAX_VISIBLE) + ')</span>' +
+      '</li>';
+  }
   
-  // 绑定删除按钮
-  document.querySelectorAll('.conv-delete').forEach(btn => {
-    btn.onclick = (e) => deleteConversation(btn.dataset.id, e);
-  });
+  $('conversation-list').innerHTML = html;
 }
 
 function formatTime(date) {
@@ -964,6 +1001,34 @@ function setupEventListeners() {
   $('preset-select').onchange = e => usePreset(e.target.value);
   $('skill-refresh').onclick = refreshSkills;
   $('skill-manage-btn').onclick = openSkillModal;
+  $('conversation-list').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const target = e.target;
+
+    // 处理删除按钮
+    const deleteBtn = target.closest('.conv-delete');
+    if (deleteBtn) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const id = deleteBtn.dataset.id;
+      console.log('[DEBUG] 删除按钮被点击，ID:', id);
+      deleteConversation(id);
+      return;
+    }
+
+    // 处理"更多"按钮
+    const moreBtn = target.closest('.conv-more');
+    if (moreBtn) {
+      openConversationModal();
+      return;
+    }
+
+    // 处理会话选择
+    const li = target.closest('li[data-id]');
+    if (li) {
+      selectConversation(li.dataset.id);
+    }
+  });
   $('workdir-set').onclick = () => setWorkdir($('workdir-input').value.trim());
   $('workdir-up').onclick = () => {
     const parent = getParentPath($('workdir-input').value.trim());
@@ -984,6 +1049,28 @@ function setupEventListeners() {
   $('config-type').onchange = e => onModelTypeChange(e.target.value);
   $('skill-modal-close').onclick = closeSkillModal;
   $('skill-modal-close-footer').onclick = closeSkillModal;
+  
+  // 会话模态框事件
+  $('conv-modal-close').onclick = closeConversationModal;
+  $('conv-modal-close-footer').onclick = closeConversationModal;
+  $('conversation-modal-list').addEventListener('click', (e) => {
+    const target = e.target;
+    
+    // 处理删除
+    const deleteBtn = target.closest('.conv-modal-delete');
+    if (deleteBtn) {
+      e.stopPropagation();
+      deleteConversation(deleteBtn.dataset.id);
+      return;
+    }
+    
+    // 处理选择
+    const item = target.closest('.conv-modal-item');
+    if (item) {
+      selectConversation(item.dataset.id);
+      closeConversationModal();
+    }
+  });
 
   // 输入框拖拽支持
   const inputArea = document.querySelector('.input-area');
@@ -1110,27 +1197,117 @@ const MODEL_PRESETS = {
 function openConfigModal() {
   renderPresetList();
   resetConfigForm();
-  $('config-modal').classList.add('active');
+  const modal = $('config-modal');
+  const content = modal ? modal.querySelector('.modal-content') : null;
+  if (content) applyModalSize(content);
+  if (modal) modal.classList.add('active');
 }
 
 function closeConfigModal() {
-  $('config-modal').classList.remove('active');
+  const modal = $('config-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    resetModalPosition(modal);
+  }
   resetConfigForm();
 }
 
 // 技能管理模态框
 async function openSkillModal() {
   await refreshSkills();
-  $('skill-modal').classList.add('active');
+  const modal = $('skill-modal');
+  const content = modal ? modal.querySelector('.modal-content') : null;
+  if (content) applyModalSize(content);
+  if (modal) modal.classList.add('active');
 }
 
 function closeSkillModal() {
-  $('skill-modal').classList.remove('active');
+  const modal = $('skill-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    resetModalPosition(modal);
+  }
+}
+
+// 会话模态框
+function openConversationModal() {
+  renderConversationModalList();
+  const modal = $('conversation-modal');
+  const content = modal ? modal.querySelector('.modal-content') : null;
+  if (content) applyModalSize(content);
+  if (modal) modal.classList.add('active');
+}
+
+function closeConversationModal() {
+  const modal = $('conversation-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    resetModalPosition(modal);
+  }
+}
+
+// 重置模态框位置（关闭时调用，让下次打开居中）
+function resetModalPosition(modal) {
+  const content = modal.querySelector('.modal-content');
+  if (!content) return;
+  content.style.position = '';
+  content.style.left = '';
+  content.style.top = '';
+  content.style.margin = '';
+  content.dataset.dragged = '0';
+}
+
+// 只应用保存的尺寸（不应用位置）
+function applyModalSize(content) {
+  if (!content) return;
+  // 检查是否有保存的状态
+  const modalId = content.closest('.modal')?.id;
+  if (!modalId) return;
+  
+  const raw = localStorage.getItem('modal_state_' + modalId);
+  if (!raw) return;
+  try {
+    const state = JSON.parse(raw);
+    if (state.width) {
+      content.style.width = state.width + 'px';
+      content.style.maxWidth = 'none';
+    }
+    if (state.height) {
+      content.style.height = state.height + 'px';
+      content.style.maxHeight = 'none';
+    }
+    // 不再自动应用位置，让弹窗默认居中
+  } catch (e) {}
+}
+
+function renderConversationModalList() {
+  const listEl = $('conversation-modal-list');
+  if (!listEl) return;
+  
+  if (state.conversations.length === 0) {
+    listEl.innerHTML = '<div class="conv-modal-empty">暂无会话</div>';
+    return;
+  }
+  
+  listEl.innerHTML = state.conversations.map(c => {
+    const date = new Date(c.updatedAt || c.createdAt);
+    const timeStr = formatTime(date);
+    const preview = c.firstUserMessage || c.summary || '新会话';
+    
+    return '<div class="conv-modal-item ' + (c.id === state.currentConversationId ? 'active' : '') + '" data-id="' + c.id + '">' +
+      '<div class="conv-modal-info">' +
+      '<span class="conv-modal-time">' + timeStr + '</span>' +
+      '<span class="conv-modal-preview">' + escapeHtml(preview.substring(0, 50)) + '</span>' +
+      '</div>' +
+      '<button class="conv-modal-delete" data-id="' + c.id + '" title="删除">×</button>' +
+      '</div>';
+  }).join('');
 }
 
 function setupModalDrag() {
   enableModalDrag('config-modal');
   enableModalDrag('skill-modal');
+  enableModalDrag('conversation-modal');
 }
 
 function enableModalDrag(modalId) {
@@ -1140,7 +1317,7 @@ function enableModalDrag(modalId) {
   const header = modal.querySelector('.modal-header');
   if (!content || !header) return;
 
-  applyModalState(modalId, content);
+  // 不再初始化时应用状态，让弹窗默认居中
 
   let dragging = false;
   let startX = 0;
@@ -1200,12 +1377,19 @@ function enableModalDrag(modalId) {
 }
 
 function applyModalState(modalId, content) {
+  if (!content) return;
   const raw = localStorage.getItem('modal_state_' + modalId);
   if (!raw) return;
   try {
     const state = JSON.parse(raw);
-    if (state.width) content.style.width = state.width + 'px';
-    if (state.height) content.style.height = state.height + 'px';
+    if (state.width) {
+      content.style.width = state.width + 'px';
+      content.style.maxWidth = 'none';
+    }
+    if (state.height) {
+      content.style.height = state.height + 'px';
+      content.style.maxHeight = 'none';
+    }
     if (state.left !== null && state.top !== null && state.left !== undefined && state.top !== undefined) {
       content.style.position = 'fixed';
       content.style.margin = '0';
@@ -1317,7 +1501,21 @@ async function editPreset(name) {
 
 // 删除预设
 async function deletePreset(name) {
-  if (!confirm('确定要删除模型 "' + name + '" 吗？')) return;
+  // 在 Tauri 环境下使用 Tauri 对话框，否则使用原生 confirm
+  let confirmed = false;
+  if (window.__TAURI__) {
+    const { ask } = window.__TAURI__.dialog;
+    confirmed = await ask('确定要删除模型 "' + name + '" 吗？', {
+      title: '确认删除',
+      kind: 'warning',
+      okLabel: '删除',
+      cancelLabel: '取消'
+    });
+  } else {
+    confirmed = confirm('确定要删除模型 "' + name + '" 吗？');
+  }
+  
+  if (!confirmed) return;
 
   const res = await fetch(API_BASE + '/presets/' + encodeURIComponent(name), {
     method: 'DELETE'

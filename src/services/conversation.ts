@@ -262,8 +262,9 @@ export class ConversationManager {
     if (result) {
       this.memoryIndex.delete(id);
       this.memoryChunkMap.delete(id);
-      this.saveMemoryIndex();
-      this.save();
+      // 立即保存，不使用防抖，确保删除操作持久化
+      this.doSaveMemoryIndex();
+      this.doSave();
     }
     return result;
   }

@@ -8,121 +8,86 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 npm install
 
-# Development (with hot reload)
+# Development (with hot reload via tsx)
 npm run dev
 
-# Build TypeScript
+# Build TypeScript to dist/
 npm run build
 
-# Start production server
+# Start production server (runs from dist/)
 npm start
+
+# Tauri desktop app
+npm run tauri:dev    # Development
+npm run tauri:build  # Production build
 ```
 
 The server runs on port 3000 by default. On startup, it automatically kills any process occupying that port.
 
 ## Architecture Overview
 
-This is a web-based AI assistant similar to Claude Code CLI, built with:
+A web-based AI assistant with tool calling capabilities, built with Express + TypeScript + WebSocket.
 
-- **Backend**: Express + TypeScript + WebSocket (ws)
-- **Frontend**: Vanilla HTML/CSS/JavaScript in `public/`
-- **LLM Integration**: Anthropic-compatible API with streaming support
+### Core Services
 
-### Core Components
-
-```
-src/
-├── index.ts              # Entry point, Express + WebSocket server setup
-├── types/index.ts        # TypeScript interfaces (Skill, ChatMessage, LLMConfig, etc.)
-├── routes/api.ts         # REST API endpoints
-└── services/
-    ├── websocket.ts      # WebSocket handler with tool calling logic
-    ├── llm.ts            # LLM API integration with streaming
-    ├── commandExecutor.ts # Shell command execution with safety checks
-    ├── skillLoader.ts    # Skill file parsing from skills/ directory
-    ├── configLoader.ts   # Model preset loading from setting/settings.json
-    ├── conversation.ts   # In-memory conversation management
-    └── tools.ts          # Tool implementations (glob, grep, web search, etc.)
-```
+| File | Purpose |
+|------|---------|
+| `src/index.ts` | Entry point, Express + WebSocket server setup |
+| `src/services/websocket.ts` | WebSocket handler with multi-turn tool calling loop (max 20 iterations) |
+| `src/services/llm.ts` | LLM API integration with streaming, supports Anthropic-compatible APIs |
+| `src/services/commandExecutor.ts` | Shell command execution with safety checks |
+| `src/services/tools.ts` | Tool implementations (glob, grep, web search, etc.) |
+| `src/services/skillLoader.ts` | Skill file parsing from `skills/` directory |
+| `src/services/configLoader.ts` | Model preset loading from `setting/settings.json` |
+| `src/services/conversation.ts` | In-memory conversation management |
 
 ### Key Architecture Patterns
 
-**Multi-turn Tool Calling**: The `handleChat` function in `websocket.ts` implements an iterative loop (max 20 iterations) where tool results are fed back as user messages, allowing the AI to execute multi-step tasks.
+**Multi-turn Tool Calling** (`websocket.ts`): The `handleChat` function implements an iterative loop where tool results are fed back as user messages. Tool calls are aggregated from `input_json_delta` chunks until `content_block_stop`.
 
-**Streaming Response Parsing**: `llm.ts` handles Anthropic-compatible streaming with `content_block_start`, `content_block_delta`, and `content_block_stop` events. Tool calls aggregate `input_json_delta` chunks until complete.
+**LLM Streaming** (`llm.ts`): Handles Anthropic-compatible streaming with `content_block_start`, `content_block_delta`, and `content_block_stop` events. Supports custom `baseUrl` for providers like Alibaba Cloud DashScope.
 
-**Skill System**: Skills are Markdown files in `skills/` with a specific format parsed by `skillLoader.ts`. When a skill is selected, its prompt replaces the default `SYSTEM_PROMPT`.
-
-**Command Safety**: `commandExecutor.ts` checks commands against dangerous patterns (rm -rf, disk operations, etc.) and requires user confirmation via WebSocket.
+**Skill System**: Markdown files in `skills/` with format:
+```
+# Skill Name
+Description
+TRIGGER
+- keyword
+PROMPT:
+System prompt content
+```
+When a skill is selected, its prompt replaces the default `SYSTEM_PROMPT`.
 
 ## Model Configuration
 
 Models are configured in `setting/settings.json`:
-
 ```json
-[
-  {
-    "name": "display-name",
-    "env": {
-      "ANTHROPIC_AUTH_TOKEN": "api-key",
-      "ANTHROPIC_BASE_URL": "https://api-endpoint",
-      "ANTHROPIC_MODEL": "model-id"
-    }
+[{
+  "name": "display-name",
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "api-key",
+    "ANTHROPIC_BASE_URL": "https://api-endpoint",
+    "ANTHROPIC_MODEL": "model-id"
   }
-]
+}]
 ```
 
-The system uses Anthropic-compatible API format. Alibaba Cloud DashScope and other providers work if they support this format.
+## Built-in Tools
 
-## Skill File Format
-
-Skills are Markdown files in `skills/`:
-
-```markdown
-# Skill Name
-
-Description text (first non-empty line after title)
-
-TRIGGER
-- keyword1
-- keyword2
-
-PROMPT:
-System prompt content here...
-```
-
-- Only the first `#` heading is used as the skill name
-- TRIGGER keywords enable auto-activation (currently informational)
-- PROMPT section becomes the system prompt when skill is active
-
-## Tool System
-
-The AI has access to these tools defined in `websocket.ts`:
-
+Defined in `websocket.ts` with the `TOOLS` array:
 - **File System**: `read_file`, `write_file`, `replace`, `list_directory`, `glob`, `grep`
-- **Shell**: `bash` (with safety checks for dangerous commands)
+- **Shell**: `bash` (dangerous commands require user confirmation)
 - **Network**: `web_search`, `web_fetch`
 - **Task Management**: `todo_write`, `todo_read`
 - **Skills**: `create_skill`
 - **User Interaction**: `ask_user`
 
-Tool execution results are sent back as user messages for the AI to continue processing.
-
-## Windows Compatibility
-
-The system runs on Windows. The SYSTEM_PROMPT instructs the AI to use Windows commands (dir, type, findstr) instead of Unix ones. The `commandExecutor.ts` handles GBK encoding for Chinese Windows output using `iconv-lite`.
-
 ## WebSocket Protocol
 
-Client sends:
-```json
-{"type": "chat", "conversationId": "id", "content": "message", "skillName": "optional"}
-```
+Client sends: `{"type": "chat", "conversationId": "id", "content": "message", "skillName": "optional"}`
 
-Server sends:
-- `text`: Streaming text chunks
-- `tool_use`: Tool execution notifications
-- `command_confirm`: Dangerous command approval request
-- `ask_user`: Question for user
-- `done`: Response complete
-- `error`: Error message
+Server message types: `text`, `tool_use`, `command_confirm`, `ask_user`, `done`, `error`
+
+## Additional Documentation
+
+See `AGENTS.md` for detailed API endpoints, WebSocket protocol, and tool specifications.

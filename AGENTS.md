@@ -16,7 +16,8 @@
 **技术栈：**
 - 后端：Node.js + Express + TypeScript + WebSocket
 - 前端：原生 HTML/CSS/JavaScript
-- 运行环境：Windows (使用 Windows 命令：dir, type, findstr)
+- 桌面端：支持 Electron 和 Tauri 两种打包方案
+- 运行环境：跨平台支持（Windows / macOS / Linux）
 - 开发工具：tsx (热重载)
 
 ## 构建与运行
@@ -33,10 +34,26 @@ npm run build
 
 # 生产模式运行
 npm start
+# 或
+npm run dev:server
 ```
 
 默认端口：3000  
 访问地址：http://localhost:3000
+
+### 桌面应用
+
+**Tauri（推荐）：**
+```bash
+# 开发模式
+npm run tauri:dev
+
+# 构建生产版本
+npm run tauri:build
+```
+
+**Electron：**
+需要单独配置 Electron 启动脚本。
 
 ## 目录结构
 
@@ -46,21 +63,20 @@ skill_executor/
 │   ├── index.ts              # 入口文件，服务启动
 │   ├── types/index.ts        # TypeScript 类型定义
 │   ├── routes/api.ts         # REST API 路由
-│   ├── services/
-│   │   ├── llm.ts            # LLM 服务（Anthropic/OpenAI/自定义）
-│   │   ├── skillLoader.ts    # Skill 加载与解析
-│   │   ├── websocket.ts      # WebSocket 通信与工具调用
-│   │   ├── tools.ts          # 内置工具实现（glob/grep/web等）
-│   │   ├── commandExecutor.ts # Shell 命令执行
-│   │   ├── configLoader.ts   # 预设配置加载
-│   │   └── conversation.ts   # 会话管理
-│   └── utils/                # 工具函数（预留）
+│   ├── electron/             # Electron 桌面应用
+│   │   ├── main.ts           # Electron 主进程
+│   │   └── preload.ts        # Electron 预加载脚本
+│   └── services/
+│       ├── llm.ts            # LLM 服务（Anthropic/OpenAI/自定义）
+│       ├── skillLoader.ts    # Skill 加载与解析
+│       ├── websocket.ts      # WebSocket 通信与工具调用
+│       ├── streamChat.ts     # SSE 流式聊天处理
+│       ├── tools.ts          # 内置工具实现（glob/grep/web等）
+│       ├── commandExecutor.ts # Shell 命令执行
+│       ├── configLoader.ts   # 预设配置加载
+│       ├── conversation.ts   # 会话管理
+│       └── workingDir.ts     # 工作目录管理
 ├── skills/                   # Skill 定义文件（.md）
-│   ├── example.md            # 示例 Skill
-│   ├── translate.md          # 翻译 Skill
-│   ├── 代码格式化.md          # 代码格式化 Skill
-│   ├── 文字转语音.md          # 文字转语音 Skill
-│   └── text-to-speech.md     # 英文版文字转语音
 ├── setting/settings.json     # 模型预设配置
 ├── public/                   # 前端静态文件
 │   ├── index.html
@@ -68,7 +84,12 @@ skill_executor/
 │   └── js/app.js
 ├── data/                     # 数据存储
 │   └── conversations.json    # 会话数据
-└── dist/                     # 编译输出目录
+├── dist/                     # 编译输出目录
+└── src-tauri/                # Tauri 桌面应用
+    ├── src/                  # Rust 源码
+    ├── icons/                # 应用图标
+    ├── tauri.conf.json       # Tauri 配置
+    └── Cargo.toml            # Rust 依赖
 ```
 
 ## API 接口
@@ -140,6 +161,7 @@ skill_executor/
 
 **工具调用：**
 - `tool_use` - 工具调用事件（包含 toolName, toolId, toolInput）
+- `tool_result` - 工具执行结果
 
 **命令相关：**
 - `command_confirm` - 危险命令确认请求
@@ -162,7 +184,7 @@ skill_executor/
 - `fetch_start` / `fetch_result` - 网页获取
 
 **任务管理：**
-- `todo_updated` / `todo_read` - 任务列表更新（支持自动进度追踪）
+- `todo_updated` / `todo_read` / `todo` - 任务列表更新（支持自动进度追踪）
 
 **其他：**
 - `ask_user` - 询问用户问题
@@ -193,12 +215,6 @@ PROMPT:
   - 普通行：匹配用户消息或代码中的关键词
   - `not when:`：排除条件
 - PROMPT:：系统提示词
-
-**现有 Skills：**
-- `example.md` - 示例 Skill，演示基本结构
-- `translate.md` - 翻译功能
-- `代码格式化.md` - 代码格式化
-- `文字转语音.md` / `text-to-speech.md` - 文字转语音
 
 ## 内置工具
 
@@ -281,6 +297,21 @@ PORT=3000
 - 支持工具调用（Function Calling）
 - 自动处理 content_block_start/delta/stop 事件
 
+## 桌面应用架构
+
+### Tauri（推荐）
+- 使用 Rust 构建原生应用
+- 体积小、性能高
+- 配置文件：`src-tauri/tauri.conf.json`
+- 构建产物包含：skills/、setting/、data/ 资源
+
+### Electron
+- 使用 Node.js + Chromium
+- 跨平台兼容性好
+- 主进程：`src/electron/main.ts`
+- 预加载脚本：`src/electron/preload.ts`
+- 自动启动后端服务器
+
 ## 开发约定
 
 - TypeScript 5.5.3 严格模式
@@ -292,7 +323,9 @@ PORT=3000
 
 ## 注意事项
 
-- 运行在 Windows 环境，使用 Windows 命令（dir 代替 ls，type 代替 cat）
+- 跨平台支持：Windows / macOS / Linux
+  - Windows: 使用 dir、type、findstr 命令
+  - macOS/Linux: 使用 ls、cat、grep 命令
 - 服务启动时会自动释放被占用的端口
 - WebSocket 流式响应支持工具调用（Function Calling）
 - 最大工具调用轮次：20 次

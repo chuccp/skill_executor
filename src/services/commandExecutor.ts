@@ -178,11 +178,6 @@ export class CommandExecutor {
     return true;
   }
 
-  // 设置工作目录
-  setWorkingDir(dir: string) {
-    this.workingDir = dir;
-  }
-
   getWorkingDir(): string {
     return this.workingDir;
   }
