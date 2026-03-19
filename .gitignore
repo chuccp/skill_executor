@@ -36,3 +36,5 @@ temp/
 /setting
 /skills
 /.idea
+*.jpg
+/src-tauri/target

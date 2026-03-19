@@ -686,6 +686,224 @@ function setupEventListeners() {
   };
   $('new-conversation').onclick = createConversation;
   $('preset-select').onchange = e => usePreset(e.target.value);
+  
+  // 配置模态框事件
+  $('config-btn').onclick = openConfigModal;
+  $('modal-close').onclick = closeConfigModal;
+  $('config-cancel').onclick = closeConfigModal;
+  $('config-save').onclick = saveConfig;
+  $('config-type').onchange = e => onModelTypeChange(e.target.value);
+}
+
+// 模型类型预设配置
+const MODEL_PRESETS = {
+  'claude-code': {
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-20250514',
+    hint: 'Claude Code 官方 API'
+  },
+  'opencode': {
+    baseUrl: 'https://api.opencode.ai/v1',
+    model: 'claude-sonnet-4-20250514',
+    hint: 'OpenCode 兼容 API'
+  },
+  'openclaw': {
+    baseUrl: 'https://api.openclaw.ai/v1',
+    model: 'claude-sonnet-4-20250514',
+    hint: 'OpenClaw 代理 API'
+  },
+  'claude-sonnet': {
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-sonnet-4-20250514',
+    hint: 'Claude Sonnet 4'
+  },
+  'claude-opus': {
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-opus-4-20250514',
+    hint: 'Claude Opus 4'
+  },
+  'gpt-4o': {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+    hint: 'GPT-4o'
+  },
+  'gpt-4-turbo': {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4-turbo',
+    hint: 'GPT-4 Turbo'
+  },
+  'deepseek': {
+    baseUrl: 'https://api.deepseek.com',
+    model: 'deepseek-coder',
+    hint: 'DeepSeek Coder'
+  },
+  'qwen': {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    model: 'qwen-coder-plus',
+    hint: '通义千问'
+  },
+  'moonshot': {
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'moonshot-v1-8k',
+    hint: '月之暗面 Kimi'
+  },
+  'zhipu': {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    model: 'glm-4',
+    hint: '智谱 GLM-4'
+  }
+};
+
+// 配置模态框
+function openConfigModal() {
+  renderPresetList();
+  resetConfigForm();
+  $('config-modal').classList.add('active');
+}
+
+function closeConfigModal() {
+  $('config-modal').classList.remove('active');
+  resetConfigForm();
+}
+
+function resetConfigForm() {
+  $('config-name').value = '';
+  $('config-api-key').value = '';
+  $('config-base-url').value = '';
+  $('config-model').value = '';
+  $('config-type').value = '';
+  $('edit-old-name').value = '';
+  $('form-title').textContent = '添加新模型';
+}
+
+// 渲染模型列表
+async function renderPresetList() {
+  const res = await fetch(API_BASE + '/presets');
+  const { success, data } = await res.json();
+
+  if (!success || !data || data.length === 0) {
+    $('preset-list').innerHTML = '<div class="preset-empty">暂无保存的模型配置</div>';
+    return;
+  }
+
+  $('preset-list').innerHTML = data.map(p => `
+    <div class="preset-item" data-name="${escapeHtml(p.name)}">
+      <div class="preset-info">
+        <span class="preset-name">${escapeHtml(p.name)}</span>
+        <span class="preset-model">${escapeHtml(p.model)}</span>
+      </div>
+      <div class="preset-actions">
+        <button class="btn btn-small btn-edit" data-name="${escapeHtml(p.name)}">编辑</button>
+        <button class="btn btn-small btn-danger btn-delete" data-name="${escapeHtml(p.name)}">删除</button>
+      </div>
+    </div>
+  `).join('');
+
+  // 绑定编辑按钮
+  $('preset-list').querySelectorAll('.btn-edit').forEach(btn => {
+    btn.onclick = () => editPreset(btn.dataset.name);
+  });
+
+  // 绑定删除按钮
+  $('preset-list').querySelectorAll('.btn-delete').forEach(btn => {
+    btn.onclick = () => deletePreset(btn.dataset.name);
+  });
+}
+
+// 编辑预设
+async function editPreset(name) {
+  const res = await fetch(API_BASE + '/presets');
+  const { success, data } = await res.json();
+
+  if (!success) return;
+
+  const preset = data.find(p => p.name === name);
+  if (!preset) return;
+
+  $('edit-old-name').value = name;
+  $('config-name').value = preset.name;
+  $('config-api-key').value = preset.apiKey || '';
+  $('config-base-url').value = preset.baseUrl || '';
+  $('config-model').value = preset.model || '';
+  $('config-type').value = '';
+  $('form-title').textContent = '编辑模型: ' + name;
+}
+
+// 删除预设
+async function deletePreset(name) {
+  if (!confirm('确定要删除模型 "' + name + '" 吗？')) return;
+
+  const res = await fetch(API_BASE + '/presets/' + encodeURIComponent(name), {
+    method: 'DELETE'
+  });
+
+  const { success, error } = await res.json();
+  if (success) {
+    showInfo('已删除: ' + name);
+    renderPresetList();
+    loadPresets();
+    // 如果删除的是当前选中的模型，清除选择
+    if ($('preset-select').value === name) {
+      $('preset-select').value = '';
+      localStorage.removeItem('selectedModel');
+    }
+  } else {
+    showInfo('删除失败: ' + (error || '未知错误'));
+  }
+}
+
+function onModelTypeChange(type) {
+  const preset = MODEL_PRESETS[type];
+  if (preset) {
+    $('config-base-url').value = preset.baseUrl;
+    $('config-model').value = preset.model;
+    $('config-model').placeholder = preset.hint;
+  }
+}
+
+async function saveConfig() {
+  const apiKey = $('config-api-key').value.trim();
+  const baseUrl = $('config-base-url').value.trim();
+  const model = $('config-model').value.trim();
+
+  if (!apiKey) {
+    showInfo('请输入 API Key');
+    return;
+  }
+
+  if (!model) {
+    showInfo('请输入模型名称');
+    return;
+  }
+
+  try {
+    // 保存到文件
+    const res = await fetch(API_BASE + '/presets/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: model, // 使用模型名作为预设名
+        apiKey,
+        baseUrl: baseUrl || undefined,
+        model
+      })
+    });
+
+    const { success, error } = await res.json();
+    if (success) {
+      showInfo('配置已保存');
+      closeConfigModal();
+      // 重新加载预设列表
+      await loadPresets();
+      // 选中新保存的预设
+      $('preset-select').value = model;
+      localStorage.setItem('selectedModel', model);
+    } else {
+      showInfo('保存失败: ' + (error || '未知错误'));
+    }
+  } catch (error) {
+    showInfo('保存失败: ' + error.message);
+  }
 }
 
 init();

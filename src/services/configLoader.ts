@@ -36,13 +36,87 @@ export class ConfigLoader {
     return this.presets.find(p => p.name === name);
   }
 
-  // 获取用于前端显示的配置（隐藏敏感信息）
-  getAllForDisplay(): Array<{ name: string; model: string; baseUrl: string }> {
+  // 获取用于前端显示的配置（包含 API key）
+  getAllForDisplay(): Array<{ name: string; model: string; baseUrl: string; apiKey: string }> {
     return this.presets.map(p => ({
       name: p.name,
       model: p.env.ANTHROPIC_MODEL || '',
-      baseUrl: p.env.ANTHROPIC_BASE_URL || ''
+      baseUrl: p.env.ANTHROPIC_BASE_URL || '',
+      apiKey: p.env.ANTHROPIC_AUTH_TOKEN || ''
     }));
+  }
+
+  // 添加或更新预设配置
+  save(name: string, config: { apiKey: string; baseUrl?: string; model: string }): boolean {
+    const existingIndex = this.presets.findIndex(p => p.name === name);
+    const preset: PresetConfig = {
+      name,
+      env: {
+        ANTHROPIC_AUTH_TOKEN: config.apiKey,
+        ANTHROPIC_BASE_URL: config.baseUrl,
+        ANTHROPIC_MODEL: config.model
+      }
+    };
+
+    if (existingIndex >= 0) {
+      this.presets[existingIndex] = preset;
+    } else {
+      this.presets.push(preset);
+    }
+
+    return this.saveToFile();
+  }
+
+  // 保存到文件
+  private saveToFile(): boolean {
+    try {
+      const dir = path.dirname(this.settingsPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(this.settingsPath, JSON.stringify(this.presets, null, 2), 'utf-8');
+      console.log('Settings saved to', this.settingsPath);
+      return true;
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+      return false;
+    }
+  }
+
+  // 更新预设配置
+  update(oldName: string, config: { name: string; apiKey: string; baseUrl?: string; model: string }): boolean {
+    const existingIndex = this.presets.findIndex(p => p.name === oldName);
+    if (existingIndex < 0) {
+      return false;
+    }
+
+    // 如果名称改变了，需要检查新名称是否已存在
+    if (oldName !== config.name && this.presets.some(p => p.name === config.name)) {
+      return false;
+    }
+
+    const preset: PresetConfig = {
+      name: config.name,
+      env: {
+        ANTHROPIC_AUTH_TOKEN: config.apiKey,
+        ANTHROPIC_BASE_URL: config.baseUrl,
+        ANTHROPIC_MODEL: config.model
+      }
+    };
+
+    this.presets[existingIndex] = preset;
+    return this.saveToFile();
+  }
+
+  // 删除预设配置
+  delete(name: string): boolean {
+    const existingIndex = this.presets.findIndex(p => p.name === name);
+    if (existingIndex < 0) {
+      return false;
+    }
+
+    this.presets.splice(existingIndex, 1);
+    return this.saveToFile();
   }
 }
 

@@ -14,7 +14,7 @@ export class LLMService {
 
   // 获取当前配置
   getConfig(): LLMConfig {
-    return { ...this.config, apiKey: '***' }; // 隐藏 API key
+    return { ...this.config };
   }
 
   // 发送聊天请求（非流式）

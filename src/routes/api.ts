@@ -188,6 +188,52 @@ export function createApiRouter(
     res.json({ success: true, data: presets });
   });
 
+  // 保存预设配置到文件
+  router.post('/presets/save', (req: Request, res: Response) => {
+    const { name, apiKey, baseUrl, model } = req.body;
+
+    if (!name || !apiKey || !model) {
+      res.json({ success: false, error: 'Missing required fields: name, apiKey, model' });
+      return;
+    }
+
+    const success = configLoader.save(name, { apiKey, baseUrl, model });
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false, error: 'Failed to save to file' });
+    }
+  });
+
+  // 更新预设配置
+  router.put('/presets/:name', (req: Request, res: Response) => {
+    const oldName = req.params.name;
+    const { name, apiKey, baseUrl, model } = req.body;
+
+    if (!name || !apiKey || !model) {
+      res.json({ success: false, error: 'Missing required fields: name, apiKey, model' });
+      return;
+    }
+
+    const success = configLoader.update(oldName, { name, apiKey, baseUrl, model });
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false, error: 'Failed to update preset' });
+    }
+  });
+
+  // 删除预设配置
+  router.delete('/presets/:name', (req: Request, res: Response) => {
+    const name = req.params.name;
+    const success = configLoader.delete(name);
+    if (success) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false, error: 'Preset not found' });
+    }
+  });
+
   // 使用预设配置
   router.post('/presets/:name/use', (req: Request, res: Response) => {
     const preset = configLoader.get(req.params.name);
