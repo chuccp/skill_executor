@@ -5,8 +5,10 @@ import { LLMService } from '../services/llm';
 import { ConfigLoader } from '../services/configLoader';
 import { CommandExecutor } from '../services/commandExecutor';
 import { streamChat } from '../services/streamChat';
+import { listDirectory } from '../services/tools';
 import { LLMConfig } from '../types';
 import * as path from 'path';
+import * as fs from 'fs';
 
 export function createApiRouter(
   conversationManager: ConversationManager,
@@ -16,6 +18,7 @@ export function createApiRouter(
   commandExecutor?: CommandExecutor
 ): Router {
   const router = Router();
+  let workingDir = process.cwd();
 
   // ========== 会话管理 ==========
 
@@ -119,7 +122,7 @@ export function createApiRouter(
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲
+    res.setHeader('X-Accel-Buffering', 'no');
 
     const skillsDir = path.join(process.cwd(), 'skills');
 
@@ -142,6 +145,47 @@ export function createApiRouter(
     }
 
     res.end();
+  });
+
+  // ========== 工作目录 ==========
+
+  router.get('/workdir', (req: Request, res: Response) => {
+    res.json({ success: true, data: { path: workingDir } });
+  });
+
+  router.post('/workdir', (req: Request, res: Response) => {
+    const { path: nextPath } = req.body || {};
+    if (!nextPath || typeof nextPath !== 'string') {
+      res.json({ success: false, error: 'Path required' });
+      return;
+    }
+    const resolved = path.resolve(nextPath);
+    if (!fs.existsSync(resolved)) {
+      res.json({ success: false, error: 'Path not found' });
+      return;
+    }
+    if (!fs.statSync(resolved).isDirectory()) {
+      res.json({ success: false, error: 'Path is not a directory' });
+      return;
+    }
+    workingDir = resolved;
+    res.json({ success: true, data: { path: workingDir } });
+  });
+
+  router.get('/workdir/list', (req: Request, res: Response) => {
+    const queryPath = typeof req.query.path === 'string' ? req.query.path : '';
+    const target = queryPath && queryPath.trim() ? queryPath : workingDir;
+    const resolved = path.resolve(target);
+    if (!fs.existsSync(resolved)) {
+      res.json({ success: false, error: 'Path not found' });
+      return;
+    }
+    if (!fs.statSync(resolved).isDirectory()) {
+      res.json({ success: false, error: 'Path is not a directory' });
+      return;
+    }
+    const items = listDirectory(resolved);
+    res.json({ success: true, data: { path: resolved, items } });
   });
 
   // ========== Skill 管理 ==========

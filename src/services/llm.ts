@@ -279,7 +279,7 @@ export class LLMService {
     const systemMessage = messages.find(m => m.role === 'system');
     const otherMessages = messages.filter(m => m.role !== 'system');
 
-    const url = this.config.baseUrl + '/v1/messages';
+    const url = this.buildApiUrl();
     console.log('[LLM] 请求 URL:', url);
     console.log('[LLM] Model:', this.config.model);
 
@@ -322,12 +322,30 @@ export class LLMService {
     throw new Error('Invalid response format');
   }
 
+  // 构建 API URL（智能处理不同 provider 的路径格式）
+  private buildApiUrl(): string {
+    const baseUrl = this.config.baseUrl || '';
+
+    // 如果 baseUrl 已经包含完整路径（以 /v1/messages 结尾），直接使用
+    if (baseUrl.endsWith('/v1/messages')) {
+      return baseUrl;
+    }
+
+    // 如果 baseUrl 以 /v1 结尾，添加 /messages
+    if (baseUrl.endsWith('/v1')) {
+      return baseUrl + '/messages';
+    }
+
+    // 否则添加 /v1/messages
+    return baseUrl + '/v1/messages';
+  }
+
   // Anthropic 兼容 API 流式
   private async *anthropicCompatibleChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
     const systemMessage = messages.find(m => m.role === 'system');
     const otherMessages = messages.filter(m => m.role !== 'system');
 
-    const url = this.config.baseUrl + '/v1/messages';
+    const url = this.buildApiUrl();
     console.log('[LLM Stream] 请求 URL:', url);
     console.log('[LLM Stream] Model:', this.config.model);
     if (tools) console.log('[LLM Stream] Tools:', tools.length);
@@ -371,15 +389,12 @@ export class LLMService {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // 用于聚合工具调用
+    // 用于聚合工具调用和追踪当前文本块
     let currentToolCall: { id: string; name: string; inputJson: string, yielded: boolean } | null = null;
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        console.log('[LLM Stream] 读取完成');
-        break;
-      }
+      if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
@@ -396,26 +411,31 @@ export class LLMService {
 
           try {
             const parsed = JSON.parse(data);
-            console.log('[LLM Stream] 事件:', parsed.type);
 
-            // 处理 content_block_start 事件 (工具调用开始)
+            // 处理 content_block_start 事件
             if (parsed.type === 'content_block_start' && parsed.content_block) {
               if (parsed.content_block.type === 'tool_use') {
-                // 开始新的工具调用
                 currentToolCall = {
                   id: parsed.index?.toString() || '0',
                   name: parsed.content_block.name,
                   inputJson: '',
                   yielded: false
                 };
-                console.log('[LLM Stream] 工具开始:', currentToolCall.name);
               }
             }
 
             // 处理 content_block_delta 事件
             if (parsed.type === 'content_block_delta' && parsed.delta) {
-              // 处理 text_delta 类型（实际回复文本）
+              // 标准格式：text_delta
               if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
+                yield { type: 'text', content: parsed.delta.text };
+              }
+              // 阿里云格式：type 可能是 'text'
+              else if (parsed.delta.type === 'text' && parsed.delta.text) {
+                yield { type: 'text', content: parsed.delta.text };
+              }
+              // 兼容没有 type 但有 text 的情况
+              else if (parsed.delta.text && !parsed.delta.type) {
                 yield { type: 'text', content: parsed.delta.text };
               }
               // 处理 input_json_delta（工具输入）
@@ -426,12 +446,11 @@ export class LLMService {
               }
             }
 
-            // 处理 content_block_stop 事件（工具调用结束）
+            // 处理 content_block_stop 事件
             if (parsed.type === 'content_block_stop') {
               if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
                 try {
                   const input = JSON.parse(currentToolCall.inputJson);
-                  console.log('[LLM Stream] 工具完成:', currentToolCall.name, input);
                   currentToolCall.yielded = true;
                   yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
                 } catch (e) {

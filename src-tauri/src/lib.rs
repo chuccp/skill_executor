@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use tauri_plugin_shell::ShellExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -16,12 +16,17 @@ fn get_platform() -> String {
     return "unknown".to_string();
 }
 
+#[tauri::command]
+fn reload_page(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.eval("location.reload()").map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![get_platform])
+        .invoke_handler(tauri::generate_handler![get_platform, reload_page])
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -52,6 +57,22 @@ pub fn run() {
                     match result {
                         Ok(_) => println!("Server started successfully"),
                         Err(e) => eprintln!("Failed to start server: {}", e),
+                    }
+                });
+            }
+
+            // 获取主窗口并监听拖拽事件
+            if let Some(window) = app.get_webview_window("main") {
+                let window_clone = window.clone();
+                window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::DragDrop(drag_event) = event {
+                        match drag_event {
+                            tauri::DragDropEvent::Drop { paths, .. } => {
+                                println!("[Tauri] Files dropped: {:?}", paths);
+                                let _ = window_clone.emit("file-drop", paths);
+                            }
+                            _ => {}
+                        }
                     }
                 });
             }

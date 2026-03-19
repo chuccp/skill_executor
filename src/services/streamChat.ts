@@ -327,13 +327,13 @@ export async function* streamChat(
     while (iteration < MAX_ITERATIONS) {
       iteration++;
 
-      let fullResponse = '';
+      let currentResponse = '';
       let toolCalls: any[] = [];
 
       // 流式响应
       for await (const event of llmService.chatStream(conversation.messages, systemPrompt, TOOLS)) {
         if (event.type === 'text' && event.content) {
-          fullResponse += event.content;
+          currentResponse += event.content;
           yield { type: 'text', data: event.content };
         } else if (event.type === 'tool_use') {
           toolCalls.push({
@@ -347,9 +347,13 @@ export async function* streamChat(
         }
       }
 
+      // 保存当前轮的 AI 输出（作为上下文给下一轮使用）
+      if (currentResponse) {
+        conversationManager.addMessage(conversationId, 'assistant', currentResponse);
+      }
+
       // 没有工具调用，结束循环
       if (toolCalls.length === 0) {
-        conversationManager.addMessage(conversationId, 'assistant', fullResponse);
         break;
       }
 

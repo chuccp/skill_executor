@@ -5,7 +5,11 @@ const state = {
   conversations: [],  // 会话元数据列表
   skills: [],
   presets: [],
-  ws: null
+  ws: null,
+  workdir: {
+    path: '',
+    items: []
+  }
 };
 
 const $ = id => document.getElementById(id);
@@ -16,6 +20,7 @@ async function init() {
   await loadPresets();
   await loadConversations();
   await loadSkills();
+  await loadWorkdir();
   
   // 尝试恢复上次会话
   const lastConversationId = localStorage.getItem('lastConversationId');
@@ -35,6 +40,7 @@ async function init() {
   }
   
   setupEventListeners();
+  setupModalDrag();
 }
 
 // WebSocket
@@ -184,6 +190,166 @@ async function loadSkills() {
     state.skills = data || [];
     $('skill-select').innerHTML = '<option value="">无 Skill</option>' +
       state.skills.map(s => '<option value="' + s.name + '">' + s.name + '</option>').join('');
+    renderSkillManagerList();
+  }
+}
+
+async function loadWorkdir() {
+  try {
+    const res = await fetch(API_BASE + '/workdir');
+    const { success, data } = await res.json();
+    if (success && data && data.path) {
+      state.workdir.path = data.path;
+      $('workdir-input').value = data.path;
+      await loadWorkdirList(data.path);
+    }
+  } catch (e) {}
+}
+
+async function loadWorkdirList(path) {
+  const url = path ? (API_BASE + '/workdir/list?path=' + encodeURIComponent(path)) : (API_BASE + '/workdir/list');
+  const res = await fetch(url);
+  const { success, data, error } = await res.json();
+  if (!success) {
+    showError(error || '读取目录失败');
+    return;
+  }
+  state.workdir.path = data.path;
+  state.workdir.items = data.items || [];
+  $('workdir-input').value = data.path;
+  renderWorkdirList();
+}
+
+async function setWorkdir(path) {
+  if (!path) return;
+  const res = await fetch(API_BASE + '/workdir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  });
+  const { success, data, error } = await res.json();
+  if (!success) {
+    showError(error || '切换目录失败');
+    return;
+  }
+  state.workdir.path = data.path;
+  $('workdir-input').value = data.path;
+  await loadWorkdirList(data.path);
+  showInfo('✅ 已切换目录');
+}
+
+function renderWorkdirList() {
+  const listEl = $('workdir-list');
+  if (!listEl) return;
+  const items = state.workdir.items || [];
+  if (!items.length) {
+    listEl.innerHTML = '<div class="workdir-empty">目录为空</div>';
+    return;
+  }
+
+  const dirs = items.filter(i => i.type === 'directory');
+  const files = items.filter(i => i.type !== 'directory');
+  const sorted = dirs.concat(files);
+
+  listEl.innerHTML = sorted.map(item => {
+    const isDir = item.type === 'directory';
+    const icon = isDir ? '📁' : '📄';
+    return '<button class="workdir-item ' + (isDir ? 'dir' : 'file') + '" data-name="' + escapeHtml(item.name) + '">' +
+      '<span class="workdir-icon">' + icon + '</span>' +
+      '<span class="workdir-name">' + escapeHtml(item.name) + '</span>' +
+    '</button>';
+  }).join('');
+
+  listEl.querySelectorAll('.workdir-item.dir').forEach(btn => {
+    btn.onclick = () => {
+      const next = joinPath(state.workdir.path, btn.dataset.name);
+      setWorkdir(next);
+    };
+  });
+}
+
+function joinPath(basePath, name) {
+  if (!basePath) return name;
+  const sep = basePath.includes('\\') ? '\\' : '/';
+  if (basePath.endsWith(sep)) return basePath + name;
+  return basePath + sep + name;
+}
+
+function getParentPath(p) {
+  if (!p) return '';
+  let path = p.replace(/[\\/]+$/, '');
+  const sep = path.includes('\\') ? '\\' : '/';
+  if (sep === '\\' && /^[A-Za-z]:$/.test(path)) return path + '\\';
+  const idx = path.lastIndexOf(sep);
+  if (idx <= 0) return path;
+  return path.slice(0, idx);
+}
+
+async function refreshSkills() {
+  const btn = $('skill-refresh');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+  }
+  try {
+    await fetch(API_BASE + '/skills/reload', { method: 'POST' });
+    await loadSkills();
+    showInfo('✅ 已刷新技能');
+  } catch (e) {
+    showError('刷新技能失败');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '↻';
+    }
+  }
+}
+
+function renderSkillManagerList() {
+  const listEl = $('skill-list');
+  if (!listEl) return;
+  if (!state.skills.length) {
+    listEl.innerHTML = '<div class="skill-empty">暂无技能</div>';
+    $('skill-detail').textContent = '选择一个技能查看详情';
+    return;
+  }
+
+  listEl.innerHTML = state.skills.map(s =>
+    '<button class="skill-item" data-name="' + escapeHtml(s.name) + '">' +
+      '<div class="skill-name">' + escapeHtml(s.name) + '</div>' +
+      '<div class="skill-desc">' + escapeHtml(s.description || '') + '</div>' +
+    '</button>'
+  ).join('');
+
+  listEl.querySelectorAll('.skill-item').forEach(btn => {
+    btn.onclick = () => showSkillDetail(btn.dataset.name);
+  });
+}
+
+function showSkillDetail(name) {
+  const skill = state.skills.find(s => s.name === name);
+  const detailEl = $('skill-detail');
+  if (!detailEl || !skill) return;
+
+  const when = (skill.trigger && skill.trigger.when) ? skill.trigger.when : [];
+  const notWhen = (skill.trigger && skill.trigger.notWhen) ? skill.trigger.notWhen : [];
+
+  detailEl.innerHTML = [
+    '<div class="skill-title">' + escapeHtml(skill.name) + '</div>',
+    '<div class="skill-meta">文件: ' + escapeHtml(skill.path || '') + '</div>',
+    skill.description ? '<div class="skill-meta">' + escapeHtml(skill.description) + '</div>' : '',
+    '<div class="skill-section-title">触发条件</div>',
+    '<div class="skill-meta">当包含: ' + escapeHtml(when.join(', ') || '无') + '</div>',
+    '<div class="skill-meta">排除: ' + escapeHtml(notWhen.join(', ') || '无') + '</div>',
+    '<div class="skill-section-title">PROMPT</div>',
+    '<pre class="skill-prompt">' + escapeHtml(skill.prompt || '') + '</pre>'
+  ].join('');
+
+  const listEl = $('skill-list');
+  if (listEl) {
+    listEl.querySelectorAll('.skill-item').forEach(item => {
+      item.classList.toggle('active', item.dataset.name === name);
+    });
   }
 }
 
@@ -288,13 +454,14 @@ function formatTime(date) {
 // 消息
 async function sendMessage() {
   const content = $('user-input').value.trim();
-  if (!content || !state.currentConversationId) return;
+  if (!content) return;
+  if (!state.currentConversationId) return;
   const skillName = $('skill-select').value || undefined;
-  
+
   appendMessage('user', content);
   $('user-input').value = '';
   startStream();
-  
+
   // 使用 SSE 流式接口
   try {
     const res = await fetch(API_BASE + '/conversations/' + state.currentConversationId + '/stream', {
@@ -312,25 +479,44 @@ async function sendMessage() {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    const processEventBlock = (block) => {
+      const lines = block.split('\n');
+      let eventType = '';
+      const dataLines = [];
+
+      for (const line of lines) {
+        if (!line) continue;
+        if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          let data = line.slice(5);
+          if (data.startsWith(' ')) data = data.slice(1);
+          dataLines.push(data);
+        }
+      }
+
+      if (dataLines.length) {
+        handleSSEEvent(eventType || 'message', dataLines.join('\n'));
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      buffer = buffer.replace(/\r\n/g, '\n');
 
-      let currentEvent = '';
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          currentEvent = line.slice(7).trim();
-        } else if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          if (currentEvent && data) {
-            handleSSEEvent(currentEvent, data);
-          }
-        }
+      let sepIndex;
+      while ((sepIndex = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, sepIndex);
+        buffer = buffer.slice(sepIndex + 2);
+        if (block.trim()) processEventBlock(block);
       }
+    }
+
+    if (buffer.trim()) {
+      processEventBlock(buffer);
     }
 
     finishStream();
@@ -340,11 +526,21 @@ async function sendMessage() {
   }
 }
 
+// 读取文件内容
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(file);
+  });
+}
+
 // 处理 SSE 事件
 function handleSSEEvent(eventType, dataStr) {
   try {
     const data = JSON.parse(dataStr);
-    
+
     switch (eventType) {
       case 'text':
         appendStreamText(data);
@@ -364,7 +560,6 @@ function handleSSEEvent(eventType, dataStr) {
         showError(data);
         break;
       case 'done':
-        // 完成
         break;
     }
   } catch (e) {
@@ -619,13 +814,20 @@ function renderTodoList(todos) {
   let panel = document.querySelector('.todo-panel');
   if (!panel) {
     panel = document.createElement('div');
-    panel.className = 'todo-panel';
-    document.querySelector('.sidebar').appendChild(panel);
+    panel.className = 'todo-panel floating';
+    panel.innerHTML = '' +
+      '<div class="todo-header">' +
+        '<div class="todo-title">任务进度</div>' +
+      '</div>' +
+      '<div class="todo-list"></div>' +
+      '<div class="todo-resize" title="拖拽调整大小"></div>';
+    document.body.appendChild(panel);
+    attachTodoPanelBehavior(panel);
   }
   
-  panel.innerHTML = '<h3>任务进度</h3>' +
-    '<div class="todo-list">' +
-    todos.map(t => {
+  const listEl = panel.querySelector('.todo-list');
+  if (listEl) {
+    listEl.innerHTML = todos.map(t => {
       const statusIcon = {
         'pending': '⏳',
         'in_progress': '🔄',
@@ -636,13 +838,79 @@ function renderTodoList(todos) {
         '<span class="todo-icon">' + statusIcon + '</span>' +
         '<span class="todo-text">' + escapeHtml(t.task) + '</span>' +
         '</div>';
-    }).join('') +
-    '</div>';
+    }).join('');
+  }
   
   const allCompleted = todos.every(t => t.status === 'completed');
   if (allCompleted) {
     setTimeout(() => { if (panel) panel.remove(); }, 3000);
   }
+}
+
+function attachTodoPanelBehavior(panel) {
+  const header = panel.querySelector('.todo-header');
+  const resizeHandle = panel.querySelector('.todo-resize');
+  if (!header || !resizeHandle) return;
+
+  let dragging = false;
+  let resizing = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    const rect = panel.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    document.body.classList.add('no-select');
+  });
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    resizing = true;
+    const rect = panel.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startWidth = rect.width;
+    startHeight = rect.height;
+    document.body.classList.add('no-select');
+    e.stopPropagation();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (dragging) {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const nextLeft = Math.max(8, Math.min(window.innerWidth - panel.offsetWidth - 8, startLeft + dx));
+      const nextTop = Math.max(8, Math.min(window.innerHeight - panel.offsetHeight - 8, startTop + dy));
+      panel.style.left = nextLeft + 'px';
+      panel.style.top = nextTop + 'px';
+      panel.style.right = 'auto';
+    } else if (resizing) {
+      const dw = e.clientX - startX;
+      const dh = e.clientY - startY;
+      const nextWidth = Math.max(220, Math.min(window.innerWidth - panel.getBoundingClientRect().left - 8, startWidth + dw));
+      const nextHeight = Math.max(140, Math.min(window.innerHeight - panel.getBoundingClientRect().top - 8, startHeight + dh));
+      panel.style.width = nextWidth + 'px';
+      panel.style.height = nextHeight + 'px';
+      panel.style.maxHeight = 'none';
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (dragging || resizing) {
+      dragging = false;
+      resizing = false;
+      document.body.classList.remove('no-select');
+    }
+  });
 }
 
 function scrollToBottom() {
@@ -686,13 +954,89 @@ function setupEventListeners() {
   };
   $('new-conversation').onclick = createConversation;
   $('preset-select').onchange = e => usePreset(e.target.value);
-  
+  $('skill-refresh').onclick = refreshSkills;
+  $('skill-manage-btn').onclick = openSkillModal;
+  $('workdir-set').onclick = () => setWorkdir($('workdir-input').value.trim());
+  $('workdir-up').onclick = () => {
+    const parent = getParentPath($('workdir-input').value.trim());
+    if (parent) setWorkdir(parent);
+  };
+  $('workdir-input').onkeydown = e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      setWorkdir($('workdir-input').value.trim());
+    }
+  };
+
   // 配置模态框事件
   $('config-btn').onclick = openConfigModal;
   $('modal-close').onclick = closeConfigModal;
   $('config-cancel').onclick = closeConfigModal;
   $('config-save').onclick = saveConfig;
   $('config-type').onchange = e => onModelTypeChange(e.target.value);
+  $('skill-modal-close').onclick = closeSkillModal;
+  $('skill-modal-close-footer').onclick = closeSkillModal;
+
+  // 输入框拖拽支持
+  const inputArea = document.querySelector('.input-area');
+
+  // 网页拖拽 - 读取文件内容
+  inputArea.addEventListener('dragover', e => {
+    e.preventDefault();
+    inputArea.classList.add('drag-over');
+  });
+
+  inputArea.addEventListener('dragleave', e => {
+    e.preventDefault();
+    inputArea.classList.remove('drag-over');
+  });
+
+  inputArea.addEventListener('drop', e => {
+    e.preventDefault();
+    inputArea.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      files.forEach(async file => {
+        try {
+          const text = await file.text();
+          const input = $('user-input');
+          input.value += `\n\n--- 文件: ${file.name} ---\n${text}\n`;
+        } catch (err) {
+          console.error('读取文件失败:', err);
+        }
+      });
+    }
+  });
+
+  // Tauri 拖拽 - 获取文件路径
+  if (window.__TAURI__) {
+    const { listen } = window.__TAURI__.event;
+
+    listen('file-drop', (event) => {
+      const paths = event.payload;
+      if (Array.isArray(paths) && paths.length > 0) {
+        const pathText = paths.map(p => '@' + p).join(' ');
+        const input = $('user-input');
+        const currentText = input.value;
+        const cursorPos = input.selectionStart;
+
+        const before = currentText.substring(0, cursorPos);
+        const after = currentText.substring(cursorPos);
+        const insertText = (before && !before.endsWith(' ') && !before.endsWith('\n') ? ' ' : '') + pathText + ' ';
+        input.value = before + insertText + after;
+        input.selectionStart = input.selectionEnd = before.length + insertText.length;
+        input.focus();
+      }
+    });
+
+    // 刷新页面快捷键 (Cmd+R / Ctrl+R)
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'r') {
+        e.preventDefault();
+        location.reload();
+      }
+    });
+  }
 }
 
 // 模型类型预设配置
@@ -764,6 +1108,118 @@ function openConfigModal() {
 function closeConfigModal() {
   $('config-modal').classList.remove('active');
   resetConfigForm();
+}
+
+// 技能管理模态框
+async function openSkillModal() {
+  await refreshSkills();
+  $('skill-modal').classList.add('active');
+}
+
+function closeSkillModal() {
+  $('skill-modal').classList.remove('active');
+}
+
+function setupModalDrag() {
+  enableModalDrag('config-modal');
+  enableModalDrag('skill-modal');
+}
+
+function enableModalDrag(modalId) {
+  const modal = document.getElementById(modalId);
+  if (!modal) return;
+  const content = modal.querySelector('.modal-content');
+  const header = modal.querySelector('.modal-header');
+  if (!content || !header) return;
+
+  applyModalState(modalId, content);
+
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  header.style.cursor = 'move';
+
+  header.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    const rect = content.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    content.style.margin = '0';
+    content.style.position = 'fixed';
+    content.style.left = rect.left + 'px';
+    content.style.top = rect.top + 'px';
+    content.dataset.dragged = '1';
+    document.body.classList.add('no-select');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const nextLeft = Math.max(8, Math.min(window.innerWidth - content.offsetWidth - 8, startLeft + dx));
+    const nextTop = Math.max(8, Math.min(window.innerHeight - content.offsetHeight - 8, startTop + dy));
+    content.style.left = nextLeft + 'px';
+    content.style.top = nextTop + 'px';
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('no-select');
+    saveModalState(modalId, content, true);
+  });
+
+  const resizeObserver = new ResizeObserver(() => {
+    saveModalState(modalId, content, false);
+  });
+  resizeObserver.observe(content);
+}
+
+function applyModalState(modalId, content) {
+  const raw = localStorage.getItem('modal_state_' + modalId);
+  if (!raw) return;
+  try {
+    const state = JSON.parse(raw);
+    if (state.width) content.style.width = state.width + 'px';
+    if (state.height) content.style.height = state.height + 'px';
+    if (state.left !== null && state.top !== null && state.left !== undefined && state.top !== undefined) {
+      content.style.position = 'fixed';
+      content.style.margin = '0';
+      content.style.left = state.left + 'px';
+      content.style.top = state.top + 'px';
+      content.dataset.dragged = '1';
+    }
+  } catch (e) {}
+}
+
+function saveModalState(modalId, content, includePosition) {
+  const rect = content.getBoundingClientRect();
+  const state = {
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+    left: null,
+    top: null
+  };
+  if (includePosition && content.dataset.dragged === '1') {
+    state.left = Math.round(rect.left);
+    state.top = Math.round(rect.top);
+  } else {
+    const raw = localStorage.getItem('modal_state_' + modalId);
+    if (raw) {
+      try {
+        const prev = JSON.parse(raw);
+        if (prev.left !== null && prev.left !== undefined) state.left = prev.left;
+        if (prev.top !== null && prev.top !== undefined) state.top = prev.top;
+      } catch (e) {}
+    }
+  }
+  localStorage.setItem('modal_state_' + modalId, JSON.stringify(state));
 }
 
 function resetConfigForm() {
@@ -862,9 +1318,16 @@ function onModelTypeChange(type) {
 }
 
 async function saveConfig() {
+  const oldName = $('edit-old-name').value;
+  const name = $('config-name').value.trim();
   const apiKey = $('config-api-key').value.trim();
   const baseUrl = $('config-base-url').value.trim();
   const model = $('config-model').value.trim();
+
+  if (!name) {
+    showInfo('请输入配置名称');
+    return;
+  }
 
   if (!apiKey) {
     showInfo('请输入 API Key');
@@ -877,27 +1340,32 @@ async function saveConfig() {
   }
 
   try {
-    // 保存到文件
-    const res = await fetch(API_BASE + '/presets/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: model, // 使用模型名作为预设名
-        apiKey,
-        baseUrl: baseUrl || undefined,
-        model
-      })
-    });
+    let res;
+    if (oldName) {
+      // 编辑模式：更新现有配置
+      res = await fetch(API_BASE + '/presets/' + encodeURIComponent(oldName), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, apiKey, baseUrl: baseUrl || undefined, model })
+      });
+    } else {
+      // 新增模式
+      res = await fetch(API_BASE + '/presets/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, apiKey, baseUrl: baseUrl || undefined, model })
+      });
+    }
 
     const { success, error } = await res.json();
     if (success) {
-      showInfo('配置已保存');
-      closeConfigModal();
-      // 重新加载预设列表
+      showInfo(oldName ? '配置已更新' : '配置已保存');
+      renderPresetList();
       await loadPresets();
       // 选中新保存的预设
-      $('preset-select').value = model;
-      localStorage.setItem('selectedModel', model);
+      $('preset-select').value = name;
+      localStorage.setItem('selectedModel', name);
+      resetConfigForm();
     } else {
       showInfo('保存失败: ' + (error || '未知错误'));
     }

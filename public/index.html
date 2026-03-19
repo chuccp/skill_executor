@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>skill_executor_web</title>
+  <title>skill_executor</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -11,7 +11,7 @@
     <!-- 侧边栏 -->
     <aside class="sidebar">
       <div class="sidebar-header">
-        <h2>skill_executor_web</h2>
+        <h2>skill_executor</h2>
       </div>
 
       <div class="sidebar-section">
@@ -22,9 +22,22 @@
 
       <div class="sidebar-section">
         <h3>Skill</h3>
-        <select id="skill-select" class="full-select">
-          <option value="">无</option>
-        </select>
+        <div class="model-section">
+          <select id="skill-select" class="full-select">
+            <option value="">无</option>
+          </select>
+          <button id="skill-refresh" class="btn btn-icon" title="刷新技能">↻</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section workdir-section">
+        <h3>工作目录</h3>
+        <input id="workdir-input" class="workdir-input" type="text" placeholder="输入路径..." />
+        <div class="workdir-actions">
+          <button id="workdir-set" class="btn btn-primary">切换</button>
+          <button id="workdir-up" class="btn">上一级</button>
+        </div>
+        <div id="workdir-list" class="workdir-list"></div>
       </div>
 
       <div class="sidebar-footer">
@@ -37,6 +50,10 @@
             <button id="config-btn" class="btn btn-icon" title="配置模型">⚙️</button>
           </div>
         </div>
+        <div class="sidebar-section">
+          <h3>技能</h3>
+          <button id="skill-manage-btn" class="btn">管理</button>
+        </div>
       </div>
     </aside>
 
@@ -48,8 +65,10 @@
 
       <div class="input-area">
         <div class="input-wrapper">
-          <textarea id="user-input" placeholder="输入消息... (Enter 发送)" rows="2"></textarea>
-          <button id="send-btn" class="btn btn-primary">发送</button>
+          <div class="input-row">
+            <textarea id="user-input" placeholder="输入消息... (Enter 发送，拖拽文件添加路径)" rows="2"></textarea>
+            <button id="send-btn" class="btn btn-primary">发送</button>
+          </div>
         </div>
       </div>
     </main>
@@ -119,6 +138,30 @@
       <div class="modal-footer">
         <button id="config-cancel" class="btn btn-secondary">取消</button>
         <button id="config-save" class="btn btn-primary">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 技能管理模态框 -->
+  <div id="skill-modal" class="modal">
+    <div class="modal-content modal-large">
+      <div class="modal-header">
+        <h3>技能管理</h3>
+        <button class="modal-close" id="skill-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="skill-manager">
+          <div class="skill-list-panel">
+            <div class="skill-list-title">技能列表</div>
+            <div id="skill-list" class="skill-list"></div>
+          </div>
+          <div class="skill-detail-panel">
+            <div id="skill-detail" class="skill-detail">选择一个技能查看详情</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="skill-modal-close-footer" class="btn btn-secondary">关闭</button>
       </div>
     </div>
   </div>

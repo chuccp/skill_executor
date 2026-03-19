@@ -11,15 +11,18 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Skill Executor",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
         "minHeight": 600,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "dragDropEnabled": true
       }
     ],
     "security": {

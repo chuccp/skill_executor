@@ -1,0 +1,17 @@
+{
+  "$schema": "https://v2.tauri.app/schemas/2.0.0/capability.json",
+  "identifier": "default",
+  "description": "Default capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "shell:allow-execute",
+    {
+      "identifier": "core:window:allow-start-dragging"
+    },
+    {
+      "identifier": "core:window:allow-inner-size"
+    }
+  ]
+}
