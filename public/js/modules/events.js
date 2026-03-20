@@ -106,12 +106,6 @@ window.setupEventListeners = function() {
     skillManageBtn.onclick = window.showSkillModal;
   }
 
-  // 预设创建
-  const presetCreateBtn = window.$('preset-create-btn');
-  if (presetCreateBtn) {
-    presetCreateBtn.onclick = window.createPreset;
-  }
-
   // 配置模态框事件
   const configModal = window.$('config-modal');
   if (configModal) {
@@ -122,16 +116,8 @@ window.setupEventListeners = function() {
       if (e.target === configModal) window.hideConfigModal();
     };
 
-    const cancelBtn = window.$('config-cancel');
-    if (cancelBtn) cancelBtn.onclick = window.hideConfigModal;
-
     const saveBtn = window.$('config-save');
     if (saveBtn) saveBtn.onclick = window.saveConfig;
-
-    const typeSelect = window.$('config-type');
-    if (typeSelect) {
-      typeSelect.onchange = window.fillPresetConfig;
-    }
   }
 
   // 技能模态框事件

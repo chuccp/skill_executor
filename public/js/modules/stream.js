@@ -121,10 +121,26 @@ window.finishStream = function() {
   const el = window.$('messages').querySelector('.streaming');
   if (el) {
     el.classList.remove('streaming');
+    
+    // 只对文本内容进行代码块格式化，保留工具结果等元素
     const contentEl = el.querySelector('.content');
     if (contentEl) {
-      contentEl.innerHTML = formatCodeBlocks(contentEl.textContent);
+      // 获取工具结果容器，暂时移除
+      const toolContainer = contentEl.querySelector('.tool-results-container');
+      if (toolContainer) {
+        toolContainer.remove();
+      }
+      
+      // 格式化文本内容
+      const textContent = contentEl.textContent;
+      contentEl.innerHTML = formatCodeBlocks(textContent);
+      
+      // 重新添加工具结果容器
+      if (toolContainer && toolContainer.children.length > 0) {
+        contentEl.appendChild(toolContainer);
+      }
     }
+    
     // 折叠思考面板（但不清除内容，用户可以查看）
     var thinkingPanel = el.querySelector('.thinking-panel');
     if (thinkingPanel) {

@@ -1,20 +1,209 @@
 /**
- * 预设管理模块
+ * 预设管理模块 - 三步式模型配置
  */
 
-// 预设配置模板
-var PRESET_TEMPLATES = {
-  'claude-code': { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514' },
-  'opencode': { baseUrl: 'https://api.opencode.ai/v1', model: 'claude-sonnet-4-20250514' },
-  'openclaw': { baseUrl: 'https://api.openclaw.cn/v1', model: 'claude-sonnet-4-20250514' },
-  'claude-sonnet': { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-4-20250514' },
-  'claude-opus': { baseUrl: 'https://api.anthropic.com', model: 'claude-opus-4-20250514' },
-  'gpt-4o': { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o' },
-  'gpt-4-turbo': { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4-turbo' },
-  'deepseek': { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-  'qwen': { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-turbo' },
-  'moonshot': { baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  'zhipu': { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4' }
+// 当前选中的配置
+var currentTemplate = null;
+var currentProvider = null;
+var currentStep = 1;
+
+// 模型模板配置 - 包含各提供商信息
+var MODEL_TEMPLATES = {
+  claude: {
+    name: 'Claude Code',
+    description: 'Anthropic Claude 系列',
+    providers: [
+      {
+        id: 'anthropic',
+        name: 'Anthropic 官方',
+        baseUrl: 'https://api.anthropic.com',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'],
+        docs: 'https://docs.anthropic.com'
+      },
+      {
+        id: 'openclaw',
+        name: 'OpenClaw',
+        baseUrl: 'https://api.openclaw.cn/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://openclaw.cn'
+      },
+      {
+        id: 'opencode',
+        name: 'OpenCode',
+        baseUrl: 'https://api.opencode.ai/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://opencode.ai'
+      },
+      {
+        id: 'volcengine',
+        name: '火山引擎',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://www.volcengine.com/docs/82379/2160841'
+      },
+      {
+        id: 'aliyun-bailian',
+        name: '阿里云百炼',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://help.aliyun.com/document_detail/2712195.html'
+      },
+      {
+        id: 'tencent-cloud',
+        name: '腾讯云',
+        baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://cloud.tencent.com/document/product/1729'
+      },
+      {
+        id: 'baidu-qianfan',
+        name: '百度千帆',
+        baseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop',
+        models: ['claude-sonnet-4-20250514'],
+        docs: 'https://cloud.baidu.com/doc/WENXINWORKSHOP/index.html'
+      },
+      {
+        id: 'zhipu',
+        name: '智谱 AI',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://open.bigmodel.cn/dev/api'
+      },
+      {
+        id: 'siliconflow',
+        name: 'SiliconFlow',
+        baseUrl: 'https://api.siliconflow.cn/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'],
+        docs: 'https://docs.siliconflow.cn'
+      },
+      {
+        id: 'moonshot',
+        name: 'Kimi (月之暗面)',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        models: ['claude-sonnet-4-20250514'],
+        docs: 'https://platform.moonshot.cn/docs'
+      },
+      {
+        id: 'deepseek-claude',
+        name: 'DeepSeek 代理',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['claude-sonnet-4-20250514'],
+        docs: 'https://platform.deepseek.com/docs'
+      },
+      {
+        id: 'minimax',
+        name: 'MiniMax',
+        baseUrl: 'https://api.minimax.chat/v1',
+        models: ['claude-sonnet-4-20250514'],
+        docs: 'https://www.minimaxi.com/document'
+      }
+    ]
+  },
+  openai: {
+    name: 'OpenAI',
+    description: 'GPT-4, GPT-4o 系列',
+    providers: [
+      {
+        id: 'openai',
+        name: 'OpenAI 官方',
+        baseUrl: 'https://api.openai.com/v1',
+        models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'o1-preview', 'o1-mini'],
+        docs: 'https://platform.openai.com/docs'
+      },
+      {
+        id: 'azure',
+        name: 'Azure OpenAI',
+        baseUrl: 'https://YOUR_RESOURCE.openai.azure.com/openai/deployments',
+        models: ['gpt-4o', 'gpt-4-turbo'],
+        docs: 'https://learn.microsoft.com/azure/ai-services/openai'
+      }
+    ]
+  },
+  deepseek: {
+    name: 'DeepSeek',
+    description: '深度求索大模型',
+    providers: [
+      {
+        id: 'deepseek',
+        name: 'DeepSeek 官方',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['deepseek-chat', 'deepseek-coder', 'deepseek-reasoner'],
+        docs: 'https://platform.deepseek.com/docs'
+      }
+    ]
+  },
+  qwen: {
+    name: '通义千问',
+    description: '阿里云百炼 Qwen',
+    providers: [
+      {
+        id: 'dashscope',
+        name: '阿里云百炼',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-max-longcontext', 'qwen-coder-plus', 'qwen-coder-turbo'],
+        docs: 'https://help.aliyun.com/document_detail/2712195.html'
+      },
+      {
+        id: 'aliyun',
+        name: '阿里云灵积',
+        baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+        models: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
+        docs: 'https://help.aliyun.com/document_detail/2712195.html'
+      }
+    ]
+  },
+  zhipu: {
+    name: '智谱 GLM',
+    description: '智谱清言大模型',
+    providers: [
+      {
+        id: 'zhipu',
+        name: '智谱 AI 官方',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        models: ['glm-4', 'glm-4-plus', 'glm-4-air', 'glm-4-airx', 'glm-4-flash', 'glm-4v-plus', 'glm-4v-flash'],
+        docs: 'https://open.bigmodel.cn/dev/api'
+      }
+    ]
+  },
+  moonshot: {
+    name: 'Kimi',
+    description: '月之暗面大模型',
+    providers: [
+      {
+        id: 'moonshot',
+        name: 'Moonshot 官方',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+        docs: 'https://platform.moonshot.cn/docs'
+      }
+    ]
+  },
+  doubao: {
+    name: '豆包',
+    description: '火山引擎 Doubao',
+    providers: [
+      {
+        id: 'volcengine-doubao',
+        name: '火山引擎',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        models: ['doubao-pro-32k', 'doubao-pro-128k', 'doubao-lite-32k', 'doubao-lite-128k', 'doubao-pro-4k'],
+        docs: 'https://www.volcengine.com/docs/82379/1099475'
+      }
+    ]
+  },
+  custom: {
+    name: '自定义',
+    description: '自定义 API 配置',
+    providers: [
+      {
+        id: 'custom',
+        name: '自定义配置',
+        baseUrl: '',
+        models: [],
+        docs: ''
+      }
+    ]
+  }
 };
 
 // 显示配置模态框
@@ -22,15 +211,9 @@ window.showConfigModal = function() {
   var modal = window.$('config-modal');
   if (modal) {
     modal.classList.add('active');
-    window.renderPresetList();
-    // 重置表单
-    window.$('config-name').value = '';
-    window.$('config-api-key').value = '';
-    window.$('config-base-url').value = '';
-    window.$('config-model').value = '';
-    window.$('config-type').value = '';
-    window.$('edit-old-name').value = '';
-    window.$('form-title').textContent = '添加新模型';
+    // 重置到列表视图
+    showPresetListView();
+    renderPresetList();
   }
 };
 
@@ -59,25 +242,187 @@ window.hideSkillModal = function() {
   }
 };
 
-// 填充预设配置
-window.fillPresetConfig = function(e) {
-  var type = e.target.value;
-  if (type && PRESET_TEMPLATES[type]) {
-    var template = PRESET_TEMPLATES[type];
-    window.$('config-base-url').value = template.baseUrl;
-    window.$('config-model').value = template.model;
-    if (!window.$('config-name').value) {
-      window.$('config-name').value = type;
+// 显示模型列表视图
+function showPresetListView() {
+  window.$('preset-list-view').style.display = 'block';
+  window.$('preset-form-view').style.display = 'none';
+  resetFormState();
+}
+
+// 显示添加表单视图
+function showPresetFormView() {
+  window.$('preset-list-view').style.display = 'none';
+  window.$('preset-form-view').style.display = 'block';
+  resetFormState();
+  goToStep(1);
+}
+
+// 重置表单状态
+function resetFormState() {
+  currentTemplate = null;
+  currentProvider = null;
+  currentStep = 1;
+  
+  window.$('config-name').value = '';
+  window.$('config-api-key').value = '';
+  window.$('config-base-url').value = '';
+  window.$('config-model').value = '';
+  window.$('config-model-select').innerHTML = '<option value="">选择模型...</option>';
+  window.$('edit-old-name').value = '';
+  window.$('form-title').textContent = '配置详情';
+  
+  // 清除模板卡片选中状态
+  document.querySelectorAll('.template-card').forEach(function(card) {
+    card.classList.remove('selected');
+  });
+  
+  updateStepIndicators(1);
+}
+
+// 跳转到指定步骤
+function goToStep(step) {
+  currentStep = step;
+  
+  // 隐藏所有步骤内容
+  window.$('step-1').style.display = 'none';
+  window.$('step-2').style.display = 'none';
+  window.$('step-3').style.display = 'none';
+  
+  // 显示当前步骤
+  window.$('step-' + step).style.display = 'block';
+  
+  updateStepIndicators(step);
+}
+
+// 更新步骤指示器
+function updateStepIndicators(activeStep) {
+  document.querySelectorAll('.form-steps .step').forEach(function(stepEl, index) {
+    var stepNum = index + 1;
+    stepEl.classList.remove('active', 'completed');
+    if (stepNum < activeStep) {
+      stepEl.classList.add('completed');
+    } else if (stepNum === activeStep) {
+      stepEl.classList.add('active');
     }
+  });
+}
+
+// 选择模板
+function selectTemplate(templateId) {
+  currentTemplate = templateId;
+  
+  // 更新选中状态
+  document.querySelectorAll('.template-card').forEach(function(card) {
+    card.classList.remove('selected');
+    if (card.dataset.template === templateId) {
+      card.classList.add('selected');
+    }
+  });
+  
+  // 显示提供商列表
+  renderProviderList();
+  
+  // 延迟跳转，让用户看到选中效果
+  setTimeout(function() {
+    goToStep(2);
+  }, 200);
+}
+
+// 渲染提供商列表
+function renderProviderList() {
+  var container = window.$('provider-list');
+  if (!currentTemplate || !MODEL_TEMPLATES[currentTemplate]) {
+    container.innerHTML = '<div class="provider-empty">请先选择模板类型</div>';
+    return;
   }
-};
+  
+  var template = MODEL_TEMPLATES[currentTemplate];
+  var html = '<div class="provider-grid">';
+  
+  template.providers.forEach(function(provider) {
+    // 提取域名显示
+    var domain = provider.baseUrl.replace(/^https?:\/\//, '').split('/')[0];
+    html += '<div class="provider-card" data-provider="' + provider.id + '" title="' + provider.baseUrl + '">' +
+      '<div class="provider-name">' + provider.name + '</div>' +
+      '<div class="provider-url">' + domain + '</div>' +
+    '</div>';
+  });
+  
+  html += '</div>';
+  container.innerHTML = html;
+  
+  // 绑定点击事件
+  container.querySelectorAll('.provider-card').forEach(function(card) {
+    card.onclick = function(e) {
+      selectProvider(card.dataset.provider);
+    };
+  });
+}
+
+// 选择提供商
+function selectProvider(providerId) {
+  var template = MODEL_TEMPLATES[currentTemplate];
+  if (!template) return;
+  
+  currentProvider = template.providers.find(function(p) { return p.id === providerId; });
+  if (!currentProvider) return;
+  
+  // 更新选中状态
+  document.querySelectorAll('.provider-card').forEach(function(card) {
+    card.classList.remove('selected');
+    if (card.dataset.provider === providerId) {
+      card.classList.add('selected');
+    }
+  });
+  
+  // 填充默认值
+  window.$('config-base-url').value = currentProvider.baseUrl;
+  window.$('config-name').value = template.name + ' - ' + currentProvider.name;
+  
+  // 填充模型选择列表
+  var modelSelect = window.$('config-model-select');
+  if (currentProvider.models && currentProvider.models.length > 0) {
+    modelSelect.innerHTML = '<option value="">选择模型...</option>' +
+      currentProvider.models.map(function(m) { 
+        return '<option value="' + m + '">' + m + '</option>'; 
+      }).join('');
+    modelSelect.style.display = 'block';
+  } else {
+    modelSelect.innerHTML = '<option value="">手动输入模型</option>';
+    modelSelect.style.display = 'block';
+  }
+  
+  // 更新标题
+  window.$('form-title').textContent = '配置 ' + template.name + ' - ' + currentProvider.name;
+  
+  // 延迟跳转
+  setTimeout(function() {
+    goToStep(3);
+  }, 200);
+}
+
+// 模型选择变化
+function onModelSelectChange(e) {
+  var select = e.target;
+  var customInput = window.$('config-model');
+  if (select.value) {
+    customInput.value = select.value;
+  }
+}
+
+// 返回上一步
+function goBack() {
+  if (currentStep > 1) {
+    goToStep(currentStep - 1);
+  }
+}
 
 // 保存配置
 window.saveConfig = async function() {
   var name = window.$('config-name').value.trim();
   var apiKey = window.$('config-api-key').value.trim();
   var baseUrl = window.$('config-base-url').value.trim();
-  var model = window.$('config-model').value.trim();
+  var model = window.$('config-model').value.trim() || window.$('config-model-select').value;
   var oldName = window.$('edit-old-name').value;
 
   if (!name) {
@@ -89,7 +434,7 @@ window.saveConfig = async function() {
     return;
   }
   if (!model) {
-    window.showError('请输入模型名称');
+    window.showError('请选择或输入模型名称');
     return;
   }
 
@@ -115,7 +460,8 @@ window.saveConfig = async function() {
     result = await res.json();
     if (result.success) {
       await window.loadPresets();
-      window.hideConfigModal();
+      showPresetListView();
+      renderPresetList();
       window.showInfo('✅ 配置已保存');
     } else {
       window.showError(result.error || '保存失败');
@@ -125,12 +471,29 @@ window.saveConfig = async function() {
   }
 };
 
+// 编辑现有配置
+function editPreset(preset) {
+  showPresetFormView();
+  
+  window.$('config-name').value = preset.name;
+  window.$('config-api-key').value = preset.apiKey || '';
+  window.$('config-base-url').value = preset.baseUrl || '';
+  window.$('config-model').value = preset.model || '';
+  window.$('edit-old-name').value = preset.name;
+  window.$('form-title').textContent = '编辑模型: ' + preset.name;
+  
+  // 直接跳到步骤3
+  goToStep(3);
+  window.$('step-1').style.display = 'none';
+  window.$('step-2').style.display = 'none';
+}
+
 window.renderPresetList = function() {
   const list = window.$('preset-list');
   if (!list) return;
 
   if (!window.state.presets.length) {
-    list.innerHTML = '<div class="preset-empty">暂无配置，请添加新模型</div>';
+    list.innerHTML = '<div class="preset-empty">暂无配置，点击上方按钮添加新模型</div>';
     return;
   }
 
@@ -167,12 +530,7 @@ window.renderPresetList = function() {
       var name = decodeURIComponent(item.dataset.name);
       var preset = window.state.presets.find(function(p) { return p.name === name; });
       if (preset) {
-        window.$('config-name').value = preset.name;
-        window.$('config-api-key').value = preset.apiKey || '';
-        window.$('config-base-url').value = preset.baseUrl || '';
-        window.$('config-model').value = preset.model || '';
-        window.$('edit-old-name').value = preset.name;
-        window.$('form-title').textContent = '编辑模型: ' + preset.name;
+        editPreset(preset);
       }
     };
   });
@@ -195,42 +553,55 @@ window.renderPresetList = function() {
       if (confirmed) {
         await fetch(window.API_BASE + '/presets/' + encodeURIComponent(name), { method: 'DELETE' });
         await window.loadPresets();
-        window.renderPresetList();
+        renderPresetList();
         window.showInfo('已删除: ' + name);
       }
     };
   });
 };
 
-window.createPreset = async function() {
-  const name = window.$('preset-name').value.trim();
-  const baseUrl = window.$('preset-url').value.trim();
-  const apiKey = window.$('preset-key').value.trim();
-  const model = window.$('preset-model').value.trim();
-
-  if (!name || !baseUrl || !apiKey || !model) {
-    window.showError('请填写所有字段');
-    return;
+// 初始化事件绑定
+function initPresetEvents() {
+  // 添加新模型按钮
+  var addBtn = window.$('show-add-form-btn');
+  if (addBtn) {
+    addBtn.onclick = showPresetFormView;
   }
-
-  try {
-    const res = await fetch(window.API_BASE + '/presets', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, baseUrl: baseUrl, apiKey: apiKey, model: model })
-    });
-    const result = await res.json();
-    if (result.success) {
-      await window.loadPresets();
-      window.$('preset-name').value = '';
-      window.$('preset-url').value = '';
-      window.$('preset-key').value = '';
-      window.$('preset-model').value = '';
-      window.showInfo('✅ 预设已创建');
-    } else {
-      window.showError(result.error || '创建失败');
-    }
-  } catch (e) {
-    window.showError('创建失败: ' + e.message);
+  
+  // 模板卡片点击
+  document.querySelectorAll('.template-card').forEach(function(card) {
+    card.onclick = function() {
+      selectTemplate(card.dataset.template);
+    };
+  });
+  
+  // 模型选择变化
+  var modelSelect = window.$('config-model-select');
+  if (modelSelect) {
+    modelSelect.onchange = onModelSelectChange;
   }
-};
+  
+  // 上一步按钮
+  var step2Back = window.$('step2-back');
+  if (step2Back) {
+    step2Back.onclick = function() {
+      goToStep(1);
+    };
+  }
+  
+  var step3Back = window.$('step3-back');
+  if (step3Back) {
+    step3Back.onclick = function() {
+      goToStep(2);
+    };
+  }
+}
+
+// 页面加载后初始化
+document.addEventListener('DOMContentLoaded', function() {
+  setTimeout(initPresetEvents, 100);
+});
+
+// 保留旧接口兼容性
+window.fillPresetConfig = function() {};
+window.createPreset = async function() {};

@@ -116,60 +116,121 @@
         <button class="modal-close" id="modal-close">&times;</button>
       </div>
       <div class="modal-body">
-        <!-- 现有模型列表 -->
-        <div class="preset-list-section">
-          <h4>已保存的模型</h4>
+        <!-- 已保存模型列表视图 -->
+        <div id="preset-list-view" class="preset-list-view">
+          <div class="preset-list-header">
+            <h4>已保存的模型</h4>
+            <button id="show-add-form-btn" class="btn btn-primary">+ 添加新模型</button>
+          </div>
           <div id="preset-list" class="preset-list"></div>
         </div>
 
-        <!-- 添加/编辑模型表单 -->
-        <div class="preset-form-section">
-          <h4 id="form-title">添加新模型</h4>
+        <!-- 添加/编辑模型表单视图 -->
+        <div id="preset-form-view" class="preset-form-view" style="display: none;">
+          <!-- 步骤指示器 -->
+          <div class="form-steps">
+            <div class="step active" data-step="1">
+              <span class="step-num">1</span>
+              <span class="step-label">选择模板</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="2">
+              <span class="step-num">2</span>
+              <span class="step-label">选择提供商</span>
+            </div>
+            <div class="step-line"></div>
+            <div class="step" data-step="3">
+              <span class="step-num">3</span>
+              <span class="step-label">配置详情</span>
+            </div>
+          </div>
+
           <input type="hidden" id="edit-old-name">
-          <div class="form-group">
-            <label for="config-name">配置名称</label>
-            <input type="text" id="config-name" placeholder="例如: Claude-4-Sonnet">
+          
+          <!-- 步骤1: 选择模板类型 -->
+          <div id="step-1" class="step-content">
+            <h4>选择模型模板</h4>
+            <div class="template-grid">
+              <div class="template-card" data-template="claude">
+                <div class="template-icon">🤖</div>
+                <div class="template-name">Claude Code</div>
+                <div class="template-desc">Anthropic Claude 系列</div>
+              </div>
+              <div class="template-card" data-template="openai">
+                <div class="template-icon">🧠</div>
+                <div class="template-name">OpenAI</div>
+                <div class="template-desc">GPT-4, GPT-4o 系列</div>
+              </div>
+              <div class="template-card" data-template="deepseek">
+                <div class="template-icon">🔍</div>
+                <div class="template-name">DeepSeek</div>
+                <div class="template-desc">深度求索大模型</div>
+              </div>
+              <div class="template-card" data-template="qwen">
+                <div class="template-icon">☁️</div>
+                <div class="template-name">通义千问</div>
+                <div class="template-desc">阿里云百炼 Qwen</div>
+              </div>
+              <div class="template-card" data-template="zhipu">
+                <div class="template-icon">📚</div>
+                <div class="template-name">智谱 GLM</div>
+                <div class="template-desc">智谱清言大模型</div>
+              </div>
+              <div class="template-card" data-template="moonshot">
+                <div class="template-icon">🌙</div>
+                <div class="template-name">Kimi</div>
+                <div class="template-desc">月之暗面大模型</div>
+              </div>
+              <div class="template-card" data-template="doubao">
+                <div class="template-icon">🫛</div>
+                <div class="template-name">豆包</div>
+                <div class="template-desc">火山引擎 Doubao</div>
+              </div>
+              <div class="template-card" data-template="custom">
+                <div class="template-icon">⚙️</div>
+                <div class="template-name">自定义</div>
+                <div class="template-desc">自定义 API 配置</div>
+              </div>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="config-type">模型类型 (快速填充)</label>
-            <select id="config-type" class="full-select">
-              <option value="">选择预设...</option>
-              <optgroup label="Claude 系列">
-                <option value="claude-code">Claude Code (官方)</option>
-                <option value="opencode">OpenCode</option>
-                <option value="openclaw">OpenClaw</option>
-                <option value="claude-sonnet">Claude Sonnet</option>
-                <option value="claude-opus">Claude Opus</option>
-              </optgroup>
-              <optgroup label="OpenAI 系列">
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              </optgroup>
-              <optgroup label="国产模型">
-                <option value="deepseek">DeepSeek</option>
-                <option value="qwen">通义千问</option>
-                <option value="moonshot">月之暗面 Kimi</option>
-                <option value="zhipu">智谱 GLM-4</option>
-              </optgroup>
-            </select>
+
+          <!-- 步骤2: 选择提供商 -->
+          <div id="step-2" class="step-content" style="display: none;">
+            <h4>选择提供商</h4>
+            <div id="provider-list" class="provider-list"></div>
+            <div class="step-actions">
+              <button id="step2-back" class="btn btn-secondary">上一步</button>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="config-api-key">API Key</label>
-            <input type="text" id="config-api-key" placeholder="输入 API Key">
-          </div>
-          <div class="form-group">
-            <label for="config-base-url">Base URL <span class="hint">(可选)</span></label>
-            <input type="text" id="config-base-url" placeholder="自定义 API 地址">
-          </div>
-          <div class="form-group">
-            <label for="config-model">模型名称</label>
-            <input type="text" id="config-model" placeholder="模型标识符">
+
+          <!-- 步骤3: 配置详情 -->
+          <div id="step-3" class="step-content" style="display: none;">
+            <h4 id="form-title">配置详情</h4>
+            <div class="form-group">
+              <label for="config-name">配置名称</label>
+              <input type="text" id="config-name" placeholder="例如: 我的 Claude">
+            </div>
+            <div class="form-group">
+              <label for="config-model">模型名称</label>
+              <select id="config-model-select" class="full-select">
+                <option value="">选择模型...</option>
+              </select>
+              <input type="text" id="config-model" placeholder="或手动输入模型标识符" style="margin-top: 8px;">
+            </div>
+            <div class="form-group">
+              <label for="config-api-key">API Key</label>
+              <input type="text" id="config-api-key" placeholder="输入 API Key">
+            </div>
+            <div class="form-group">
+              <label for="config-base-url">API 地址</label>
+              <input type="text" id="config-base-url" placeholder="API Base URL">
+            </div>
+            <div class="step-actions">
+              <button id="step3-back" class="btn btn-secondary">上一步</button>
+              <button id="config-save" class="btn btn-primary">保存</button>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button id="config-cancel" class="btn btn-secondary">取消</button>
-        <button id="config-save" class="btn btn-primary">保存</button>
       </div>
     </div>
   </div>
