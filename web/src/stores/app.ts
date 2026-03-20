@@ -61,6 +61,42 @@ const statusMessages = [
 let statusTimer: number | null = null
 let lastStatusIndex = -1
 
+function sanitizeMessages(messages: Message[]): Message[] {
+  let hasSummary = false
+  const output: Message[] = []
+
+  for (const msg of messages) {
+    const content = typeof msg.content === 'string' ? msg.content : ''
+
+    if (content.startsWith('[工具结果]')) continue
+    if (content.startsWith('[相关记忆]')) continue
+
+    if (content.startsWith('[历史对话摘要]')) {
+      if (!hasSummary) {
+        hasSummary = true
+        output.push({ role: 'system', content: '已加载之前的对话记录' })
+      }
+      continue
+    }
+
+    output.push(msg)
+  }
+
+  return output
+}
+
+async function confirmDialog(message: string, title: string): Promise<boolean> {
+  const tauriDialog = (window as any).__TAURI__?.dialog
+  if (tauriDialog?.confirm) {
+    try {
+      return await tauriDialog.confirm(message, title)
+    } catch (e) {
+      // fallback below
+    }
+  }
+  return window.confirm(message)
+}
+
 function randomStatusMessage() {
   let index
   do {
@@ -116,7 +152,8 @@ export const actions = {
   async selectConversation(id: string, moveToTop: boolean = false) {
     state.currentConversationId = id
     localStorage.setItem('lastConversationId', id)
-    state.messages = await api.getConversation(id)
+    const messages = await api.getConversation(id)
+    state.messages = sanitizeMessages(messages)
 
     // Move conversation to top of the list (for modal selection)
     if (moveToTop) {
@@ -129,7 +166,8 @@ export const actions = {
   },
 
   async deleteConversation(id: string) {
-    if (!confirm('确定要删除这个会话吗？')) return
+    const confirmed = await confirmDialog('确定要删除这个会话吗？', '确认删除')
+    if (!confirmed) return
     const success = await api.deleteConversation(id)
     if (success) {
       state.conversations = state.conversations.filter(c => c.id !== id)

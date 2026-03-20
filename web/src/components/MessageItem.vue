@@ -15,6 +15,8 @@ const props = defineProps<{
 }>()
 
 const isAssistant = computed(() => props.message.role === 'assistant')
+const isSystem = computed(() => props.message.role === 'system')
+const isUser = computed(() => props.message.role === 'user')
 const showThinking = ref(false)
 const thinkingRef = ref<HTMLElement | null>(null)
 
@@ -47,6 +49,11 @@ const formattedContent = computed(() => {
   return formatContent(props.message.content)
 })
 
+const roleLabel = computed(() => {
+  if (isSystem.value) return '系统'
+  return isAssistant.value ? 'AI' : 'You'
+})
+
 function formatContent(content: string): string {
   if (!content) return ''
   let result = escapeHtml(content)
@@ -69,8 +76,8 @@ const exportMedia = (url: string, name: string) => {
 </script>
 
 <template>
-  <div class="message" :class="{ assistant: isAssistant, user: !isAssistant }">
-    <div class="role">{{ isAssistant ? 'AI' : 'You' }}</div>
+  <div class="message" :class="{ assistant: isAssistant, user: isUser, system: isSystem }">
+    <div class="role">{{ roleLabel }}</div>
 
     <!-- Thinking panel -->
     <div v-if="isAssistant && thinkingContent" class="thinking-panel" :class="{ visible: true, collapsed: !showThinking && !isStreaming }">
@@ -200,6 +207,23 @@ const exportMedia = (url: string, name: string) => {
 .message.assistant {
   margin-right: auto;
   margin-left: 0;
+}
+
+.message.system {
+  background: #f8f6f2;
+  border-style: dashed;
+  color: var(--muted);
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+.message.system .role {
+  display: none;
+}
+
+.message.system .content {
+  font-size: 0.85rem;
 }
 
 .role {

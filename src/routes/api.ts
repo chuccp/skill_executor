@@ -7,7 +7,7 @@ import { CommandExecutor } from '../services/commandExecutor';
 import { streamChat } from '../services/streamChat';
 import { listDirectory } from '../services/tools';
 import { getWorkingDir, setWorkingDir } from '../services/workingDir';
-import { LLMConfig } from '../types';
+import { ChatMessage, LLMConfig } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -20,6 +20,34 @@ export function createApiRouter(
 ): Router {
   const router = Router();
   let workingDir = getWorkingDir();
+
+  const buildDisplayMessages = (messages: ChatMessage[]): ChatMessage[] => {
+    let hasSummary = false;
+    const output: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+
+      if (content.startsWith('[工具结果]')) continue;
+      if (content.startsWith('[相关记忆]')) continue;
+
+      if (content.startsWith('[历史对话摘要]')) {
+        if (!hasSummary) {
+          hasSummary = true;
+          output.push({
+            role: 'system',
+            content: '已加载之前的对话记录',
+            timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date()
+          });
+        }
+        continue;
+      }
+
+      output.push(msg);
+    }
+
+    return output;
+  };
 
   // ========== 会话管理 ==========
 
@@ -48,7 +76,13 @@ export function createApiRouter(
       res.json({ success: false, error: 'Conversation not found' });
       return;
     }
-    res.json({ success: true, data: conversation });
+    res.json({
+      success: true,
+      data: {
+        ...conversation,
+        messages: buildDisplayMessages(conversation.messages)
+      }
+    });
   });
 
   // 删除会话

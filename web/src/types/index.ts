@@ -15,7 +15,7 @@ export interface ToolResultDisplay {
 }
 
 export interface Message {
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | 'system'
   content: string
   thinking?: string
   toolResults?: ToolResultDisplay[]
