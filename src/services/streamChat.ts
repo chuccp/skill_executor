@@ -247,6 +247,21 @@ function buildSystemPrompt(): string {
 2. 使用 replace 或 write_file 修改
 3. 回复完成
 
+## 代码文件存放规则 📁
+
+**生成的代码必须放在 code 目录，按语言分类：**
+- Python 代码 → `code/python/` 目录
+- JavaScript 代码 → `code/javascript/` 目录  
+- TypeScript 代码 → `code/typescript/` 目录
+- Node.js 代码 → `code/nodejs/` 目录
+- 其他语言 → `code/{语言名}/` 目录
+
+**示例：**
+- 用户要求生成 Python 脚本 → 保存到 `code/python/script_name.py`
+- 用户要求生成 JS 文件 → 保存到 `code/javascript/utils.js`
+
+**注意：** 不要在项目根目录创建代码文件，统一放在 code 目录下！
+
 ## 环境信息
 
 - 操作系统：${osName}
@@ -254,6 +269,7 @@ function buildSystemPrompt(): string {
 - 常用命令：${listCmd} 列目录，${catCmd} 查看文件，${grepCmd} 搜索内容
 - 路径可使用绝对路径，或相对当前工作目录
 - 技能目录：skills/ 目录下的 .md 文件
+- 代码目录：code/{语言}/ 目录（Python/JavaScript/TypeScript 等）
 - 技能文件格式：
   \`\`\`markdown
   # 技能名称

@@ -49,13 +49,11 @@ window.getParentPath = function(p) {
 };
 
 window.scrollToBottom = function() {
-  const container = window.$('messages');
+  // 滚动容器是 chat-container，不是 messages
+  const container = document.querySelector('.chat-container');
   if (container) {
-    // 使用 smooth 滚动，更平滑
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: 'smooth'
-    });
+    // 直接设置 scrollTop，确保立即滚动到底部
+    container.scrollTop = container.scrollHeight;
   }
 };
 

@@ -38,3 +38,4 @@ temp/
 /.idea
 *.jpg
 /src-tauri/target
+/code

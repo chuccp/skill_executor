@@ -322,12 +322,28 @@ function buildSystemPrompt(): string {
 3. **逐步执行**：复杂任务拆分成多个步骤，一步步完成
 4. **使用 Todo 跟踪**：多步骤任务使用 todo_write 跟踪进度
 
+## 代码文件存放规则 📁
+
+**生成的代码必须放在 code 目录，按语言分类：**
+- Python 代码 → \`code/python/\` 目录
+- JavaScript 代码 → \`code/javascript/\` 目录  
+- TypeScript 代码 → \`code/typescript/\` 目录
+- Node.js 代码 → \`code/nodejs/\` 目录
+- 其他语言 → \`code/{语言名}/` 目录
+
+**示例：**
+- 用户要求生成 Python 脚本 → 保存到 \`code/python/script_name.py\`
+- 用户要求生成 JS 文件 → 保存到 \`code/javascript/utils.js\`
+
+**注意：** 不要在项目根目录创建代码文件，统一放在 code 目录下！
+
 ## 环境说明
 
 - 操作系统：${osName}
 - 当前工作目录：${cwd}
 - 常用命令：${listCmd} 列目录，${catCmd} 查看文件，${grepCmd} 搜索内容
 - 路径可以使用绝对路径，或相对当前工作目录
+- 代码目录：code/{语言}/ 目录（Python/JavaScript/TypeScript 等）
 
 ## 可用工具
 
