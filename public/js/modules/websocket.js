@@ -57,8 +57,23 @@ function handleWSMessage(data) {
       }
       break;
     case 'file_written':
-      window.showInfo('✏️ 文件已写入: ' + data.path);
-      showWriteResult(data.path);
+      var filePath = data.path || '';
+      var ext = filePath.split('.').pop().toLowerCase();
+      
+      // 根据文件类型显示不同的结果
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].indexOf(ext) !== -1) {
+        window.showInfo('🖼️ 已生成图片: ' + filePath);
+        showImageResult(filePath, filePath.split(/[/\\]/).pop());
+      } else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].indexOf(ext) !== -1) {
+        window.showInfo('🎵 已生成音频: ' + filePath);
+        showAudioResult(filePath, filePath.split(/[/\\]/).pop());
+      } else if (['mp4', 'webm', 'avi', 'mov', 'mkv'].indexOf(ext) !== -1) {
+        window.showInfo('🎬 已生成视频: ' + filePath);
+        showVideoResult(filePath, filePath.split(/[/\\]/).pop());
+      } else {
+        window.showInfo('✏️ 文件已写入: ' + filePath);
+        showWriteResult(filePath);
+      }
       break;
     case 'file_replaced':
       window.showInfo('📝 文件已替换: ' + data.path + ' (' + data.matches + ' 处)');
@@ -336,12 +351,81 @@ function showGrepResult(title, results) {
 // 写入结果展示
 function showWriteResult(filePath) {
   var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var ext = fileName.split('.').pop().toLowerCase();
+  
+  // 检查是否是多媒体文件
+  var imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'];
+  var audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+  var videoExts = ['mp4', 'webm', 'avi', 'mov', 'mkv'];
+  
+  if (imageExts.indexOf(ext) !== -1) {
+    showImageResult(filePath, fileName);
+  } else if (audioExts.indexOf(ext) !== -1) {
+    showAudioResult(filePath, fileName);
+  } else if (videoExts.indexOf(ext) !== -1) {
+    showVideoResult(filePath, fileName);
+  } else {
+    // 普通文件
+    var div = document.createElement('div');
+    div.className = 'message assistant write-result-box';
+    div.innerHTML = '✅ 已写入: <code>' + window.escapeHtml(fileName) + '</code>';
+    window.$('messages').appendChild(div);
+    window.scrollToBottom();
+    setTimeout(function() { div.style.opacity = '0.5'; }, 3000);
+  }
+}
+
+// 图片展示
+function showImageResult(filePath, fileName) {
+  // 转换文件路径为 URL
+  var mediaPath = filePath.replace(/\\/g, '/');
+  var match = mediaPath.match(/media\/(.+)/);
+  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  
   var div = document.createElement('div');
-  div.className = 'message assistant write-result-box';
-  div.innerHTML = '✅ 已写入: <code>' + window.escapeHtml(fileName) + '</code>';
+  div.className = 'message assistant media-result';
+  div.innerHTML = 
+    '<div class="media-header">🖼️ 图片: ' + window.escapeHtml(fileName) + '</div>' +
+    '<div class="media-content">' +
+      '<img src="' + url + '" alt="' + window.escapeHtml(fileName) + '" class="media-image" onclick="window.open(\'' + url + '\', \'_blank\')">' +
+    '</div>';
   
   window.$('messages').appendChild(div);
   window.scrollToBottom();
+}
+
+// 音频展示
+function showAudioResult(filePath, fileName) {
+  var mediaPath = filePath.replace(/\\/g, '/');
+  var match = mediaPath.match(/media\/(.+)/);
+  var url = match ? '/media/' + match[1] : '/media/' + fileName;
   
-  setTimeout(function() { div.style.opacity = '0.5'; }, 3000);
+  var div = document.createElement('div');
+  div.className = 'message assistant media-result';
+  div.innerHTML = 
+    '<div class="media-header">🎵 音频: ' + window.escapeHtml(fileName) + '</div>' +
+    '<div class="media-content">' +
+      '<audio controls class="media-audio" src="' + url + '"></audio>' +
+    '</div>';
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+}
+
+// 视频展示
+function showVideoResult(filePath, fileName) {
+  var mediaPath = filePath.replace(/\\/g, '/');
+  var match = mediaPath.match(/media\/(.+)/);
+  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  
+  var div = document.createElement('div');
+  div.className = 'message assistant media-result';
+  div.innerHTML = 
+    '<div class="media-header">🎬 视频: ' + window.escapeHtml(fileName) + '</div>' +
+    '<div class="media-content">' +
+      '<video controls class="media-video" src="' + url + '"></video>' +
+    '</div>';
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
 }

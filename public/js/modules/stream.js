@@ -284,7 +284,19 @@ function handleToolResult(data) {
   } else if (name === 'write_file') {
     var writeMatch = result.match(/写入文件成功: (.+)/);
     if (writeMatch) {
-      showWriteResultInStream(writeMatch[1]);
+      var filePath = writeMatch[1];
+      var ext = filePath.split('.').pop().toLowerCase();
+      
+      // 检测多媒体文件
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].indexOf(ext) !== -1) {
+        showMediaResultInStream('image', filePath);
+      } else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].indexOf(ext) !== -1) {
+        showMediaResultInStream('audio', filePath);
+      } else if (['mp4', 'webm', 'avi', 'mov', 'mkv'].indexOf(ext) !== -1) {
+        showMediaResultInStream('video', filePath);
+      } else {
+        showWriteResultInStream(filePath);
+      }
     }
   } else if (name === 'bash') {
     // 解析命令执行结果
@@ -344,6 +356,33 @@ function showWriteResultInStream(filePath) {
   var div = document.createElement('div');
   div.className = 'write-result-inline';
   div.innerHTML = '✅ 已写入: <code>' + window.escapeHtml(fileName) + '</code>';
+  
+  appendToStreamingMessage(div);
+}
+
+// 在流式消息中显示多媒体结果
+function showMediaResultInStream(type, filePath) {
+  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var mediaPath = filePath.replace(/\\/g, '/');
+  var match = mediaPath.match(/media\/(.+)/);
+  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  
+  var div = document.createElement('div');
+  div.className = 'media-result-inline';
+  
+  if (type === 'image') {
+    div.innerHTML = 
+      '<div class="media-label">🖼️ 图片: ' + window.escapeHtml(fileName) + '</div>' +
+      '<img src="' + url + '" class="media-thumb" onclick="window.open(\'' + url + '\', \'_blank\')">';
+  } else if (type === 'audio') {
+    div.innerHTML = 
+      '<div class="media-label">🎵 音频: ' + window.escapeHtml(fileName) + '</div>' +
+      '<audio controls src="' + url + '"></audio>';
+  } else if (type === 'video') {
+    div.innerHTML = 
+      '<div class="media-label">🎬 视频: ' + window.escapeHtml(fileName) + '</div>' +
+      '<video controls src="' + url + '"></video>';
+  }
   
   appendToStreamingMessage(div);
 }

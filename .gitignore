@@ -39,3 +39,4 @@ temp/
 *.jpg
 /src-tauri/target
 /code
+*.wav

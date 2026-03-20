@@ -109,6 +109,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
+// 静态文件服务 - 多媒体目录
+app.use('/media', express.static(path.join(process.cwd(), 'media')));
+
 // API 路由
 app.use('/api', createApiRouter(conversationManager, skillLoader, llmService, configLoader, commandExecutor));
 

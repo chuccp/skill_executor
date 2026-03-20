@@ -331,11 +331,19 @@ function buildSystemPrompt(): string {
 - Node.js 代码 → \`code/nodejs/\` 目录
 - 其他语言 → \`code/{语言名}/` 目录
 
-**示例：**
-- 用户要求生成 Python 脚本 → 保存到 \`code/python/script_name.py\`
-- 用户要求生成 JS 文件 → 保存到 \`code/javascript/utils.js\`
+## 多媒体文件存放规则 🎵
 
-**注意：** 不要在项目根目录创建代码文件，统一放在 code 目录下！
+**生成的多媒体文件必须放在 media 目录，按类型分类：**
+- 图片文件 → \`media/images/\` 目录（png, jpg, gif, webp, svg 等）
+- 音频文件 → \`media/audio/\` 目录（mp3, wav, ogg, m4a 等）
+- 视频文件 → \`media/video/\` 目录（mp4, webm, avi 等）
+
+**示例：**
+- 生成语音 → 保存到 \`media/audio/output.mp3\`
+- 生成图片 → 保存到 \`media/images/generated.png\`
+- 生成视频 → 保存到 \`media/video/result.mp4\`
+
+**注意：** 不要在项目根目录创建多媒体文件，统一放在 media 目录下！
 
 ## 环境说明
 
