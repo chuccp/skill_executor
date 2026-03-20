@@ -486,6 +486,71 @@ async function handleChat(
     'todo_read': '读取任务'
   };
 
+  // 生成详细的任务描述
+  function getDetailedTaskDescription(toolName: string, input: any): string {
+    switch (toolName) {
+      case 'read_file': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `📖 读取 ${truncate(fileName, 25)}`;
+      }
+      case 'write_file': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `✏️ 写入 ${truncate(fileName, 25)}`;
+      }
+      case 'replace': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `📝 替换 ${truncate(fileName, 25)}`;
+      }
+      case 'list_directory': {
+        const dirPath = input?.path || '';
+        const dirName = dirPath ? dirPath.split(/[/\\]/).pop() : '当前目录';
+        return `📂 列出 ${truncate(dirName, 20)}`;
+      }
+      case 'glob': {
+        const pattern = input?.pattern || '';
+        return `🔍 搜索 ${truncate(pattern, 20)}`;
+      }
+      case 'grep': {
+        const pattern = input?.pattern || '';
+        return `🔍 查找 "${truncate(pattern, 15)}"`;
+      }
+      case 'bash': {
+        const cmd = input?.command || '';
+        return `💻 ${truncate(cmd, 30)}`;
+      }
+      case 'web_search': {
+        const query = input?.query || '';
+        return `🌐 搜索 ${truncate(query, 20)}`;
+      }
+      case 'web_fetch': {
+        const url = input?.url || '';
+        try {
+          const urlObj = new URL(url);
+          return `📄 获取 ${urlObj.hostname}`;
+        } catch {
+          return `📄 获取网页`;
+        }
+      }
+      case 'create_skill': {
+        const name = input?.name || '';
+        return `✨ 创建技能 ${truncate(name, 15)}`;
+      }
+      default: {
+        const baseName = toolDisplayNames[toolName] || toolName;
+        return baseName;
+      }
+    }
+  }
+
+  // 截断字符串
+  function truncate(str: string, maxLen: number): string {
+    if (str.length <= maxLen) return str;
+    return str.slice(0, maxLen - 2) + '…';
+  }
+
   try {
     let iteration = 0;
 
@@ -527,6 +592,9 @@ async function handleChat(
       for (const tool of toolCalls) {
         console.log('[WS] 工具:', tool.name, JSON.stringify(tool.input).substring(0, 100));
         
+        // 当前任务的 ID（用于精确定位）
+        let currentTaskId: string | null = null;
+        
         // 如果是 todo_write，使用 AI 提供的任务列表
         if (tool.name === 'todo_write') {
           const todos = tool.input?.todos as TodoItem[];
@@ -537,8 +605,13 @@ async function handleChat(
           }
         } else {
           // 自动添加进度任务
-          const displayName = toolDisplayNames[tool.name] || tool.name;
-          const taskId = `auto-${Date.now()}-${autoProgress.toolCount}`;
+          const detailedTask = getDetailedTaskDescription(tool.name, tool.input);
+          currentTaskId = `auto-${Date.now()}-${autoProgress.toolCount}`;
+          
+          // 清理已完成的自动任务，只保留最近的几个
+          if (autoProgress.tasks.length > 5) {
+            autoProgress.tasks = autoProgress.tasks.filter(t => t.status === 'in_progress');
+          }
           
           // 标记上一个任务为完成
           const lastInProgress = autoProgress.tasks.find(t => t.status === 'in_progress');
@@ -548,8 +621,8 @@ async function handleChat(
           
           // 添加新任务
           autoProgress.tasks.push({
-            id: taskId,
-            task: displayName,
+            id: currentTaskId,
+            task: detailedTask,
             status: 'in_progress'
           });
           autoProgress.toolCount++;
@@ -558,6 +631,7 @@ async function handleChat(
           ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
         }
         
+        // 执行工具
         const result = await executeTool(
           tool, 
           ws, 
@@ -568,11 +642,13 @@ async function handleChat(
           conversationManager
         );
         
-        // 标记当前任务完成
-        const currentTask = autoProgress.tasks.find(t => t.status === 'in_progress');
-        if (currentTask) {
-          currentTask.status = 'completed';
-          ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
+        // 标记当前任务完成（使用 taskId 精确定位）
+        if (currentTaskId) {
+          const currentTask = autoProgress.tasks.find(t => t.id === currentTaskId);
+          if (currentTask) {
+            currentTask.status = 'completed';
+            ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
+          }
         }
 
         // 将工具结果作为用户消息添加到对话
@@ -620,8 +696,8 @@ async function executeTool(
         }
         
         const content = lines.join('\n');
-        const truncatedContent = content.length > 15000
-          ? content.substring(0, 15000) + '\n... (内容过长，已截断)'
+        const truncatedContent = content.length > 8000
+          ? content.substring(0, 8000) + '\n... (内容过长，已截断，可使用 offset/limit 参数分段读取)'
           : content;
         
         ws.send(JSON.stringify({ type: 'file_read', path: filePath, content: truncatedContent }));

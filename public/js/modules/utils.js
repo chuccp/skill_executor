@@ -50,7 +50,13 @@ window.getParentPath = function(p) {
 
 window.scrollToBottom = function() {
   const container = window.$('messages');
-  if (container) container.scrollTop = container.scrollHeight;
+  if (container) {
+    // 使用 smooth 滚动，更平滑
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
 };
 
 window.debounce = function(fn, delay) {

@@ -36,6 +36,10 @@ window.finishStream = function() {
   }
   hideProgressPanel();
   hideProgressIndicator();
+  // 清理任务面板
+  if (window.clearTodoPanel) {
+    window.clearTodoPanel();
+  }
 };
 
 window.stopStream = function() {
@@ -228,12 +232,10 @@ function handleSSEEvent(eventType, dataStr) {
         showProgressIndicator(data);
         break;
       case 'tool_use':
-        window.showInfo('🔧 使用工具: ' + data.name);
+        // 工具开始执行
         break;
       case 'tool_result':
-        if (data.name === 'read_file') window.showInfo('📖 已读取文件');
-        else if (data.name === 'write_file') window.showInfo('✏️ 文件已写入');
-        else if (data.name === 'bash') window.showInfo('💻 命令执行完成');
+        handleToolResult(data);
         break;
       case 'todo':
         window.renderTodoList(data);
@@ -247,6 +249,144 @@ function handleSSEEvent(eventType, dataStr) {
     }
   } catch (e) {
     console.error('[SSE] 解析错误:', e);
+  }
+}
+
+// 处理工具结果
+function handleToolResult(data) {
+  var name = data.name;
+  var result = data.result || '';
+  
+  if (name === 'read_file') {
+    // 解析文件路径和内容
+    var match = result.match(/文件内容 \((.+?)\):/);
+    var filePath = match ? match[1] : '';
+    var contentMatch = result.match(/```\n?([\s\S]*?)\n?```/);
+    var content = contentMatch ? contentMatch[1] : result;
+    
+    if (filePath && content) {
+      showFileContentInStream(filePath, content);
+    }
+  } else if (name === 'glob') {
+    // 解析搜索结果
+    var filesMatch = result.match(/找到 (\d+) 个文件匹配 "([^"]+)":\n([\s\S]+)/);
+    if (filesMatch) {
+      var files = filesMatch[3].trim().split('\n');
+      showSearchResultInStream('搜索文件: ' + filesMatch[2], files.slice(0, 5), parseInt(filesMatch[1]));
+    }
+  } else if (name === 'grep') {
+    // 解析内容搜索结果
+    var grepMatch = result.match(/找到 (\d+) 个匹配:\n([\s\S]+)/);
+    if (grepMatch) {
+      var lines = grepMatch[2].trim().split('\n');
+      showSearchResultInStream('搜索内容', lines.slice(0, 3), parseInt(grepMatch[1]));
+    }
+  } else if (name === 'write_file') {
+    var writeMatch = result.match(/写入文件成功: (.+)/);
+    if (writeMatch) {
+      showWriteResultInStream(writeMatch[1]);
+    }
+  } else if (name === 'bash') {
+    // 解析命令执行结果
+    var bashMatch = result.match(/命令: (.+)\n([\s\S]*)/);
+    if (bashMatch) {
+      var cmd = bashMatch[1];
+      var output = bashMatch[2].trim();
+      var success = !output.startsWith('错误:');
+      showBashResultInStream(cmd, output, success);
+    }
+  }
+}
+
+// 在流式消息中显示文件内容
+function showFileContentInStream(filePath, content) {
+  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var lines = content.split('\n');
+  var lineCount = lines.length;
+  
+  var preview = lines.slice(0, 12).join('\n');
+  if (lineCount > 12) {
+    preview += '\n... (共 ' + lineCount + ' 行)';
+  }
+  
+  var div = document.createElement('div');
+  div.className = 'file-preview-inline';
+  div.innerHTML = 
+    '<div class="fp-header">' +
+      '<span class="fp-name">📄 ' + window.escapeHtml(fileName) + '</span>' +
+      '<span class="fp-meta">' + lineCount + ' 行</span>' +
+    '</div>' +
+    '<pre class="fp-content">' + window.escapeHtml(preview) + '</pre>';
+  
+  appendToStreamingMessage(div);
+}
+
+// 在流式消息中显示搜索结果
+function showSearchResultInStream(title, items, total) {
+  var div = document.createElement('div');
+  div.className = 'search-result-inline';
+  div.innerHTML = 
+    '<div class="sr-title">🔍 ' + window.escapeHtml(title) + '</div>' +
+    '<div class="sr-items">' + 
+      items.map(function(item) {
+        var name = item.split(/[/\\]/).pop() || item;
+        return '<div class="sr-item">' + window.escapeHtml(name.length > 50 ? name.slice(-50) : name) + '</div>';
+      }).join('') +
+      (total > items.length ? '<div class="sr-more">+ 共 ' + total + ' 个结果</div>' : '') +
+    '</div>';
+  
+  appendToStreamingMessage(div);
+}
+
+// 在流式消息中显示写入结果
+function showWriteResultInStream(filePath) {
+  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var div = document.createElement('div');
+  div.className = 'write-result-inline';
+  div.innerHTML = '✅ 已写入: <code>' + window.escapeHtml(fileName) + '</code>';
+  
+  appendToStreamingMessage(div);
+}
+
+// 在流式消息中显示命令执行结果
+function showBashResultInStream(command, output, success) {
+  var div = document.createElement('div');
+  div.className = 'bash-result-inline ' + (success ? 'success' : 'error');
+  
+  // 截断过长的输出
+  var displayOutput = output;
+  if (output.length > 300) {
+    displayOutput = output.substring(0, 300) + '\n... (已截断)';
+  }
+  
+  div.innerHTML = 
+    '<div class="bash-header">' +
+      '<span class="bash-icon">' + (success ? '✓' : '✗') + '</span>' +
+      '<code class="bash-cmd">$ ' + window.escapeHtml(command) + '</code>' +
+    '</div>' +
+    '<pre class="bash-output">' + window.escapeHtml(displayOutput || '(无输出)') + '</pre>';
+  
+  appendToStreamingMessage(div);
+}
+
+// 追加到流式消息
+function appendToStreamingMessage(element) {
+  var streamingEl = window.$('messages').querySelector('.streaming .content');
+  if (streamingEl) {
+    // 移除打字指示器
+    var typing = streamingEl.querySelector('.typing');
+    if (typing) typing.remove();
+    
+    // 如果还没有容器，创建一个
+    var container = streamingEl.querySelector('.tool-results-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'tool-results-container';
+      streamingEl.appendChild(container);
+    }
+    
+    container.appendChild(element);
+    window.scrollToBottom();
   }
 }
 

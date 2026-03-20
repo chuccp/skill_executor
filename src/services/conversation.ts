@@ -12,7 +12,7 @@ const SUMMARIZE_THRESHOLD = 50; // 触发总结的消息数阈值
 const WORKING_MEMORY_SIZE = 20; // 工作记忆保留最近消息数
 const MEMORY_CHUNK_SIZE = 10; // 记忆切片包含的消息数
 const RETRIEVAL_LIMIT = 3; // 召回的记忆片段数量
-const CONTEXT_CHAR_BUDGET = 12000; // 工作记忆字符预算（近似）
+const CONTEXT_CHAR_BUDGET = 20000; // 工作记忆字符预算（近似）
 const MAX_MEMORY_CHUNKS = 60; // 单会话最大记忆片段数
 const MEMORY_TTL_DAYS = 30; // 记忆片段过期天数
 const INDEX_SAVE_DEBOUNCE_MS = 1000;
@@ -337,13 +337,11 @@ export class ConversationManager {
     // 保留最近的消息（过滤已有系统摘要/记忆，避免重复）
     const recentMessages = data.messages
       .slice(-WORKING_MEMORY_SIZE)
-      .filter(m => !this.isSystemMemory(m))
-      .filter(m => !(typeof m.content === 'string' && m.content.startsWith('[工具结果]')));
-    
+      .filter(m => !this.isSystemMemory(m));
+
     // 生成历史摘要
     const oldMessages = data.messages.slice(0, -WORKING_MEMORY_SIZE)
-      .filter(m => !this.isSystemMemory(m))
-      .filter(m => !(typeof m.content === 'string' && m.content.startsWith('[工具结果]')));
+      .filter(m => !this.isSystemMemory(m));
     const summary = this.generateSummary(oldMessages);
     const memoryChunks = this.mergeMemoryChunks(
       data.meta.memoryChunks || [],
@@ -471,8 +469,8 @@ export class ConversationManager {
 
     const recentRaw = data.messages
       .slice(-WORKING_MEMORY_SIZE * 2)
-      .filter(m => !this.isSystemMemory(m))
-      .filter(m => !(typeof m.content === 'string' && m.content.startsWith('[工具结果]')));
+      .filter(m => !this.isSystemMemory(m));
+    // 不过滤工具结果，让 LLM 能看到工具调用的结果
     const recent: ChatMessage[] = [];
     let used = 0;
     for (let i = recentRaw.length - 1; i >= 0; i -= 1) {
@@ -483,6 +481,9 @@ export class ConversationManager {
       used += len;
       if (recent.length >= WORKING_MEMORY_SIZE) break;
     }
+
+    // 调试日志：显示上下文消息数量和最后一条消息
+    console.log(`[Conversation] 构建上下文: ${recent.length} 条消息, 最后一条: ${recent.length > 0 ? recent[recent.length-1].content?.substring(0, 50) : '无'}...`);
     const summary = data.meta.summary;
     const chunks = data.meta.memoryChunks || [];
     const retrieved = this.retrieveMemory(userInput, chunks);

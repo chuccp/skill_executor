@@ -94,10 +94,58 @@ window.setupEventListeners = function() {
   // 技能刷新
   window.$('skill-refresh').onclick = window.refreshSkills;
 
+  // 模型配置按钮
+  const configBtn = window.$('config-btn');
+  if (configBtn) {
+    configBtn.onclick = window.showConfigModal;
+  }
+
+  // 技能管理按钮
+  const skillManageBtn = window.$('skill-manage-btn');
+  if (skillManageBtn) {
+    skillManageBtn.onclick = window.showSkillModal;
+  }
+
   // 预设创建
   const presetCreateBtn = window.$('preset-create-btn');
   if (presetCreateBtn) {
     presetCreateBtn.onclick = window.createPreset;
+  }
+
+  // 配置模态框事件
+  const configModal = window.$('config-modal');
+  if (configModal) {
+    const closeBtn = window.$('modal-close');
+    if (closeBtn) closeBtn.onclick = window.hideConfigModal;
+    
+    configModal.onclick = function(e) {
+      if (e.target === configModal) window.hideConfigModal();
+    };
+
+    const cancelBtn = window.$('config-cancel');
+    if (cancelBtn) cancelBtn.onclick = window.hideConfigModal;
+
+    const saveBtn = window.$('config-save');
+    if (saveBtn) saveBtn.onclick = window.saveConfig;
+
+    const typeSelect = window.$('config-type');
+    if (typeSelect) {
+      typeSelect.onchange = window.fillPresetConfig;
+    }
+  }
+
+  // 技能模态框事件
+  const skillModal = window.$('skill-modal');
+  if (skillModal) {
+    const closeBtn = window.$('skill-modal-close');
+    if (closeBtn) closeBtn.onclick = window.hideSkillModal;
+    
+    const closeFooterBtn = window.$('skill-modal-close-footer');
+    if (closeFooterBtn) closeFooterBtn.onclick = window.hideSkillModal;
+    
+    skillModal.onclick = function(e) {
+      if (e.target === skillModal) window.hideSkillModal();
+    };
   }
 
   // 文件拖放

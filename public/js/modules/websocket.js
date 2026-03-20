@@ -23,6 +23,7 @@ function handleWSMessage(data) {
       appendStreamText(data.content);
       break;
     case 'done':
+      window.clearTodoPanel();
       window.finishStream();
       window.loadConversations();
       break;
@@ -51,9 +52,13 @@ function handleWSMessage(data) {
 
     case 'file_read':
       window.showInfo('📖 已读取文件: ' + data.path);
+      if (data.content) {
+        showFileContent(data.path, data.content);
+      }
       break;
     case 'file_written':
       window.showInfo('✏️ 文件已写入: ' + data.path);
+      showWriteResult(data.path);
       break;
     case 'file_replaced':
       window.showInfo('📝 文件已替换: ' + data.path + ' (' + data.matches + ' 处)');
@@ -65,10 +70,16 @@ function handleWSMessage(data) {
 
     case 'glob_result':
       window.showInfo('🔍 找到 ' + data.files.length + ' 个文件');
+      if (data.files && data.files.length > 0) {
+        showSearchResult('搜索文件', data.files);
+      }
       break;
 
     case 'grep_result':
       window.showInfo('🔍 找到 ' + data.results.length + ' 个匹配');
+      if (data.results && data.results.length > 0) {
+        showGrepResult('搜索内容', data.results);
+      }
       break;
 
     case 'search_start':
@@ -108,7 +119,9 @@ function appendStreamText(text) {
     const t = el.querySelector('.typing');
     if (t) t.remove();
     el.textContent += text;
-    window.scrollToBottom();
+    // 立即滚动到底部，不使用动画
+    const container = window.$('messages');
+    if (container) container.scrollTop = container.scrollHeight;
   }
 }
 
@@ -138,12 +151,16 @@ function showCommandConfirm(confirmId, command) {
 }
 
 function appendCommandBox(command) {
+  // 检查是否已存在相同命令的盒子
+  var existing = window.$('messages').querySelector('.command-box[data-command="' + command.replace(/"/g, '\\"') + '"]');
+  if (existing) return;
+  
   const div = document.createElement('div');
   div.className = 'message assistant command-box';
   div.dataset.command = command;
   div.innerHTML = '<div class="role">💻</div><div class="content">' +
     '<div class="cmd-header">$ ' + window.escapeHtml(command) + '</div>' +
-    '<div class="cmd-output">执行中...</div></div>';
+    '<div class="cmd-output"><span class="running">执行中...</span></div></div>';
   window.$('messages').appendChild(div);
   window.scrollToBottom();
 }
@@ -155,9 +172,28 @@ function updateCommandResult(command, success, stdout, stderr) {
   const output = box.querySelector('.cmd-output');
   if (!output) return;
 
-  const text = success ? (stdout || '(无输出)') : ('错误: ' + (stderr || stdout));
-  output.textContent = text;
-  output.className = 'cmd-output ' + (success ? 'success' : 'error');
+  var text = '';
+  if (success) {
+    text = stdout || '(无输出)';
+    output.innerHTML = '<span class="success">✓ 完成</span>\n' + window.escapeHtml(text);
+  } else {
+    text = stderr || stdout || '执行失败';
+    output.innerHTML = '<span class="error">✗ 失败</span>\n' + window.escapeHtml(text);
+  }
+  
+  // 3秒后折叠长输出
+  if (text.length > 500) {
+    setTimeout(function() {
+      output.style.maxHeight = '100px';
+      output.style.overflow = 'hidden';
+      output.style.cursor = 'pointer';
+      output.title = '点击展开';
+      output.onclick = function() {
+        output.style.maxHeight = '';
+        output.style.overflow = '';
+      };
+    }, 3000);
+  }
 }
 
 // 询问用户
@@ -229,4 +265,83 @@ function showProgressPanel(data) {
       '</div>' : '');
 
   window.scrollToBottom();
+}
+
+// 文件内容展示
+function showFileContent(filePath, content) {
+  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var lines = content.split('\n');
+  var lineCount = lines.length;
+  
+  // 提取关键信息（前几行和结构）
+  var preview = lines.slice(0, 15).join('\n');
+  if (lineCount > 15) {
+    preview += '\n... (共 ' + lineCount + ' 行)';
+  }
+  
+  var div = document.createElement('div');
+  div.className = 'message assistant file-preview';
+  div.innerHTML = 
+    '<div class="file-preview-header">' +
+      '<span class="file-name">📄 ' + window.escapeHtml(fileName) + '</span>' +
+      '<span class="file-meta">' + lineCount + ' 行</span>' +
+    '</div>' +
+    '<pre class="file-preview-content">' + window.escapeHtml(preview) + '</pre>';
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+}
+
+// 搜索结果展示
+function showSearchResult(title, files) {
+  var div = document.createElement('div');
+  div.className = 'message assistant search-result-box';
+  var items = files.slice(0, 5).map(function(f) {
+    var name = f.split(/[/\\]/).pop();
+    return '<div class="sr-item">' + window.escapeHtml(name) + '</div>';
+  }).join('');
+  
+  div.innerHTML = 
+    '<div class="sr-title">🔍 ' + window.escapeHtml(title) + '</div>' +
+    '<div class="sr-items">' + items + '</div>' +
+    (files.length > 5 ? '<div class="sr-more">+ 共 ' + files.length + ' 个结果</div>' : '');
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+  
+  // 5秒后半透明
+  setTimeout(function() { div.style.opacity = '0.5'; }, 5000);
+}
+
+// grep 结果展示
+function showGrepResult(title, results) {
+  var div = document.createElement('div');
+  div.className = 'message assistant search-result-box';
+  var items = results.slice(0, 3).map(function(r) {
+    var name = r.file.split(/[/\\]/).pop();
+    return '<div class="sr-item"><span class="sr-file">' + window.escapeHtml(name) + '</span>:<span class="sr-line">' + r.line + '</span></div>';
+  }).join('');
+  
+  div.innerHTML = 
+    '<div class="sr-title">🔍 ' + window.escapeHtml(title) + '</div>' +
+    '<div class="sr-items">' + items + '</div>' +
+    (results.length > 3 ? '<div class="sr-more">+ 共 ' + results.length + ' 个匹配</div>' : '');
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+  
+  setTimeout(function() { div.style.opacity = '0.5'; }, 5000);
+}
+
+// 写入结果展示
+function showWriteResult(filePath) {
+  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+  var div = document.createElement('div');
+  div.className = 'message assistant write-result-box';
+  div.innerHTML = '✅ 已写入: <code>' + window.escapeHtml(fileName) + '</code>';
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+  
+  setTimeout(function() { div.style.opacity = '0.5'; }, 3000);
 }

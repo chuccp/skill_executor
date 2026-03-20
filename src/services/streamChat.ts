@@ -346,6 +346,71 @@ export async function* streamChat(
     'todo_read': '读取任务'
   };
 
+  // 生成详细的任务描述
+  function getDetailedTaskDescription(toolName: string, input: any): string {
+    switch (toolName) {
+      case 'read_file': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `📖 读取 ${truncate(fileName, 25)}`;
+      }
+      case 'write_file': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `✏️ 写入 ${truncate(fileName, 25)}`;
+      }
+      case 'replace': {
+        const filePath = input?.file_path || '';
+        const fileName = filePath.split(/[/\\]/).pop() || filePath;
+        return `📝 替换 ${truncate(fileName, 25)}`;
+      }
+      case 'list_directory': {
+        const dirPath = input?.path || '';
+        const dirName = dirPath ? dirPath.split(/[/\\]/).pop() : '当前目录';
+        return `📂 列出 ${truncate(dirName, 20)}`;
+      }
+      case 'glob': {
+        const pattern = input?.pattern || '';
+        return `🔍 搜索 ${truncate(pattern, 20)}`;
+      }
+      case 'grep': {
+        const pattern = input?.pattern || '';
+        return `🔍 查找 "${truncate(pattern, 15)}"`;
+      }
+      case 'bash': {
+        const cmd = input?.command || '';
+        return `💻 ${truncate(cmd, 30)}`;
+      }
+      case 'web_search': {
+        const query = input?.query || '';
+        return `🌐 搜索 ${truncate(query, 20)}`;
+      }
+      case 'web_fetch': {
+        const url = input?.url || '';
+        try {
+          const urlObj = new URL(url);
+          return `📄 获取 ${urlObj.hostname}`;
+        } catch {
+          return `📄 获取网页`;
+        }
+      }
+      case 'create_skill': {
+        const name = input?.name || '';
+        return `✨ 创建技能 ${truncate(name, 15)}`;
+      }
+      default: {
+        const baseName = toolDisplayNames[toolName] || toolName;
+        return baseName;
+      }
+    }
+  }
+
+  // 截断字符串
+  function truncate(str: string, maxLen: number): string {
+    if (str.length <= maxLen) return str;
+    return str.slice(0, maxLen - 2) + '…';
+  }
+
   try {
     let iteration = 0;
     // 累积完整的 AI 响应，只在最后发送
@@ -442,6 +507,11 @@ export async function* streamChat(
 
       // 处理工具调用
       for (const tool of toolCalls) {
+        console.log('[StreamChat] 处理工具:', tool.name, JSON.stringify(tool.input || {}).substring(0, 100));
+        
+        // 当前任务的 ID（用于精确定位）
+        let currentTaskId: string | null = null;
+        
         if (tool.name === 'todo_write') {
           const todos = tool.input?.todos as TodoItem[];
           if (todos && Array.isArray(todos)) {
@@ -451,20 +521,30 @@ export async function* streamChat(
           }
         } else {
           // 自动进度追踪
-          const displayName = toolDisplayNames[tool.name] || tool.name;
-          const taskId = `auto-${Date.now()}-${autoProgress.toolCount}`;
+          const detailedTask = getDetailedTaskDescription(tool.name, tool.input);
+          currentTaskId = `auto-${Date.now()}-${autoProgress.toolCount}`;
 
+          // 清理已完成的旧任务，只保留最近的几个（最多保留3个已完成的）
+          const completedTasks = autoProgress.tasks.filter(t => t.status === 'completed');
+          if (completedTasks.length > 3) {
+            const toRemove = completedTasks.slice(0, completedTasks.length - 3);
+            autoProgress.tasks = autoProgress.tasks.filter(t => !toRemove.includes(t));
+          }
+
+          // 标记上一个任务为完成
           const lastInProgress = autoProgress.tasks.find(t => t.status === 'in_progress');
           if (lastInProgress) {
             lastInProgress.status = 'completed';
           }
 
           autoProgress.tasks.push({
-            id: taskId,
-            task: displayName,
+            id: currentTaskId,
+            task: detailedTask,
             status: 'in_progress'
           });
           autoProgress.toolCount++;
+          
+          console.log('[StreamChat] 任务列表:', autoProgress.tasks.map(t => `${t.task}:${t.status}`).join(', '));
 
           yield { type: 'todo', data: autoProgress.tasks };
         }
@@ -472,6 +552,7 @@ export async function* streamChat(
         const toolKey = `${tool.name}:${stableStringify(tool.input || {})}`;
         let result: string;
         if (toolCache.has(toolKey)) {
+          console.log('[StreamChat] 使用缓存结果:', toolKey.substring(0, 50));
           result = toolCache.get(toolKey) || '';
         } else {
           result = await executeTool(
@@ -485,11 +566,13 @@ export async function* streamChat(
           toolCache.set(toolKey, result);
         }
 
-        // 标记任务完成
-        const currentTask = autoProgress.tasks.find(t => t.status === 'in_progress');
-        if (currentTask) {
-          currentTask.status = 'completed';
-          yield { type: 'todo', data: autoProgress.tasks };
+        // 标记当前任务完成（使用 taskId 精确定位）
+        if (currentTaskId) {
+          const currentTask = autoProgress.tasks.find(t => t.id === currentTaskId);
+          if (currentTask) {
+            currentTask.status = 'completed';
+            yield { type: 'todo', data: autoProgress.tasks };
+          }
         }
 
         // 发送工具结果事件

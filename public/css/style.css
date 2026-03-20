@@ -872,33 +872,323 @@ body {
   font-weight: 600;
 }
 
+/* 工具结果容器 */
+.tool-results-container {
+  margin: 12px 0;
+}
+
+/* 文件预览内联 */
+.file-preview-inline {
+  background: #f7f5f0;
+  border: 1px solid #e6e0d6;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.file-preview-inline .fp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f0ede6;
+  border-bottom: 1px solid #e6e0d6;
+}
+
+.file-preview-inline .fp-name {
+  font-weight: 500;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.file-preview-inline .fp-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.file-preview-inline .fp-content {
+  padding: 10px 12px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #444;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  background: transparent;
+}
+
+/* 搜索结果内联 */
+.search-result-inline {
+  background: #f7f5f0;
+  border: 1px solid #e6e0d6;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  padding: 10px 12px;
+}
+
+.search-result-inline .sr-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.search-result-inline .sr-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.search-result-inline .sr-item {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #555;
+  padding: 4px 8px;
+  background: #fff;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-result-inline .sr-more {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* 写入结果内联 */
+.write-result-inline {
+  font-size: 0.85rem;
+  color: #2e7d32;
+  padding: 8px 12px;
+  background: #f1f8f1;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+}
+
+.write-result-inline code {
+  font-family: var(--mono);
+  background: #e8f5e8;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 命令执行结果内联 */
+.bash-result-inline {
+  background: #1a1a1a;
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+.bash-result-inline .bash-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.bash-result-inline .bash-icon {
+  font-size: 0.9rem;
+}
+
+.bash-result-inline.success .bash-icon {
+  color: #4caf50;
+}
+
+.bash-result-inline.error .bash-icon {
+  color: #ef5350;
+}
+
+.bash-result-inline .bash-cmd {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #b0b0b0;
+}
+
+.bash-result-inline .bash-output {
+  padding: 10px 12px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #e0e0e0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
+  background: transparent;
+}
+
+/* 任务面板 - 消息区域样式 */
+.todo-message {
+  background: linear-gradient(135deg, #f0f7f4 0%, #e8f4ef 100%);
+  border: 1px solid #c8e0d8;
+  border-radius: var(--radius-md);
+  margin: 12px auto;
+  max-width: 760px;
+  padding: 12px 16px;
+  display: none;
+  animation: todoSlideIn 0.3s ease;
+}
+
+@keyframes todoSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.todo-message .todo-header {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #2e7d6a;
+  margin-bottom: 10px;
+  letter-spacing: 0.3px;
+}
+
+.todo-message .todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.todo-message .todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.todo-message .todo-item.running {
+  border-left: 3px solid #4caf50;
+  background: #f9fdf9;
+}
+
+.todo-message .todo-item.running .todo-icon {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.todo-message .todo-item.done {
+  border-left: 3px solid #81c784;
+  opacity: 0.7;
+}
+
+.todo-message .todo-item.done .todo-text {
+  text-decoration: line-through;
+  color: #888;
+}
+
+.todo-message .todo-item.failed {
+  border-left: 3px solid #ef5350;
+  background: #fef5f5;
+}
+
+.todo-message .todo-icon {
+  font-size: 1rem;
+  width: 20px;
+  text-align: center;
+}
+
+.todo-message .todo-text {
+  flex: 1;
+  color: #333;
+}
+
 /* 任务面板 */
 .todo-panel {
+  position: fixed;
+  top: 72px;
+  right: 20px;
+  z-index: 900;
   background: #fff;
-  border-radius: var(--radius-md);
-  padding: 12px;
-  margin-top: auto;
-  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.todo-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .todo-panel.floating {
-  position: fixed;
-  top: 64px;
-  right: 16px;
-  max-height: 50vh;
-  overflow-y: auto;
-  margin-top: 0;
-  z-index: 900;
-  box-shadow: var(--shadow);
+  margin: 0;
 }
 
-.todo-panel.floating.todo-single {
-  width: auto;
-  max-width: 300px;
+.todo-single-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  font-size: 0.85rem;
+  color: #333;
+  background: #fff;
 }
 
-.no-select {
-  user-select: none;
+.todo-single-item.running {
+  background: linear-gradient(135deg, #f0f9f8 0%, #fff 100%);
+  border-left: 3px solid #0f766e;
+}
+
+.todo-single-item.done {
+  background: linear-gradient(135deg, #f0fff0 0%, #fff 100%);
+  border-left: 3px solid #22c55e;
+}
+
+.todo-single-item.failed {
+  background: linear-gradient(135deg, #fef2f2 0%, #fff 100%);
+  border-left: 3px solid #ef4444;
+}
+
+.todo-single-item .todo-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.todo-single-item .todo-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* 运行中的动画 */
+.todo-single-item.running .todo-icon {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 旧版任务面板样式（兼容） */
+.todo-panel .todo-header {
+  display: none;
+}
+
+.todo-panel .todo-list {
+  display: none;
 }
 
 .todo-item {
@@ -939,6 +1229,82 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
+}
+
+/* 工具结果展示框 */
+.tool-result-box {
+  background: #f8f8f8 !important;
+  border: 1px solid #e5e5e5 !important;
+  padding: 10px 14px !important;
+  margin: 8px auto !important;
+  max-width: 600px;
+  font-size: 0.85rem;
+  transition: opacity 0.3s ease;
+}
+
+.tool-result-header {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-result-content {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: #444;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+/* 文件预览 */
+.file-preview {
+  background: #fafafa !important;
+  border: 1px solid #e8e8e8 !important;
+  padding: 0 !important;
+  margin: 10px auto !important;
+  max-width: 700px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.file-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: #f0f0f0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.file-preview-header .file-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.file-preview-header .file-meta {
+  font-size: 0.75rem;
+  color: #888;
+  font-family: var(--mono);
+}
+
+.file-preview-content {
+  padding: 12px 14px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: #444;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fafafa;
 }
 
 /* 流式消息光标 */

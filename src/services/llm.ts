@@ -284,6 +284,7 @@ export class LLMService {
     const decoder = new TextDecoder();
     let buffer = '';
     const toolCallBuffers: Record<number, { id: string; name: string; args: string }> = {};
+    let doneSignal = false;
 
     while (true) {
       const { done, value } = await reader.read();
