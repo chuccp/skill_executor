@@ -16,8 +16,7 @@ onMounted(async () => {
   await Promise.all([
     actions.loadPresets(),
     actions.loadConversations(),
-    actions.loadSkills(),
-    actions.loadWorkdir()
+    actions.loadSkills()
   ])
 
   const lastId = localStorage.getItem('lastConversationId')

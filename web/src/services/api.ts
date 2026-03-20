@@ -1,4 +1,4 @@
-import type { Conversation, Message, Skill, Preset, Workdir } from '../types'
+import type { Conversation, Message, Skill, Preset } from '../types'
 
 const API_BASE = '/api'
 
@@ -92,33 +92,6 @@ export const api = {
 
   async reloadSkills(): Promise<void> {
     await fetch(`${API_BASE}/skills/reload`, { method: 'POST' })
-  },
-
-  // Workdir
-  async getWorkdir(): Promise<{ path: string }> {
-    const res = await fetch(`${API_BASE}/workdir`)
-    const result = await res.json()
-    return result.success ? result.data : { path: '' }
-  },
-
-  async setWorkdir(path: string): Promise<Workdir> {
-    const res = await fetch(`${API_BASE}/workdir`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path })
-    })
-    const result = await res.json()
-    if (!result.success) throw new Error(result.error)
-    // After setting, fetch the list
-    return this.listWorkdir(path)
-  },
-
-  async listWorkdir(path: string): Promise<Workdir> {
-    const url = `${API_BASE}/workdir/list?path=${encodeURIComponent(path)}`
-    const res = await fetch(url)
-    const result = await res.json()
-    if (!result.success) throw new Error(result.error)
-    return result.data
   },
 
   // Stream chat

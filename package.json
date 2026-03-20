@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "skill_executor - AI 编程助手",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');function copyDir(src,dest){if(!fs.existsSync(dest))fs.mkdirSync(dest,{recursive:true});fs.readdirSync(src).forEach(f=>{const s=path.join(src,f);const d=path.join(dest,f);if(fs.lstatSync(s).isDirectory())copyDir(s,d);else fs.copyFileSync(s,d)})}copyDir('public','dist/public')\"",
+    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');function copyDir(src,dest){if(!fs.existsSync(dest))fs.mkdirSync(dest,{recursive:true});fs.readdirSync(src).forEach(f=>{const s=path.join(src,f);const d=path.join(dest,f);if(fs.lstatSync(s).isDirectory())copyDir(s,d);else fs.copyFileSync(s,d)})}copyDir('web/public','dist/public')\"",
     "dev": "tsx watch src/index.ts",
     "dev:server": "node dist/index.js",
     "start": "node dist/index.js",

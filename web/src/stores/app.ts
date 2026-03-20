@@ -1,5 +1,5 @@
 import { reactive, computed } from 'vue'
-import type { Conversation, Message, Skill, Preset, Workdir } from '../types'
+import type { Conversation, Message, Skill, Preset } from '../types'
 import { api } from '../services/api'
 
 // Tool result type
@@ -22,7 +22,6 @@ const state = reactive({
   messages: [] as Message[],
   skills: [] as Skill[],
   presets: [] as Preset[],
-  workdir: { path: '', items: [] } as Workdir,
   isStreaming: false,
   selectedModel: localStorage.getItem('selectedModel') || '',
   selectedSkill: '',
@@ -121,24 +120,6 @@ export const actions = {
 
   async loadSkills() {
     state.skills = await api.getSkills()
-  },
-
-  async loadWorkdir() {
-    const data = await api.getWorkdir()
-    if (data.path) {
-      const listData = await api.listWorkdir(data.path)
-      state.workdir = listData
-    }
-  },
-
-  async setWorkdir(path: string) {
-    const data = await api.setWorkdir(path)
-    state.workdir = data
-  },
-
-  async listWorkdir(path: string) {
-    const data = await api.listWorkdir(path)
-    state.workdir = data
   },
 
   async createConversation() {

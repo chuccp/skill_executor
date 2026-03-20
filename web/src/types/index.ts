@@ -37,25 +37,12 @@ export interface Preset {
   }
 }
 
-export interface WorkdirItem {
-  name: string
-  type: 'directory' | 'file'
-  size?: number
-  modified?: string
-}
-
-export interface Workdir {
-  path: string
-  items: WorkdirItem[]
-}
-
 export interface AppState {
   currentConversationId: string | null
   conversations: Conversation[]
   messages: Message[]
   skills: Skill[]
   presets: Preset[]
-  workdir: Workdir
   isStreaming: boolean
   selectedModel: string
   selectedSkill: string

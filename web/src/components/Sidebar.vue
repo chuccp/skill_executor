@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useStore } from '../stores/app'
-import { formatTime, getParentPath } from '../utils'
+import { formatTime } from '../utils'
 import ConversationModal from './ConversationModal.vue'
 
 const { state, actions } = useStore()
@@ -20,18 +20,9 @@ const selectModel = (name: string) => {
   localStorage.setItem('selectedModel', name)
 }
 
-const goUpDir = async () => {
-  if (state.workdir.path) {
-    const parent = getParentPath(state.workdir.path)
-    if (parent) await actions.setWorkdir(parent)
-  }
-}
-
 const showAllConversations = () => {
   state.showConversationModal = true
 }
-
-const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
 </script>
 
 <template>
@@ -77,38 +68,6 @@ const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
       </div>
     </div>
 
-    <!-- Workdir -->
-    <div class="sidebar-section workdir-section">
-      <h3>工作目录</h3>
-      <textarea
-        class="workdir-input"
-        placeholder="输入路径..."
-        rows="1"
-        :value="state.workdir.path"
-        @keydown.enter.prevent="actions.setWorkdir(($event.target as HTMLTextAreaElement).value)"
-      ></textarea>
-      <div class="workdir-actions">
-        <button class="btn btn-primary btn-small" @click="actions.setWorkdir(state.workdir.path)">切换</button>
-        <button class="btn btn-small" @click="goUpDir">上一级</button>
-        <button class="btn btn-small" @click="actions.loadWorkdir">刷新</button>
-      </div>
-      <div class="workdir-list">
-        <div
-          v-for="item in state.workdir.items"
-          :key="item.name"
-          class="workdir-item"
-          :class="{ 'is-dir': isDir(item) }"
-          @click="isDir(item) && actions.listWorkdir(state.workdir.path + '/' + item.name)"
-        >
-          <span class="item-icon">{{ isDir(item) ? '📁' : '📄' }}</span>
-          <span class="item-name">{{ item.name }}</span>
-        </div>
-        <div v-if="!state.workdir.items.length" class="workdir-empty">
-          目录为空
-        </div>
-      </div>
-    </div>
-
     <!-- Footer -->
     <div class="sidebar-footer">
       <div class="sidebar-section">
@@ -150,6 +109,7 @@ const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
   border-right: 1px solid var(--border);
   flex-shrink: 0;
   overflow: hidden;
+  height: 100vh;
 }
 
 .sidebar-header h2 {
@@ -174,6 +134,7 @@ const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
 .sidebar-footer {
   padding-top: 12px;
   border-top: 1px solid var(--border);
+  margin-top: auto;
 }
 
 .model-section {
@@ -251,78 +212,5 @@ const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
 
 .conv-more-text {
   font-size: 0.8rem;
-}
-
-/* Workdir */
-.workdir-section {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.workdir-input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  resize: none;
-  font-family: inherit;
-  font-size: 0.8rem;
-  line-height: 1.4;
-}
-
-.workdir-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.btn-small {
-  padding: 4px 8px;
-  font-size: 0.75rem;
-}
-
-.workdir-list {
-  margin-top: 8px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.workdir-item {
-  padding: 5px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.workdir-item.is-dir:hover {
-  background: rgba(0,0,0,0.04);
-}
-
-.workdir-item:not(.is-dir) {
-  cursor: default;
-  color: var(--muted);
-}
-
-.workdir-empty {
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.85rem;
-  padding: 16px;
-}
-
-.item-icon {
-  font-size: 0.85rem;
-  flex-shrink: 0;
-}
-
-.item-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 </style>

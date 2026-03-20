@@ -45,11 +45,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "../skills/**/*",
-      "../setting/**/*",
-      "../data/**/*"
-    ]
+    "resources": []
   },
   "plugins": {}
 }

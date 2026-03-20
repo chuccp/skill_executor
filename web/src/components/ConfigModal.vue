@@ -29,7 +29,16 @@ const templates: Record<string, {name: string; providers: Provider[]}> = {
     name: 'Claude Code',
     providers: [
       { id: 'anthropic', name: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514'] },
-      { id: 'openclaw', name: 'OpenClaw', baseUrl: 'https://api.openclaw.cn/v1', models: ['claude-sonnet-4-20250514'] }
+      { id: 'volcengine', name: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
+      { id: 'dashscope', name: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
+      { id: 'tencent', name: '腾讯云 Coding Plan', baseUrl: 'https://api.tencentcloud.com/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
+      { id: '302ai', name: '302.AI', baseUrl: 'https://api.302.ai', models: ['kimi-for-coding', 'glm-for-coding', 'minimax-for-coding'] },
+      { id: 'zhipu', name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4', 'glm-4-air', 'glm-4-flash'] },
+      { id: 'moonshot', name: '月之暗面 (Kimi)', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-latest', 'kimi-plus', 'kimi-lite'] },
+      { id: 'minimax', name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', models: ['minimax-abab6.5', 'minimax-abab6'] },
+      { id: 'stepfun', name: '阶跃星辰', baseUrl: 'https://api.stepfun.com/v1', models: ['step-1v-32k', 'step-1v-8k'] },
+      { id: 'openclaw', name: 'OpenClaw', baseUrl: 'https://api.openclaw.cn/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
+      { id: 'linoapi', name: 'LinoAPI', baseUrl: 'https://linoapi.com/v1', models: ['claude-opus-4-5-20251101', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet'] }
     ]
   },
   openai: {
@@ -47,7 +56,28 @@ const templates: Record<string, {name: string; providers: Provider[]}> = {
   qwen: {
     name: '通义千问',
     providers: [
-      { id: 'dashscope', name: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-turbo', 'qwen-plus', 'qwen-max'] }
+      { id: 'dashscope-qwen', name: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-2-72b'] }
+    ]
+  },
+  opencode: {
+    name: 'OpenCode',
+    providers: [
+      { 
+        id: 'opencode', 
+        name: 'OpenCode', 
+        baseUrl: 'https://api.opencode.ai/v1', 
+        models: [
+          'gpt-4o-mini',
+          'gpt-4o',
+          'claude-3-5-sonnet',
+          'claude-3-haiku',
+          'llama-3-70b',
+          'llama-3-8b',
+          'gemini-pro',
+          'mistral-large',
+          'qwen-2-72b'
+        ] 
+      }
     ]
   },
   custom: {
