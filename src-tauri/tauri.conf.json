@@ -5,7 +5,7 @@
   "identifier": "com.skill-executor.app",
   "build": {
     "beforeDevCommand": "pnpm run dev",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:38592",
     "beforeBuildCommand": "pnpm run build",
     "frontendDist": "../dist/public"
   },

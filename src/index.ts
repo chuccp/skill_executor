@@ -124,7 +124,7 @@ app.get('/health', (req, res) => {
 setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecutor);
 
 // 启动服务器
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 38592;
 
 async function startServer() {
   // 检查并释放端口

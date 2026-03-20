@@ -38,9 +38,8 @@ npm start
 npm run dev:server
 ```
 
-默认端口：3000  
-访问地址：http://localhost:3000
-
+默认端口：38592
+访问地址：http://localhost:38592
 ### 桌面应用
 
 **Tauri（推荐）：**
@@ -266,7 +265,7 @@ PROMPT:
 ```
 ANTHROPIC_API_KEY=your_api_key
 ANTHROPIC_MODEL=claude-sonnet-4-20250514
-PORT=3000
+PORT=38592
 ```
 
 ### 预设配置 (setting/settings.json)

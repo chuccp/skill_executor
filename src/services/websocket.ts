@@ -325,23 +325,23 @@ function buildSystemPrompt(): string {
 ## 代码文件存放规则 📁
 
 **生成的代码必须放在 code 目录，按语言分类：**
-- Python 代码 → \`code/python/\` 目录
-- JavaScript 代码 → \`code/javascript/\` 目录  
-- TypeScript 代码 → \`code/typescript/\` 目录
-- Node.js 代码 → \`code/nodejs/\` 目录
-- 其他语言 → \`code/{语言名}/` 目录
+- Python 代码 → code/python/ 目录
+- JavaScript 代码 → code/javascript/ 目录  
+- TypeScript 代码 → code/typescript/ 目录
+- Node.js 代码 → code/nodejs/ 目录
+- 其他语言 → code/{语言名}/ 目录
 
 ## 多媒体文件存放规则 🎵
 
 **生成的多媒体文件必须放在 media 目录，按类型分类：**
-- 图片文件 → \`media/images/\` 目录（png, jpg, gif, webp, svg 等）
-- 音频文件 → \`media/audio/\` 目录（mp3, wav, ogg, m4a 等）
-- 视频文件 → \`media/video/\` 目录（mp4, webm, avi 等）
+- 图片文件 → media/images/ 目录（png, jpg, gif, webp, svg 等）
+- 音频文件 → media/audio/ 目录（mp3, wav, ogg, m4a 等）
+- 视频文件 → media/video/ 目录（mp4, webm, avi 等）
 
 **示例：**
-- 生成语音 → 保存到 \`media/audio/output.mp3\`
-- 生成图片 → 保存到 \`media/images/generated.png\`
-- 生成视频 → 保存到 \`media/video/result.mp4\`
+- 生成语音 → 保存到 media/audio/output.mp3
+- 生成图片 → 保存到 media/images/generated.png
+- 生成视频 → 保存到 media/video/result.mp4
 
 **注意：** 不要在项目根目录创建多媒体文件，统一放在 media 目录下！
 
