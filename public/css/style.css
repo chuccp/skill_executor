@@ -1510,7 +1510,12 @@ body {
   padding: 20px;
   flex: 1;
   max-height: none;
-  overflow-y: auto;
+  overflow: visible;
+}
+
+/* 技能管理模态框的 body 不滚动 */
+.modal-body:has(.skill-manager) {
+  overflow: hidden;
 }
 
 .form-group {
@@ -1588,6 +1593,7 @@ body {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 12px;
+  height: 350px;
 }
 
 .skill-list-panel,
@@ -1596,6 +1602,9 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .skill-list-title {
@@ -1604,12 +1613,28 @@ body {
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
+  flex-shrink: 0;
 }
 
 .skill-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.skill-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.skill-list::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.skill-list::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
 }
 
 .skill-item {
@@ -1648,6 +1673,21 @@ body {
   font-size: 0.85rem;
   color: var(--text);
   line-height: 1.6;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.skill-detail::-webkit-scrollbar {
+  width: 5px;
+}
+
+.skill-detail::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 3px;
+}
+
+.skill-detail::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
 }
 
 .skill-title {
@@ -1923,4 +1963,86 @@ body {
   color: #c62828;
   background: #f5f5f5;
   opacity: 1;
+}
+
+/* 思考过程面板（显示在消息内部） */
+.message .thinking-panel {
+  background: linear-gradient(135deg, #fef7ed 0%, #fff7f0 100%);
+  border: 1px solid #f5e6d8;
+  border-radius: 8px;
+  margin: 0 0 10px 0;
+  max-height: 120px;
+  display: none;
+  flex-direction: column;
+  font-size: 0.75rem;
+  color: #8b6914;
+  overflow: hidden;
+}
+
+.message .thinking-panel.visible {
+  display: flex;
+}
+
+.message .thinking-panel.collapsed .thinking-content {
+  display: none;
+}
+
+.message .thinking-panel.collapsed {
+  max-height: 28px;
+}
+
+.message .thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: #fef3e2;
+  border-bottom: 1px solid #f5e6d8;
+  cursor: pointer;
+  user-select: none;
+}
+
+.message .thinking-icon {
+  font-size: 0.85rem;
+}
+
+.message .thinking-title {
+  font-weight: 500;
+  color: #b45309;
+  font-size: 0.75rem;
+}
+
+.message .thinking-toggle {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #b45309;
+  cursor: pointer;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  transition: transform 0.2s;
+}
+
+.message .thinking-panel.collapsed .thinking-toggle {
+  transform: rotate(-90deg);
+}
+
+.message .thinking-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #a16207;
+  max-height: 90px;
+}
+
+.message .thinking-content::-webkit-scrollbar {
+  width: 3px;
+}
+
+.message .thinking-content::-webkit-scrollbar-thumb {
+  background: #e5d4b3;
+  border-radius: 2px;
 }

@@ -477,6 +477,8 @@ export class LLMService {
 
     // 用于聚合工具调用和追踪当前文本块
     let currentToolCall: { id: string; name: string; inputJson: string, yielded: boolean } | null = null;
+    // 追踪当前是否在 thinking 块中
+    let isThinkingBlock: boolean = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -508,6 +510,10 @@ export class LLMService {
                   yielded: false
                 };
               }
+              // 检测 thinking 类型块（阿里云等模型支持）
+              if (parsed.content_block.type === 'thinking') {
+                isThinkingBlock = true;
+              }
             }
 
             // 处理 content_block_delta 事件
@@ -523,6 +529,10 @@ export class LLMService {
               // 兼容没有 type 但有 text 的情况
               else if (parsed.delta.text && !parsed.delta.type) {
                 yield { type: 'text', content: parsed.delta.text };
+              }
+              // 处理 thinking_delta（思考过程）
+              if (parsed.delta.type === 'thinking_delta' && parsed.delta.thinking) {
+                yield { type: 'thinking', content: parsed.delta.thinking };
               }
               // 处理 input_json_delta（工具输入）
               if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json) {
@@ -544,6 +554,7 @@ export class LLMService {
                 }
               }
               currentToolCall = null;
+              isThinkingBlock = false;
             }
           } catch (e) {
             // 忽略解析错误

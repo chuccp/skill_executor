@@ -2,9 +2,101 @@
  * 流式输出处理模块
  */
 
+// 思考过程相关变量
+var thinkingContent = '';
+var thinkingPanelVisible = false;
+
+// 显示思考面板（在当前 streaming 消息内）
+function showThinkingPanel() {
+  if (thinkingPanelVisible) return;
+  thinkingPanelVisible = true;
+  
+  // 找到当前 streaming 的消息
+  var streamingMsg = window.$('messages').querySelector('.streaming');
+  if (!streamingMsg) return;
+  
+  // 检查是否已有思考面板
+  var existingPanel = streamingMsg.querySelector('.thinking-panel');
+  if (existingPanel) {
+    existingPanel.classList.add('visible');
+    return;
+  }
+  
+  // 创建思考面板并插入到 content 之前
+  var panel = document.createElement('div');
+  panel.className = 'thinking-panel visible';
+  panel.id = 'thinking-panel-current';
+  panel.innerHTML = 
+    '<div class="thinking-header">' +
+      '<span class="thinking-icon">💭</span>' +
+      '<span class="thinking-title">思考过程</span>' +
+      '<button class="thinking-toggle" title="展开/折叠">▼</button>' +
+    '</div>' +
+    '<div class="thinking-content"></div>';
+  
+  // 插入到 role 之后，content 之前
+  var roleEl = streamingMsg.querySelector('.role');
+  if (roleEl && roleEl.nextSibling) {
+    streamingMsg.insertBefore(panel, roleEl.nextSibling);
+  } else {
+    streamingMsg.insertBefore(panel, streamingMsg.firstChild.nextSibling);
+  }
+  
+  // 绑定折叠事件
+  var toggleBtn = panel.querySelector('.thinking-toggle');
+  var header = panel.querySelector('.thinking-header');
+  if (toggleBtn) {
+    toggleBtn.onclick = function(e) {
+      e.stopPropagation();
+      panel.classList.toggle('collapsed');
+    };
+  }
+  if (header) {
+    header.onclick = function() {
+      panel.classList.toggle('collapsed');
+    };
+  }
+  
+  window.scrollToBottom();
+}
+
+// 隐藏思考面板
+function hideThinkingPanel() {
+  thinkingPanelVisible = false;
+  thinkingContent = '';
+  
+  // 找到并折叠当前思考面板
+  var panel = window.$('messages').querySelector('.streaming .thinking-panel');
+  if (panel) {
+    panel.classList.add('collapsed');
+  }
+}
+
+// 追加思考内容
+function appendThinking(text) {
+  showThinkingPanel();
+  thinkingContent += text;
+  
+  var panel = window.$('messages').querySelector('.streaming .thinking-panel');
+  if (panel) {
+    var content = panel.querySelector('.thinking-content');
+    if (content) {
+      content.textContent = thinkingContent;
+      // 自动滚动到底部
+      content.scrollTop = content.scrollHeight;
+    }
+  }
+  window.scrollToBottom();
+}
+// 导出到全局供 websocket.js 使用
+window.appendThinking = appendThinking;
+
 window.startStream = function() {
   window.state.isStreaming = true;
   updateSendButton();
+  thinkingContent = '';
+  thinkingPanelVisible = false;
+  
   const div = document.createElement('div');
   div.className = 'message assistant streaming';
   div.innerHTML = '<div class="role">AI</div><div class="content"><span class="typing"></span></div>';
@@ -32,6 +124,11 @@ window.finishStream = function() {
     const contentEl = el.querySelector('.content');
     if (contentEl) {
       contentEl.innerHTML = formatCodeBlocks(contentEl.textContent);
+    }
+    // 折叠思考面板（但不清除内容，用户可以查看）
+    var thinkingPanel = el.querySelector('.thinking-panel');
+    if (thinkingPanel) {
+      thinkingPanel.classList.add('collapsed');
     }
   }
   hideProgressPanel();
@@ -228,6 +325,9 @@ function handleSSEEvent(eventType, dataStr) {
       case 'text':
         appendStreamText(data);
         break;
+      case 'thinking':
+        appendThinking(data);
+        break;
       case 'progress':
         showProgressIndicator(data);
         break;
@@ -257,6 +357,17 @@ function handleToolResult(data) {
   var name = data.name;
   var result = data.result || '';
   
+  // 检查是否是 MEDIA_INFO 格式（play_media 返回）
+  if (result.indexOf('MEDIA_INFO:') === 0) {
+    try {
+      var mediaInfo = JSON.parse(result.substring(11));
+      showMediaResultInStream(mediaInfo.type, mediaInfo.path, mediaInfo.name, mediaInfo.size);
+    } catch (e) {
+      console.error('解析媒体信息失败:', e);
+    }
+    return;
+  }
+  
   if (name === 'read_file') {
     // 解析文件路径和内容
     var match = result.match(/文件内容 \((.+?)\):/);
@@ -266,6 +377,13 @@ function handleToolResult(data) {
     
     if (filePath && content) {
       showFileContentInStream(filePath, content);
+    }
+  } else if (name === 'get_files') {
+    // 解析文件列表结果
+    var filesMatch = result.match(/中的文件 \((\d+) 个\):\n([\s\S]*)/);
+    if (filesMatch) {
+      var fileList = filesMatch[2].trim().split('\n');
+      showFilesResultInStream(fileList.slice(0, 10), parseInt(filesMatch[1]));
     }
   } else if (name === 'glob') {
     // 解析搜索结果
@@ -308,6 +426,29 @@ function handleToolResult(data) {
       showBashResultInStream(cmd, output, success);
     }
   }
+}
+
+// 显示文件列表结果
+function showFilesResultInStream(files, total) {
+  var div = document.createElement('div');
+  div.className = 'files-result-inline';
+  
+  var html = '<div class="sr-title">📁 文件列表 (' + total + ' 个)</div><div class="sr-items">';
+  
+  files.forEach(function(file) {
+    var isDir = file.indexOf('[DIR]') === 0;
+    var icon = isDir ? '📁' : '📄';
+    var name = file.replace(/\[DIR\]|\[FILE\]|\[\.\w+\]/g, '').trim();
+    html += '<div class="sr-item">' + icon + ' ' + window.escapeHtml(name) + '</div>';
+  });
+  
+  if (total > files.length) {
+    html += '<div class="sr-more">+ 还有 ' + (total - files.length) + ' 个</div>';
+  }
+  
+  html += '</div>';
+  div.innerHTML = html;
+  appendToStreamingMessage(div);
 }
 
 // 在流式消息中显示文件内容
@@ -361,27 +502,36 @@ function showWriteResultInStream(filePath) {
 }
 
 // 在流式消息中显示多媒体结果
-function showMediaResultInStream(type, filePath) {
-  var fileName = filePath.split(/[/\\]/).pop() || filePath;
+function showMediaResultInStream(type, filePath, optName, optSize) {
+  var fileName = optName || (filePath.split(/[/\\]/).pop() || filePath);
+  var sizeInfo = optSize ? ' (' + optSize + ')' : '';
   var mediaPath = filePath.replace(/\\/g, '/');
-  var match = mediaPath.match(/media\/(.+)/);
-  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  
+  // 构建可访问的 URL
+  var url;
+  var mediaMatch = mediaPath.match(/media\/(.+)/);
+  if (mediaMatch) {
+    url = '/media/' + mediaMatch[1];
+  } else {
+    // 非 media 目录的文件，使用 API 代理
+    url = '/api/file?path=' + encodeURIComponent(filePath);
+  }
   
   var div = document.createElement('div');
   div.className = 'media-result-inline';
   
   if (type === 'image') {
     div.innerHTML = 
-      '<div class="media-label">🖼️ 图片: ' + window.escapeHtml(fileName) + '</div>' +
+      '<div class="media-label">🖼️ 图片: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
       '<img src="' + url + '" class="media-thumb" onclick="window.open(\'' + url + '\', \'_blank\')">';
   } else if (type === 'audio') {
     div.innerHTML = 
-      '<div class="media-label">🎵 音频: ' + window.escapeHtml(fileName) + '</div>' +
+      '<div class="media-label">🎵 音频: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
       '<audio controls src="' + url + '"></audio>';
   } else if (type === 'video') {
     div.innerHTML = 
-      '<div class="media-label">🎬 视频: ' + window.escapeHtml(fileName) + '</div>' +
-      '<video controls src="' + url + '"></video>';
+      '<div class="media-label">🎬 视频: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
+      '<video controls playsinline src="' + url + '" style="max-width: 100%; border-radius: 8px;"></video>';
   }
   
   appendToStreamingMessage(div);

@@ -40,3 +40,5 @@ temp/
 /src-tauri/target
 /code
 *.wav
+/media
+*.bat

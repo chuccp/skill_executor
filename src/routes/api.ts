@@ -313,6 +313,154 @@ export function createApiRouter(
     res.json({ success: true, data: { name: preset.name, model: preset.env.ANTHROPIC_MODEL } });
   });
 
+  // ========== 文件管理 ==========
+
+  // 获取指定目录的文件列表
+  router.get('/files', (req: Request, res: Response) => {
+    const dirPath = req.query.path as string;
+    const filter = req.query.filter as string; // 可选的文件类型过滤，如 'audio', 'video', 'image'
+
+    if (!dirPath) {
+      res.json({ success: false, error: 'Missing path parameter' });
+      return;
+    }
+
+    // 解析路径（支持相对路径和绝对路径）
+    const absolutePath = path.isAbsolute(dirPath) ? dirPath : path.join(getWorkingDir(), dirPath);
+
+    // 安全检查：确保路径存在
+    if (!fs.existsSync(absolutePath)) {
+      res.json({ success: false, error: 'Directory not found' });
+      return;
+    }
+
+    // 安全检查：确保是目录
+    if (!fs.statSync(absolutePath).isDirectory()) {
+      res.json({ success: false, error: 'Path is not a directory' });
+      return;
+    }
+
+    // 文件类型扩展名映射
+    const filterExtensions: Record<string, string[]> = {
+      audio: ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'],
+      video: ['.mp4', '.webm', '.avi', '.mov', '.mkv', '.wmv', '.flv'],
+      image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'],
+      document: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md'],
+      code: ['.js', '.ts', '.py', '.java', '.c', '.cpp', '.h', '.css', '.html', '.json', '.xml']
+    };
+
+    try {
+      const files = fs.readdirSync(absolutePath);
+      const fileList: Array<{
+        name: string;
+        path: string;
+        size: number;
+        isDirectory: boolean;
+        extension: string;
+        modified: string;
+      }> = [];
+
+      for (const file of files) {
+        const filePath = path.join(absolutePath, file);
+        const stat = fs.statSync(filePath);
+        const ext = path.extname(file).toLowerCase();
+
+        // 如果指定了过滤器，检查文件扩展名
+        if (filter && filterExtensions[filter]) {
+          // 如果是目录，也要包含
+          if (!stat.isDirectory() && !filterExtensions[filter].includes(ext)) {
+            continue;
+          }
+        }
+
+        fileList.push({
+          name: file,
+          path: filePath.replace(/\\/g, '/'),
+          size: stat.size,
+          isDirectory: stat.isDirectory(),
+          extension: ext,
+          modified: stat.mtime.toISOString()
+        });
+      }
+
+      // 排序：目录在前，然后按名称排序
+      fileList.sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) {
+          return a.isDirectory ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
+      res.json({
+        success: true,
+        data: {
+          path: absolutePath.replace(/\\/g, '/'),
+          files: fileList
+        }
+      });
+    } catch (error) {
+      res.json({ success: false, error: 'Failed to read directory' });
+    }
+  });
+
+  // 文件代理 API - 用于访问非 media 目录的文件
+  router.get('/file', (req: Request, res: Response) => {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      res.status(400).send('Missing path parameter');
+      return;
+    }
+
+    // 解析路径
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(getWorkingDir(), filePath);
+
+    // 安全检查
+    if (!fs.existsSync(absolutePath)) {
+      res.status(404).send('File not found');
+      return;
+    }
+
+    if (!fs.statSync(absolutePath).isFile()) {
+      res.status(400).send('Path is not a file');
+      return;
+    }
+
+    // 获取文件扩展名并设置 MIME 类型
+    const ext = path.extname(absolutePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4',
+      '.aac': 'audio/aac',
+      '.flac': 'audio/flac',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.avi': 'video/x-msvideo',
+      '.mov': 'video/quicktime',
+      '.mkv': 'video/x-matroska',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.bmp': 'image/bmp'
+    };
+
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    res.setHeader('Content-Type', mimeType);
+
+    // 流式传输文件
+    const fileStream = fs.createReadStream(absolutePath);
+    fileStream.pipe(res);
+
+    fileStream.on('error', () => {
+      res.status(500).send('Failed to read file');
+    });
+  });
+
   return router;
 }
 

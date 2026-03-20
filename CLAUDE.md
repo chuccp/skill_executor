@@ -22,7 +22,7 @@ npm run tauri:dev    # Development
 npm run tauri:build  # Production build
 ```
 
-The server runs on port 3000 by default. On startup, it automatically kills any process occupying that port.
+The server runs on port 38592 by default. On startup, it automatically kills any process occupying that port.
 
 ## Architecture Overview
 

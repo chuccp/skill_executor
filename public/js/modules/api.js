@@ -192,3 +192,18 @@ window.selectConversation = async function(id, moveToTop) {
     if (window.updateContextBar) window.updateContextBar();
   }
 };
+
+// 获取指定目录的文件列表
+window.getFiles = async function(dirPath, filter) {
+  var url = window.API_BASE + '/files?path=' + encodeURIComponent(dirPath);
+  if (filter) {
+    url += '&filter=' + encodeURIComponent(filter);
+  }
+  var res = await fetch(url);
+  var result = await res.json();
+  if (result.success) {
+    return result.data;
+  } else {
+    throw new Error(result.error || '获取文件列表失败');
+  }
+};

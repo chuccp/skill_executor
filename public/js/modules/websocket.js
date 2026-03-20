@@ -22,6 +22,12 @@ function handleWSMessage(data) {
       // 使用 stream 模块的函数
       appendStreamText(data.content);
       break;
+    case 'thinking':
+      // 处理思考过程
+      if (window.appendThinking) {
+        window.appendThinking(data.content);
+      }
+      break;
     case 'done':
       window.clearTodoPanel();
       window.finishStream();
@@ -77,6 +83,11 @@ function handleWSMessage(data) {
       break;
     case 'file_replaced':
       window.showInfo('📝 文件已替换: ' + data.path + ' (' + data.matches + ' 处)');
+      break;
+
+    case 'play_media':
+      // 在聊天界面播放媒体
+      showMediaInChat(data.mediaType, data.path, data.name, data.size);
       break;
 
     case 'directory_list':
@@ -380,7 +391,7 @@ function showImageResult(filePath, fileName) {
   // 转换文件路径为 URL
   var mediaPath = filePath.replace(/\\/g, '/');
   var match = mediaPath.match(/media\/(.+)/);
-  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  var url = match ? '/media/' + match[1] : '/api/file?path=' + encodeURIComponent(filePath);
   
   var div = document.createElement('div');
   div.className = 'message assistant media-result';
@@ -398,7 +409,7 @@ function showImageResult(filePath, fileName) {
 function showAudioResult(filePath, fileName) {
   var mediaPath = filePath.replace(/\\/g, '/');
   var match = mediaPath.match(/media\/(.+)/);
-  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  var url = match ? '/media/' + match[1] : '/api/file?path=' + encodeURIComponent(filePath);
   
   var div = document.createElement('div');
   div.className = 'message assistant media-result';
@@ -416,16 +427,64 @@ function showAudioResult(filePath, fileName) {
 function showVideoResult(filePath, fileName) {
   var mediaPath = filePath.replace(/\\/g, '/');
   var match = mediaPath.match(/media\/(.+)/);
-  var url = match ? '/media/' + match[1] : '/media/' + fileName;
+  var url = match ? '/media/' + match[1] : '/api/file?path=' + encodeURIComponent(filePath);
   
   var div = document.createElement('div');
   div.className = 'message assistant media-result';
   div.innerHTML = 
     '<div class="media-header">🎬 视频: ' + window.escapeHtml(fileName) + '</div>' +
     '<div class="media-content">' +
-      '<video controls class="media-video" src="' + url + '"></video>' +
+      '<video controls playsinline class="media-video" src="' + url + '"></video>' +
     '</div>';
   
   window.$('messages').appendChild(div);
   window.scrollToBottom();
+}
+
+// 在聊天界面显示媒体（play_media 工具调用）
+function showMediaInChat(mediaType, filePath, fileName, fileSize) {
+  var mediaPath = filePath.replace(/\\/g, '/');
+  var match = mediaPath.match(/media\/(.+)/);
+  var url = match ? '/media/' + match[1] : '/api/file?path=' + encodeURIComponent(filePath);
+  var sizeInfo = fileSize ? ' (' + fileSize + ')' : '';
+  
+  var div = document.createElement('div');
+  div.className = 'message assistant media-result';
+  
+  if (mediaType === 'audio') {
+    div.innerHTML = 
+      '<div class="media-header">🎵 音频: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
+      '<div class="media-content">' +
+        '<audio controls class="media-audio" src="' + url + '"></audio>' +
+      '</div>';
+  } else if (mediaType === 'video') {
+    div.innerHTML = 
+      '<div class="media-header">🎬 视频: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
+      '<div class="media-content">' +
+        '<video controls playsinline class="media-video" src="' + url + '"></video>' +
+      '</div>';
+  } else if (mediaType === 'image') {
+    div.innerHTML = 
+      '<div class="media-header">🖼️ 图片: ' + window.escapeHtml(fileName) + sizeInfo + '</div>' +
+      '<div class="media-content">' +
+        '<img src="' + url + '" alt="' + window.escapeHtml(fileName) + '" class="media-image" onclick="window.open(\'' + url + '\', \'_blank\')">' +
+      '</div>';
+  }
+  
+  window.$('messages').appendChild(div);
+  window.scrollToBottom();
+  
+  // 视频自动播放（在添加到 DOM 后）
+  if (mediaType === 'video') {
+    var video = div.querySelector('video');
+    if (video) {
+      video.play().catch(function() {
+        // 自动播放被阻止，静音后重试
+        video.muted = true;
+        video.play().catch(function() {
+          // 仍然无法播放，用户需要手动点击
+        });
+      });
+    }
+  }
 }

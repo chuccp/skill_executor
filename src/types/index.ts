@@ -47,7 +47,7 @@ export interface ApiResponse<T> {
 
 // 流式响应事件
 export interface StreamEvent {
-  type: 'text' | 'tool_use' | 'error' | 'done';
+  type: 'text' | 'thinking' | 'tool_use' | 'error' | 'done';
   content?: string;
   toolName?: string;
   toolId?: string;

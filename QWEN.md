@@ -38,9 +38,8 @@ npm start
 npm run dev:server
 ```
 
-**Default Port**: 3000  
-**Access URL**: http://localhost:3000
-
+**Default Port**: 38592
+**Access URL**: http://localhost:38592
 ### Desktop Application (Tauri)
 
 ```bash
@@ -250,7 +249,7 @@ Your system prompt content...
 ```env
 ANTHROPIC_API_KEY=your_api_key
 ANTHROPIC_MODEL=claude-sonnet-4-20250514
-PORT=3000
+PORT=38592
 ```
 
 ### Preset Configuration (setting/settings.json)

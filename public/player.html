@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>媒体播放器</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+        
+        .player-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 20px 0 30px;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .path-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .path-bar input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #333;
+            border-radius: 10px;
+            background: #0d0d1a;
+            color: #fff;
+            font-size: 14px;
+        }
+        
+        .path-bar input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .path-bar button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .path-bar button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #333;
+            border-radius: 20px;
+            background: transparent;
+            color: #888;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn:hover {
+            border-color: #667eea;
+            color: #667eea;
+        }
+        
+        .filter-btn.active {
+            border-color: #667eea;
+            background: #667eea;
+            color: #fff;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 20px;
+        }
+        
+        @media (max-width: 700px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .file-list {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 16px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .file-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .file-list::-webkit-scrollbar-thumb {
+            background: #333;
+            border-radius: 3px;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            gap: 12px;
+        }
+        
+        .file-item:hover {
+            background: rgba(102, 126, 234, 0.2);
+        }
+        
+        .file-item.playing {
+            background: rgba(102, 126, 234, 0.3);
+            border: 1px solid #667eea;
+        }
+        
+        .file-icon {
+            font-size: 24px;
+            width: 36px;
+            text-align: center;
+        }
+        
+        .file-info {
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .file-name {
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+        
+        .file-meta {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .player-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 20px;
+            position: sticky;
+            top: 20px;
+        }
+        
+        .now-playing {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .album-art {
+            width: 150px;
+            height: 150px;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0 auto 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+        
+        .track-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .track-artist {
+            font-size: 13px;
+            color: #888;
+        }
+        
+        .media-player {
+            width: 100%;
+            margin-top: 16px;
+            border-radius: 8px;
+        }
+        
+        audio::-webkit-media-controls-panel,
+        video::-webkit-media-controls-panel {
+            background: #1a1a2e;
+        }
+        
+        .playlist-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #333;
+        }
+        
+        .playlist-header h3 {
+            font-size: 14px;
+            color: #888;
+        }
+        
+        .file-count {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+        
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #888;
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 16px;
+            transition: color 0.2s;
+        }
+        
+        .back-link:hover {
+            color: #667eea;
+        }
+        
+        .dir-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            gap: 12px;
+        }
+        
+        .dir-item:hover {
+            background: rgba(102, 126, 234, 0.15);
+        }
+        
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        
+        .breadcrumb-item {
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb-item:hover {
+            color: #667eea;
+        }
+        
+        .breadcrumb-sep {
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <a href="/" class="back-link">← 返回主页</a>
+        
+        <div class="header">
+            <h1>🎵 媒体播放器</h1>
+        </div>
+        
+        <div class="path-bar">
+            <input type="text" id="pathInput" placeholder="输入目录路径，如 media/audio" value="media/audio">
+            <button onclick="loadFiles()">浏览</button>
+        </div>
+        
+        <div class="filter-bar">
+            <button class="filter-btn active" data-filter="" onclick="setFilter('')">全部</button>
+            <button class="filter-btn" data-filter="audio" onclick="setFilter('audio')">🎵 音频</button>
+            <button class="filter-btn" data-filter="video" onclick="setFilter('video')">🎬 视频</button>
+            <button class="filter-btn" data-filter="image" onclick="setFilter('image')">🖼️ 图片</button>
+        </div>
+        
+        <div class="main-content">
+            <div class="file-list" id="fileList">
+                <div class="empty-state">
+                    <div class="icon">📂</div>
+                    <div>点击"浏览"加载文件</div>
+                </div>
+            </div>
+            
+            <div class="player-panel">
+                <div class="now-playing">
+                    <div class="album-art" id="albumArt">🎵</div>
+                    <div class="track-title" id="trackTitle">未选择</div>
+                    <div class="track-artist" id="trackArtist">选择一个文件播放</div>
+                </div>
+                <div id="playerContainer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let currentPath = '';
+        let currentFilter = '';
+        let currentFile = null;
+        let files = [];
+        
+        function setFilter(filter) {
+            currentFilter = filter;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            loadFiles();
+        }
+        
+        async function loadFiles() {
+            const pathInput = document.getElementById('pathInput');
+            const path = pathInput.value.trim();
+            if (!path) return;
+            
+            currentPath = path;
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><div>加载中...</div></div>';
+            
+            try {
+                const url = `${API_BASE}/api/files?path=${encodeURIComponent(path)}${currentFilter ? '&filter=' + currentFilter : ''}`;
+                const res = await fetch(url);
+                const result = await res.json();
+                
+                if (!result.success) {
+                    fileList.innerHTML = `<div class="empty-state"><div class="icon">❌</div><div>${result.error}</div></div>`;
+                    return;
+                }
+                
+                files = result.data.files || [];
+                renderFiles();
+            } catch (e) {
+                fileList.innerHTML = `<div class="empty-state"><div class="icon">❌</div><div>加载失败: ${e.message}</div></div>`;
+            }
+        }
+        
+        function renderFiles() {
+            const fileList = document.getElementById('fileList');
+            
+            if (files.length === 0) {
+                fileList.innerHTML = '<div class="empty-state"><div class="icon">📭</div><div>目录为空</div></div>';
+                return;
+            }
+            
+            const dirs = files.filter(f => f.isDirectory);
+            const fileItems = files.filter(f => !f.isDirectory);
+            
+            let html = '<div class="playlist-header"><h3>📁 文件列表</h3><span class="file-count">' + fileItems.length + ' 个文件</span></div>';
+            
+            // 显示目录
+            dirs.forEach(dir => {
+                html += `
+                    <div class="dir-item" onclick="enterDir('${dir.name}')">
+                        <div class="file-icon">📁</div>
+                        <div class="file-info">
+                            <div class="file-name">${escapeHtml(dir.name)}</div>
+                            <div class="file-meta">目录</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            // 显示文件
+            fileItems.forEach((file, index) => {
+                const icon = getFileIcon(file.extension);
+                html += `
+                    <div class="file-item" id="file-${index}" onclick="playFile(${index})">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name">${escapeHtml(file.name)}</div>
+                            <div class="file-meta">${formatSize(file.size)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            fileList.innerHTML = html;
+        }
+        
+        function enterDir(dirName) {
+            const pathInput = document.getElementById('pathInput');
+            pathInput.value = currentPath + '/' + dirName;
+            loadFiles();
+        }
+        
+        function getFileIcon(ext) {
+            const icons = {
+                '.mp3': '🎵', '.wav': '🎵', '.ogg': '🎵', '.m4a': '🎵', '.flac': '🎵', '.aac': '🎵',
+                '.mp4': '🎬', '.webm': '🎬', '.avi': '🎬', '.mov': '🎬', '.mkv': '🎬',
+                '.jpg': '🖼️', '.jpeg': '🖼️', '.png': '🖼️', '.gif': '🖼️', '.webp': '🖼️', '.svg': '🖼️'
+            };
+            return icons[ext.toLowerCase()] || '📄';
+        }
+        
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            return (bytes / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+        }
+        
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        
+        function playFile(index) {
+            const file = files.filter(f => !f.isDirectory)[index];
+            if (!file) return;
+            
+            currentFile = file;
+            
+            // 更新高亮
+            document.querySelectorAll('.file-item').forEach(item => item.classList.remove('playing'));
+            document.getElementById('file-' + index)?.classList.add('playing');
+            
+            // 更新播放信息
+            document.getElementById('trackTitle').textContent = file.name;
+            document.getElementById('trackArtist').textContent = formatSize(file.size);
+            
+            const ext = file.extension.toLowerCase();
+            const isAudio = ['.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac'].includes(ext);
+            const isVideo = ['.mp4', '.webm', '.avi', '.mov', '.mkv'].includes(ext);
+            const isImage = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'].includes(ext);
+            
+            const playerContainer = document.getElementById('playerContainer');
+            const albumArt = document.getElementById('albumArt');
+            
+            // 获取可访问的 URL
+            const url = getAccessibleUrl(file.path);
+            
+            if (isAudio) {
+                albumArt.innerHTML = '🎵';
+                playerContainer.innerHTML = `<audio class="media-player" controls autoplay src="${url}"></audio>`;
+            } else if (isVideo) {
+                albumArt.innerHTML = '🎬';
+                playerContainer.innerHTML = `<video class="media-player" controls autoplay src="${url}" style="max-width: 100%; border-radius: 8px;"></video>`;
+            } else if (isImage) {
+                albumArt.innerHTML = `<img src="${url}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 16px;" alt="${escapeHtml(file.name)}">`;
+                playerContainer.innerHTML = `<div style="text-align: center; margin-top: 16px;"><a href="${url}" target="_blank" style="color: #667eea; text-decoration: none;">🔍 查看原图</a></div>`;
+            }
+        }
+        
+        function getAccessibleUrl(filePath) {
+            // 如果是 media 目录下的文件，使用 /media 路由
+            const mediaMatch = filePath.match(/media\/(.+)$/i);
+            if (mediaMatch) {
+                return `${API_BASE}/media/${mediaMatch[1]}`;
+            }
+            // 其他文件尝试直接访问（需要后端配置）
+            return `${API_BASE}/api/file?path=${encodeURIComponent(filePath)}`;
+        }
+        
+        // 页面加载时自动加载默认目录
+        loadFiles();
+    </script>
+</body>
+</html>
