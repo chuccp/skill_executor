@@ -312,7 +312,18 @@ export class ConversationManager {
     const data = this.conversations.get(conversationId);
     if (!data || messageIndex < 0 || messageIndex >= data.messages.length) return false;
 
-    const msg = data.messages[messageIndex];
+    let msg = data.messages[messageIndex];
+    // If index points to a non-assistant message (e.g. tool result user entries),
+    // fallback to the latest assistant message so UI extras persist correctly.
+    if (msg.role !== 'assistant') {
+      for (let i = data.messages.length - 1; i >= 0; i -= 1) {
+        if (data.messages[i].role === 'assistant') {
+          msg = data.messages[i];
+          break;
+        }
+      }
+    }
+    if (msg.role !== 'assistant') return false;
     if (extra.thinking) msg.thinking = extra.thinking;
     if (extra.toolResults) msg.toolResults = extra.toolResults;
 
