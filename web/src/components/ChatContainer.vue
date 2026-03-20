@@ -18,10 +18,13 @@ const scrollToBottom = () => {
 // Watch for various changes that should trigger scroll
 watch(() => state.messages.length, scrollToBottom)
 watch(() => state.messages[state.messages.length - 1]?.content, scrollToBottom)
-watch(() => state.thinkingContent, scrollToBottom)
-watch(() => state.currentToolResults.length, scrollToBottom)
+watch(() => state.thinkingContent, scrollToBottom, { deep: true })
+watch(() => state.currentToolResults, scrollToBottom, { deep: true })
 watch(() => state.progressText, scrollToBottom)
-watch(() => state.todos.length, scrollToBottom)
+watch(() => state.todos, scrollToBottom, { deep: true })
+
+// Also scroll on streaming status changes
+watch(() => state.isStreaming, scrollToBottom)
 </script>
 
 <template>

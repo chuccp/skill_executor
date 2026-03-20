@@ -73,6 +73,16 @@ export const api = {
     return result.success
   },
 
+  async updateMessage(conversationId: string, messageIndex: number, data: { thinking?: string; toolResults?: any[] }): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages/${messageIndex}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    const result = await res.json()
+    return result.success
+  },
+
   // Skills
   async getSkills(): Promise<Skill[]> {
     const res = await fetch(`${API_BASE}/skills`)

@@ -15,11 +15,19 @@ export interface Skill {
 // 消息角色
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+// 工具结果展示
+export interface ToolResultDisplay {
+  type: 'file' | 'files' | 'search' | 'bash' | 'media' | 'write';
+  data: any;
+}
+
 // 聊天消息
 export interface ChatMessage {
   role: MessageRole;
   content: string;
   timestamp: Date;
+  thinking?: string;
+  toolResults?: ToolResultDisplay[];
 }
 
 // 会话

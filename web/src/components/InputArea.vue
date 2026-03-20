@@ -65,15 +65,10 @@ const sendMessage = async () => {
   }
 }
 
-// Build media URL from file path
+// Build media URL from file path - always use API proxy for better compatibility
 const buildMediaUrl = (filePath: string): string => {
   if (!filePath) return ''
-  const mediaPath = filePath.replace(/\\/g, '/')
-  const mediaMatch = mediaPath.match(/media\/(.+)/)
-  if (mediaMatch) {
-    return '/media/' + mediaMatch[1]
-  }
-  // Non-media directory file, use API proxy
+  // Always use API proxy to read files
   return '/api/file?path=' + encodeURIComponent(filePath)
 }
 

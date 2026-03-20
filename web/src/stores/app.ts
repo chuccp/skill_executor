@@ -175,12 +175,21 @@ export const actions = {
   finishStream() {
     // Save thinking and tool results to the last message
     const lastMsg = state.messages[state.messages.length - 1]
+    const msgIndex = state.messages.length - 1
     if (lastMsg && lastMsg.role === 'assistant') {
       if (state.thinkingContent) {
         lastMsg.thinking = state.thinkingContent
       }
       if (state.currentToolResults.length) {
         lastMsg.toolResults = state.currentToolResults
+      }
+
+      // Save to backend
+      if (state.currentConversationId && (state.thinkingContent || state.currentToolResults.length)) {
+        api.updateMessage(state.currentConversationId, msgIndex, {
+          thinking: state.thinkingContent || undefined,
+          toolResults: state.currentToolResults.length ? state.currentToolResults : undefined
+        }).catch(err => console.error('Failed to save message extras:', err))
       }
     }
 

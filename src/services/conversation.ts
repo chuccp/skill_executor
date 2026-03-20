@@ -272,7 +272,7 @@ export class ConversationManager {
   // ========== 消息管理 ==========
 
   // 添加消息
-  addMessage(conversationId: string, role: ChatMessage['role'], content: string): ChatMessage | null {
+  addMessage(conversationId: string, role: ChatMessage['role'], content: string, extra?: { thinking?: string; toolResults?: any[] }): ChatMessage | null {
     const data = this.conversations.get(conversationId);
     if (!data) return null;
 
@@ -284,7 +284,9 @@ export class ConversationManager {
     const message: ChatMessage = {
       role,
       content,
-      timestamp: new Date()
+      timestamp: new Date(),
+      ...(extra?.thinking && { thinking: extra.thinking }),
+      ...(extra?.toolResults && { toolResults: extra.toolResults })
     };
 
     data.messages.push(message);
@@ -303,6 +305,19 @@ export class ConversationManager {
 
     this.save();
     return message;
+  }
+
+  // 更新消息（用于追加 thinking 和 toolResults）
+  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[] }): boolean {
+    const data = this.conversations.get(conversationId);
+    if (!data || messageIndex < 0 || messageIndex >= data.messages.length) return false;
+
+    const msg = data.messages[messageIndex];
+    if (extra.thinking) msg.thinking = extra.thinking;
+    if (extra.toolResults) msg.toolResults = extra.toolResults;
+
+    this.save();
+    return true;
   }
 
   // 获取消息列表

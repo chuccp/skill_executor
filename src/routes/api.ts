@@ -112,6 +112,15 @@ export function createApiRouter(
     res.json({ success: true });
   });
 
+  // 更新消息（保存 thinking 和 toolResults）
+  router.patch('/conversations/:id/messages/:index', async (req: Request, res: Response) => {
+    const { thinking, toolResults } = req.body;
+    const { id, index } = req.params;
+
+    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults });
+    res.json({ success });
+  });
+
   // 流式聊天（SSE）
   router.post('/conversations/:id/stream', async (req: Request, res: Response) => {
     const { content, skillName } = req.body;

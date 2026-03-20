@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { Message, ToolResultDisplay } from '../types'
 import { escapeHtml } from '../utils'
 
@@ -16,10 +16,22 @@ const props = defineProps<{
 
 const isAssistant = computed(() => props.message.role === 'assistant')
 const showThinking = ref(false)
+const thinkingRef = ref<HTMLElement | null>(null)
 
 // Use stored thinking or streaming thinking
 const thinkingContent = computed(() => {
   return props.message.thinking || props.streamingThinking || ''
+})
+
+// Auto-scroll thinking content to bottom when streaming
+watch(thinkingContent, () => {
+  if (props.isStreaming) {
+    nextTick(() => {
+      if (thinkingRef.value) {
+        thinkingRef.value.scrollTop = thinkingRef.value.scrollHeight
+      }
+    })
+  }
 })
 
 // Use stored tool results or streaming tool results
@@ -67,7 +79,7 @@ const exportMedia = (url: string, name: string) => {
         <span class="thinking-title">思考过程</span>
         <button class="thinking-toggle">{{ showThinking || isStreaming ? '▼' : '▶' }}</button>
       </div>
-      <div v-show="showThinking || isStreaming" class="thinking-content">{{ thinkingContent }}</div>
+      <div v-show="showThinking || isStreaming" ref="thinkingRef" class="thinking-content">{{ thinkingContent }}</div>
     </div>
 
     <!-- Progress -->
@@ -152,7 +164,7 @@ const exportMedia = (url: string, name: string) => {
               <span class="media-label">🎬 {{ result.data.name }}</span>
               <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
             </div>
-            <video controls :src="result.data.url" style="max-width: 100%; border-radius: 8px;"></video>
+            <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video"></video>
           </div>
         </div>
       </div>
@@ -416,6 +428,13 @@ const exportMedia = (url: string, name: string) => {
   max-height: 200px;
   border-radius: 8px;
   cursor: pointer;
+}
+
+.media-video {
+  max-width: 100%;
+  border-radius: 8px;
+  background: #000;
+  outline: none;
 }
 
 /* Todos */

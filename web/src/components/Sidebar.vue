@@ -125,7 +125,7 @@ const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
               {{ preset.name }}
             </option>
           </select>
-          <button class="btn btn-icon" title="配置模型" @click="state.showConfigModal = true">⚙️</button>
+          <button class="btn btn-icon" title="配置模型" @click="state.showConfigModal = true">⚙</button>
         </div>
       </div>
       <div class="sidebar-section">
