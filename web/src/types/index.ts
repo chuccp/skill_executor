@@ -5,24 +5,27 @@ export interface Conversation {
   createdAt: string
   updatedAt: string
   messageCount: number
+  firstUserMessage?: string
+  summary?: string
+}
+
+export interface ToolResultDisplay {
+  type: 'file' | 'files' | 'search' | 'bash' | 'media' | 'write'
+  data: any
 }
 
 export interface Message {
   role: 'user' | 'assistant'
   content: string
   thinking?: string
-  toolResults?: ToolResult[]
-}
-
-export interface ToolResult {
-  name: string
-  result: string
+  toolResults?: ToolResultDisplay[]
 }
 
 export interface Skill {
   name: string
   description: string
-  content: string
+  prompt: string
+  path?: string
 }
 
 export interface Preset {
@@ -36,7 +39,7 @@ export interface Preset {
 
 export interface WorkdirItem {
   name: string
-  isDir: boolean
+  type: 'directory' | 'file'
   size?: number
   modified?: string
 }

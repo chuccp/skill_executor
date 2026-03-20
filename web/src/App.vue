@@ -5,6 +5,7 @@ import ChatContainer from './components/ChatContainer.vue'
 import InputArea from './components/InputArea.vue'
 import ConfigModal from './components/ConfigModal.vue'
 import SkillModal from './components/SkillModal.vue'
+import NotifyContainer from './components/NotifyContainer.vue'
 import { useStore } from './stores/app'
 
 const { state, actions } = useStore()
@@ -17,7 +18,6 @@ onMounted(async () => {
     actions.loadWorkdir()
   ])
 
-  // Load last conversation
   const lastId = localStorage.getItem('lastConversationId')
   if (lastId && state.conversations.find(c => c.id === lastId)) {
     await actions.selectConversation(lastId)
@@ -26,6 +26,27 @@ onMounted(async () => {
   } else {
     await actions.createConversation()
   }
+
+  // 拖拽事件
+  document.addEventListener('dragover', (e) => e.preventDefault())
+  document.addEventListener('drop', (e) => {
+    e.preventDefault()
+    const files = e.dataTransfer?.files
+    if (files?.length) {
+      const paths: string[] = []
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        // @ts-ignore
+        if (file.path) paths.push((file as any).path)
+      }
+      if (paths.length) {
+        const input = document.querySelector('#user-input') as HTMLTextAreaElement
+        if (input) {
+          input.value += paths.join('\n')
+        }
+      }
+    }
+  })
 })
 </script>
 
@@ -38,6 +59,7 @@ onMounted(async () => {
     </main>
     <ConfigModal v-if="state.showConfigModal" />
     <SkillModal v-if="state.showSkillModal" />
+    <NotifyContainer />
   </div>
 </template>
 
@@ -124,6 +146,11 @@ body {
   border: 1px solid var(--border);
 }
 
+.btn-small {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
 /* Form elements */
 select, input, textarea {
   font-family: inherit;
@@ -136,5 +163,69 @@ select, input, textarea {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--panel);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Code block */
+.code-block {
+  background: #11120f;
+  color: #f5f1ea;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  font-family: var(--mono);
+}
+
+.code-block code {
+  font-family: inherit;
+}
+
+.inline-code {
+  background: rgba(0,0,0,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+/* Notify */
+.notify {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  z-index: 2000;
+  animation: slideIn 0.2s ease;
+}
+
+.notify-info {
+  background: var(--accent-weak);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.notify-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
 }
 </style>

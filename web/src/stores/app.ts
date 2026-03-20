@@ -2,6 +2,20 @@ import { reactive, computed } from 'vue'
 import type { Conversation, Message, Skill, Preset, Workdir } from '../types'
 import { api } from '../services/api'
 
+// Tool result type
+interface ToolResultDisplay {
+  type: 'file' | 'files' | 'search' | 'bash' | 'media' | 'write'
+  data: any
+}
+
+// Todo item type
+interface TodoItem {
+  id?: string
+  task: string
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  priority?: 'high' | 'medium' | 'low'
+}
+
 const state = reactive({
   currentConversationId: null as string | null,
   conversations: [] as Conversation[],
@@ -13,17 +27,18 @@ const state = reactive({
   selectedModel: localStorage.getItem('selectedModel') || '',
   selectedSkill: '',
   streamStatus: '',
-  thinkingContent: '',
   abortController: null as AbortController | null,
+
+  // Current streaming state (cleared after each message)
+  thinkingContent: '',
+  currentToolResults: [] as ToolResultDisplay[],
+  todos: [] as TodoItem[],
+  progressText: '',
 
   // Modal states
   showConfigModal: false,
   showSkillModal: false,
   showConversationModal: false,
-  configFormStep: 1,
-  editingPreset: null as Preset | null,
-  selectedTemplate: '',
-  selectedProvider: null as { id: string; name: string; baseUrl: string; models: string[] } | null,
   selectedSkillDetail: null as Skill | null
 })
 
@@ -75,7 +90,8 @@ export const actions = {
   async loadWorkdir() {
     const data = await api.getWorkdir()
     if (data.path) {
-      state.workdir = data
+      const listData = await api.listWorkdir(data.path)
+      state.workdir = listData
     }
   },
 
@@ -97,10 +113,19 @@ export const actions = {
     }
   },
 
-  async selectConversation(id: string) {
+  async selectConversation(id: string, moveToTop: boolean = false) {
     state.currentConversationId = id
     localStorage.setItem('lastConversationId', id)
     state.messages = await api.getConversation(id)
+
+    // Move conversation to top of the list (for modal selection)
+    if (moveToTop) {
+      const index = state.conversations.findIndex(c => c.id === id)
+      if (index > 0) {
+        const conv = state.conversations.splice(index, 1)[0]
+        state.conversations.unshift(conv)
+      }
+    }
   },
 
   async deleteConversation(id: string) {
@@ -121,11 +146,15 @@ export const actions = {
   async reloadSkills() {
     await api.reloadSkills()
     await this.loadSkills()
+    ;(window as any).showInfo?.('已刷新技能')
   },
 
   startStream() {
     state.isStreaming = true
     state.thinkingContent = ''
+    state.currentToolResults = []
+    state.todos = []
+    state.progressText = ''
     state.abortController = new AbortController()
     randomStatusMessage()
     statusTimer = window.setInterval(randomStatusMessage, 2000)
@@ -144,12 +173,24 @@ export const actions = {
   },
 
   finishStream() {
+    // Save thinking and tool results to the last message
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      if (state.thinkingContent) {
+        lastMsg.thinking = state.thinkingContent
+      }
+      if (state.currentToolResults.length) {
+        lastMsg.toolResults = state.currentToolResults
+      }
+    }
+
     state.isStreaming = false
     state.abortController = null
     if (statusTimer) {
       clearInterval(statusTimer)
       statusTimer = null
     }
+    state.progressText = ''
   },
 
   addMessage(role: 'user' | 'assistant', content: string) {
@@ -169,6 +210,21 @@ export const actions = {
 
   setStreamStatus(status: string) {
     state.streamStatus = status
+  },
+
+  // Tool results
+  addToolResult(result: ToolResultDisplay) {
+    state.currentToolResults.push(result)
+  },
+
+  // Todo
+  setTodos(todos: TodoItem[]) {
+    state.todos = todos
+  },
+
+  // Progress
+  setProgress(text: string) {
+    state.progressText = text
   }
 }
 

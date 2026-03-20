@@ -40,7 +40,7 @@ const selectSkill = (skill: typeof state.selectedSkillDetail) => {
             <div v-if="state.selectedSkillDetail" class="skill-detail">
               <h4>{{ state.selectedSkillDetail.name }}</h4>
               <p class="skill-desc">{{ state.selectedSkillDetail.description }}</p>
-              <pre class="skill-content">{{ state.selectedSkillDetail.content }}</pre>
+              <pre class="skill-content">{{ state.selectedSkillDetail.prompt }}</pre>
             </div>
             <div v-else class="skill-empty">选择一个技能查看详情</div>
           </div>

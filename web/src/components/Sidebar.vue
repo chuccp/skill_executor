@@ -2,12 +2,18 @@
 import { computed } from 'vue'
 import { useStore } from '../stores/app'
 import { formatTime, getParentPath } from '../utils'
+import ConversationModal from './ConversationModal.vue'
 
 const { state, actions } = useStore()
 
-const MAX_VISIBLE = 8
+const MAX_VISIBLE = 3
 const visibleConversations = computed(() => state.conversations.slice(0, MAX_VISIBLE))
 const hasMoreConversations = computed(() => state.conversations.length > MAX_VISIBLE)
+const moreCount = computed(() => state.conversations.length - MAX_VISIBLE)
+
+const getPreview = (conv: typeof state.conversations[0]) => {
+  return conv.firstUserMessage || conv.summary || '新会话'
+}
 
 const selectModel = (name: string) => {
   state.selectedModel = name
@@ -20,6 +26,12 @@ const goUpDir = async () => {
     if (parent) await actions.setWorkdir(parent)
   }
 }
+
+const showAllConversations = () => {
+  state.showConversationModal = true
+}
+
+const isDir = (item: typeof state.workdir.items[0]) => item.type === 'directory'
 </script>
 
 <template>
@@ -39,19 +51,16 @@ const goUpDir = async () => {
           :class="{ active: conv.id === state.currentConversationId }"
           @click="actions.selectConversation(conv.id)"
         >
-          <span class="conv-time">{{ formatTime(new Date(conv.updatedAt)) }}</span>
-          <span class="conv-count">{{ conv.messageCount }} 条</span>
-          <button class="conv-delete" @click.stop="actions.deleteConversation(conv.id)">×</button>
+          <div class="conv-info">
+            <span class="conv-time">{{ formatTime(new Date(conv.updatedAt || conv.createdAt)) }}</span>
+            <span class="conv-preview">{{ getPreview(conv).substring(0, 30) }}</span>
+          </div>
+          <button class="conv-delete" @click.stop="actions.deleteConversation(conv.id)" title="删除">×</button>
+        </li>
+        <li v-if="hasMoreConversations" class="conv-more" @click="showAllConversations">
+          <span class="conv-more-text">更多 ({{ moreCount }})</span>
         </li>
       </ul>
-      <button
-        v-if="hasMoreConversations"
-        class="btn"
-        style="margin-top: 8px; width: 100%;"
-        @click="state.showConversationModal = true"
-      >
-        查看全部 ({{ state.conversations.length }})
-      </button>
     </div>
 
     <!-- Skills -->
@@ -74,24 +83,28 @@ const goUpDir = async () => {
       <textarea
         class="workdir-input"
         placeholder="输入路径..."
-        rows="2"
+        rows="1"
         :value="state.workdir.path"
         @keydown.enter.prevent="actions.setWorkdir(($event.target as HTMLTextAreaElement).value)"
       ></textarea>
       <div class="workdir-actions">
-        <button class="btn btn-primary" @click="actions.setWorkdir(state.workdir.path)">切换</button>
-        <button class="btn" @click="goUpDir">上一级</button>
-        <button class="btn" @click="actions.loadWorkdir">刷新</button>
+        <button class="btn btn-primary btn-small" @click="actions.setWorkdir(state.workdir.path)">切换</button>
+        <button class="btn btn-small" @click="goUpDir">上一级</button>
+        <button class="btn btn-small" @click="actions.loadWorkdir">刷新</button>
       </div>
       <div class="workdir-list">
         <div
-          v-for="item in state.workdir.items.slice(0, 10)"
+          v-for="item in state.workdir.items"
           :key="item.name"
           class="workdir-item"
-          @click="item.isDir && actions.listWorkdir(state.workdir.path + '/' + item.name)"
+          :class="{ 'is-dir': isDir(item) }"
+          @click="isDir(item) && actions.listWorkdir(state.workdir.path + '/' + item.name)"
         >
-          <span class="item-icon">{{ item.isDir ? '📁' : '📄' }}</span>
+          <span class="item-icon">{{ isDir(item) ? '📁' : '📄' }}</span>
           <span class="item-name">{{ item.name }}</span>
+        </div>
+        <div v-if="!state.workdir.items.length" class="workdir-empty">
+          目录为空
         </div>
       </div>
     </div>
@@ -120,6 +133,9 @@ const goUpDir = async () => {
         <button class="btn" @click="state.showSkillModal = true">管理</button>
       </div>
     </div>
+
+    <!-- Conversation Modal -->
+    <ConversationModal v-if="state.showConversationModal" />
   </aside>
 </template>
 
@@ -133,7 +149,7 @@ const goUpDir = async () => {
   gap: 12px;
   border-right: 1px solid var(--border);
   flex-shrink: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar-header h2 {
@@ -156,7 +172,6 @@ const goUpDir = async () => {
 }
 
 .sidebar-footer {
-  margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
@@ -173,19 +188,19 @@ const goUpDir = async () => {
 /* Conversation list */
 .conversation-list {
   list-style: none;
-  max-height: 200px;
-  overflow-y: auto;
 }
 
 .conversation-list li {
   padding: 8px 10px;
   border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 0.85rem;
   transition: background 0.15s;
+  margin-bottom: 4px;
 }
 
 .conversation-list li:hover {
@@ -196,13 +211,23 @@ const goUpDir = async () => {
   background: var(--accent-weak);
 }
 
-.conv-time {
+.conv-info {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
-.conv-count {
-  color: var(--muted);
+.conv-time {
   font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.conv-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .conv-delete {
@@ -212,24 +237,39 @@ const goUpDir = async () => {
   cursor: pointer;
   font-size: 1rem;
   color: var(--muted);
+  padding: 2px 6px;
 }
 
 .conversation-list li:hover .conv-delete {
   opacity: 1;
 }
 
+.conv-more {
+  justify-content: center;
+  color: var(--muted);
+}
+
+.conv-more-text {
+  font-size: 0.8rem;
+}
+
 /* Workdir */
 .workdir-section {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .workdir-input {
   width: 100%;
-  padding: 8px;
+  padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   resize: none;
+  font-family: inherit;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .workdir-actions {
@@ -237,28 +277,47 @@ const goUpDir = async () => {
   gap: 6px;
 }
 
+.btn-small {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
 .workdir-list {
   margin-top: 8px;
-  max-height: 150px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .workdir-item {
-  padding: 6px 8px;
-  border-radius: 6px;
+  padding: 5px 8px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.workdir-item:hover {
+.workdir-item.is-dir:hover {
   background: rgba(0,0,0,0.04);
 }
 
+.workdir-item:not(.is-dir) {
+  cursor: default;
+  color: var(--muted);
+}
+
+.workdir-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 16px;
+}
+
 .item-icon {
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .item-name {

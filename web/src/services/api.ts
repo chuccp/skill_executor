@@ -11,10 +11,30 @@ export const api = {
   },
 
   async savePreset(preset: Preset): Promise<boolean> {
-    const res = await fetch(`${API_BASE}/presets`, {
+    const res = await fetch(`${API_BASE}/presets/save`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(preset)
+      body: JSON.stringify({
+        name: preset.name,
+        apiKey: preset.env.ANTHROPIC_AUTH_TOKEN,
+        baseUrl: preset.env.ANTHROPIC_BASE_URL,
+        model: preset.env.ANTHROPIC_MODEL
+      })
+    })
+    const result = await res.json()
+    return result.success
+  },
+
+  async updatePreset(oldName: string, preset: Preset): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/presets/${encodeURIComponent(oldName)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: preset.name,
+        apiKey: preset.env.ANTHROPIC_AUTH_TOKEN,
+        baseUrl: preset.env.ANTHROPIC_BASE_URL,
+        model: preset.env.ANTHROPIC_MODEL
+      })
     })
     const result = await res.json()
     return result.success
@@ -65,10 +85,10 @@ export const api = {
   },
 
   // Workdir
-  async getWorkdir(): Promise<Workdir> {
+  async getWorkdir(): Promise<{ path: string }> {
     const res = await fetch(`${API_BASE}/workdir`)
     const result = await res.json()
-    return result.success ? result.data : { path: '', items: [] }
+    return result.success ? result.data : { path: '' }
   },
 
   async setWorkdir(path: string): Promise<Workdir> {
@@ -79,7 +99,8 @@ export const api = {
     })
     const result = await res.json()
     if (!result.success) throw new Error(result.error)
-    return result.data
+    // After setting, fetch the list
+    return this.listWorkdir(path)
   },
 
   async listWorkdir(path: string): Promise<Workdir> {

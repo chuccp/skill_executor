@@ -11,7 +11,7 @@ const configApiKey = ref('')
 const configBaseUrl = ref('')
 const configModel = ref('')
 
-const formStep = ref(1)
+const formStep = ref(0)
 const selectedTemplate = ref('')
 
 interface Provider {
@@ -22,6 +22,7 @@ interface Provider {
 }
 
 const selectedProvider = ref<Provider | null>(null)
+const editingOldName = ref('')  // Track original name when editing
 
 const templates: Record<string, {name: string; providers: Provider[]}> = {
   claude: {
@@ -65,13 +66,14 @@ const closeModal = () => {
 }
 
 const resetForm = () => {
-  formStep.value = 1
+  formStep.value = 0
   selectedTemplate.value = ''
   selectedProvider.value = null
   configName.value = ''
   configApiKey.value = ''
   configBaseUrl.value = ''
   configModel.value = ''
+  editingOldName.value = ''
 }
 
 const selectTemplate = (id: string) => {
@@ -105,10 +107,20 @@ const saveConfig = async () => {
     }
   }
 
-  const success = await api.savePreset(preset)
+  let success
+  if (editingOldName.value) {
+    // Update existing preset
+    success = await api.updatePreset(editingOldName.value, preset)
+  } else {
+    // Create new preset
+    success = await api.savePreset(preset)
+  }
+
   if (success) {
     await actions.loadPresets()
     closeModal()
+  } else {
+    alert('保存失败')
   }
 }
 
@@ -116,6 +128,23 @@ const deletePreset = async (name: string) => {
   if (!confirm('确定删除?')) return
   await api.deletePreset(name)
   await actions.loadPresets()
+}
+
+const selectPreset = (name: string) => {
+  state.selectedModel = name
+  localStorage.setItem('selectedModel', name)
+  closeModal()
+}
+
+const editPreset = (preset: Preset) => {
+  editingOldName.value = preset.name
+  configName.value = preset.name
+  configApiKey.value = preset.env.ANTHROPIC_AUTH_TOKEN || ''
+  configBaseUrl.value = preset.env.ANTHROPIC_BASE_URL || ''
+  configModel.value = preset.env.ANTHROPIC_MODEL || ''
+  selectedProvider.value = null
+  selectedTemplate.value = 'custom'
+  formStep.value = 3
 }
 </script>
 
@@ -181,13 +210,17 @@ const deletePreset = async (name: string) => {
             <button class="btn btn-primary" @click="formStep = 1">+ 添加</button>
           </div>
           <div class="preset-list">
-            <div v-for="p in state.presets" :key="p.name" class="preset-item">
+            <div v-for="p in state.presets" :key="p.name" class="preset-item" @click="selectPreset(p.name)">
               <div class="preset-info">
                 <span class="preset-name">{{ p.name }}</span>
                 <span class="preset-model">{{ p.env.ANTHROPIC_MODEL }}</span>
               </div>
-              <button class="btn btn-small" @click="deletePreset(p.name)">删除</button>
+              <div class="preset-actions">
+                <button class="btn btn-small" @click.stop="editPreset(p)" title="编辑">✎</button>
+                <button class="btn btn-small btn-danger" @click.stop="deletePreset(p.name)" title="删除">×</button>
+              </div>
             </div>
+            <div v-if="!state.presets.length" class="preset-empty">暂无配置，点击上方按钮添加新模型</div>
           </div>
         </div>
       </div>
@@ -247,6 +280,10 @@ const deletePreset = async (name: string) => {
   padding: 12px;
   background: #f8f6f2;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.preset-item:hover {
+  background: #f0ede6;
 }
 .preset-info {
   display: flex;
@@ -255,6 +292,15 @@ const deletePreset = async (name: string) => {
 }
 .preset-name { font-weight: 500; }
 .preset-model { font-size: 0.85rem; color: var(--muted); }
+.preset-actions {
+  display: flex;
+  gap: 4px;
+}
+.preset-empty {
+  text-align: center;
+  padding: 32px;
+  color: var(--muted);
+}
 .template-grid, .provider-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -288,4 +334,12 @@ const deletePreset = async (name: string) => {
   border-radius: var(--radius-sm);
 }
 .step-actions { display: flex; gap: 8px; margin-top: 16px; }
+.btn-danger {
+  background: #dc2626;
+  color: white;
+  border-color: #dc2626;
+}
+.btn-danger:hover {
+  background: #b91c1c;
+}
 </style>
