@@ -4,9 +4,15 @@
   "version": "1.0.0",
   "identifier": "com.skill-executor.app",
   "build": {
-    "beforeDevCommand": "npm run dev:all",
+    "beforeDevCommand": {
+      "script": "npm run dev:all",
+      "cwd": ".."
+    },
     "devUrl": "http://localhost:38593",
-    "beforeBuildCommand": "npm run build:web && npm run build",
+    "beforeBuildCommand": {
+      "script": "npm run build:web && npm run build",
+      "cwd": ".."
+    },
     "frontendDist": "../web/dist"
   },
   "app": {
