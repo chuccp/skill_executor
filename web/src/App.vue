@@ -42,7 +42,12 @@ onMounted(async () => {
       if (paths.length) {
         const input = document.querySelector('#user-input') as HTMLTextAreaElement
         if (input) {
-          input.value += paths.join('\n')
+          // 添加 @ 前缀，多个文件用空格分隔
+          const pathRefs = paths.map(p => '@' + p).join(' ')
+          const currentValue = input.value.trim()
+          input.value = currentValue ? currentValue + ' ' + pathRefs : pathRefs
+          // 触发 input 事件以更新高度
+          input.dispatchEvent(new Event('input', { bubbles: true }))
         }
       }
     }

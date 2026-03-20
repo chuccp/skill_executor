@@ -20,7 +20,32 @@ import {
   createDirectory,
   getFileInfo,
   fileExists,
-  xmlEscape
+  xmlEscape,
+  editFile,
+  editMultipleFiles,
+  EditOperation,
+  // Notebook
+  readNotebook,
+  writeNotebook,
+  editNotebookCell,
+  addNotebookCell,
+  deleteNotebookCell,
+  // Task
+  createTask,
+  getTask,
+  listTasks,
+  updateTask,
+  stopTask,
+  AsyncTask,
+  // Plan
+  createPlan,
+  getPlan,
+  updatePlanStep,
+  deletePlan,
+  // Worktree
+  listWorktrees,
+  createWorktree,
+  removeWorktree
 } from './tools';
 import { getWorkingDir } from './workingDir';
 
@@ -64,6 +89,64 @@ export const TOOLS = [
         new_string: { type: 'string', description: '替换后的新文本' }
       },
       required: ['file_path', 'old_string', 'new_string']
+    }
+  },
+  {
+    name: 'edit',
+    description: '高级文件编辑工具。支持多个编辑操作，可在文件中应用多个修改。比 replace 更灵活，支持多行编辑和创建新文件。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '文件路径（绝对路径，或相对当前工作目录）' },
+        edits: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              oldText: { type: 'string', description: '要替换的原始文本（空字符串表示创建新文件或追加到文件末尾）' },
+              newText: { type: 'string', description: '替换后的新文本' }
+            },
+            required: ['oldText', 'newText']
+          },
+          description: '编辑操作列表'
+        },
+        create_if_not_exists: { type: 'boolean', description: '如果文件不存在是否创建（默认 false）' }
+      },
+      required: ['file_path', 'edits']
+    }
+  },
+  {
+    name: 'multi_edit',
+    description: '批量编辑多个文件。一次调用可以修改多个文件，每个文件可以有多个编辑操作。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: '文件路径' },
+              edits: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    oldText: { type: 'string', description: '要替换的原始文本' },
+                    newText: { type: 'string', description: '替换后的新文本' }
+                  },
+                  required: ['oldText', 'newText']
+                },
+                description: '编辑操作列表'
+              },
+              create_if_not_exists: { type: 'boolean', description: '如果文件不存在是否创建' }
+            },
+            required: ['path', 'edits']
+          },
+          description: '要编辑的文件列表'
+        }
+      },
+      required: ['files']
     }
   },
   {
@@ -317,6 +400,208 @@ export const TOOLS = [
       },
       required: ['text']
     }
+  },
+  // ========== Notebook 编辑工具 ==========
+  {
+    name: 'notebook_read',
+    description: '读取 Jupyter Notebook (.ipynb) 文件的内容。返回所有单元格及其类型、源代码和输出。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Notebook 文件路径' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'notebook_edit_cell',
+    description: '编辑 Jupyter Notebook 中指定单元格的内容。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Notebook 文件路径' },
+        cell_index: { type: 'number', description: '单元格索引（从 0 开始）' },
+        new_source: { type: 'string', description: '新的单元格内容' },
+        cell_type: { type: 'string', enum: ['markdown', 'code', 'raw'], description: '可选：单元格类型' }
+      },
+      required: ['file_path', 'cell_index', 'new_source']
+    }
+  },
+  {
+    name: 'notebook_add_cell',
+    description: '在 Jupyter Notebook 中添加新的单元格。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Notebook 文件路径' },
+        cell_type: { type: 'string', enum: ['markdown', 'code', 'raw'], description: '单元格类型' },
+        source: { type: 'string', description: '单元格内容' },
+        position: { type: 'number', description: '可选：插入位置（默认添加到末尾）' }
+      },
+      required: ['file_path', 'cell_type', 'source']
+    }
+  },
+  {
+    name: 'notebook_delete_cell',
+    description: '删除 Jupyter Notebook 中指定的单元格。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Notebook 文件路径' },
+        cell_index: { type: 'number', description: '要删除的单元格索引' }
+      },
+      required: ['file_path', 'cell_index']
+    }
+  },
+  // ========== 异步任务工具 ==========
+  {
+    name: 'task_create',
+    description: '创建一个新的异步任务。用于跟踪长时间运行的操作。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务唯一标识符' },
+        name: { type: 'string', description: '任务名称' }
+      },
+      required: ['task_id', 'name']
+    }
+  },
+  {
+    name: 'task_get',
+    description: '获取指定任务的详细信息和状态。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'task_list',
+    description: '列出所有任务或指定状态的任务。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', enum: ['pending', 'running', 'completed', 'failed', 'cancelled'], description: '可选：按状态过滤' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'task_update',
+    description: '更新任务的状态、进度或结果。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' },
+        status: { type: 'string', enum: ['pending', 'running', 'completed', 'failed', 'cancelled'], description: '新状态' },
+        progress: { type: 'number', description: '进度百分比（0-100）' },
+        result: { type: 'string', description: '任务结果' },
+        error: { type: 'string', description: '错误信息' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'task_stop',
+    description: '停止正在运行的任务。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' }
+      },
+      required: ['task_id']
+    }
+  },
+  // ========== Plan 模式工具 ==========
+  {
+    name: 'plan_create',
+    description: '创建一个新的执行计划，包含多个步骤。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: '计划唯一标识符' },
+        title: { type: 'string', description: '计划标题' },
+        steps: { type: 'array', items: { type: 'string' }, description: '计划步骤列表' }
+      },
+      required: ['plan_id', 'title', 'steps']
+    }
+  },
+  {
+    name: 'plan_get',
+    description: '获取指定计划的详细信息。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: '计划 ID' }
+      },
+      required: ['plan_id']
+    }
+  },
+  {
+    name: 'plan_update_step',
+    description: '更新计划中某个步骤的状态。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: '计划 ID' },
+        step_id: { type: 'string', description: '步骤 ID' },
+        status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: '新状态' }
+      },
+      required: ['plan_id', 'step_id', 'status']
+    }
+  },
+  // ========== Git Worktree 工具 ==========
+  {
+    name: 'worktree_list',
+    description: '列出 Git 仓库中的所有工作树。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'worktree_create',
+    description: '创建一个新的 Git 工作树。用于并行开发多个分支。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        branch_name: { type: 'string', description: '新分支名称' },
+        worktree_path: { type: 'string', description: '工作树路径' }
+      },
+      required: ['branch_name', 'worktree_path']
+    }
+  },
+  {
+    name: 'worktree_remove',
+    description: '删除指定的 Git 工作树。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        worktree_path: { type: 'string', description: '要删除的工作树路径' }
+      },
+      required: ['worktree_path']
+    }
+  },
+  // ========== Agent 工具 ==========
+  {
+    name: 'agent_spawn',
+    description: '创建一个子代理来执行特定任务。子代理可以并行工作，处理独立的研究或操作。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        agent_id: { type: 'string', description: '代理唯一标识符' },
+        task: { type: 'string', description: '代理要执行的任务描述' },
+        agent_type: { type: 'string', enum: ['explore', 'code', 'research'], description: '代理类型' }
+      },
+      required: ['agent_id', 'task']
+    }
   }
 ];
 
@@ -414,6 +699,64 @@ export async function executeTool(
       return result.success
         ? `替换成功: ${filePath} (${result.matches} 处)`
         : `替换失败: ${result.message}`;
+    }
+
+    case 'edit': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+      const edits = tool.input?.edits as EditOperation[];
+      const createIfNotExists = tool.input?.create_if_not_exists;
+
+      if (!filePath || !edits || !Array.isArray(edits)) {
+        return '错误：参数不完整';
+      }
+
+      const result = editFile(filePath, edits, createIfNotExists);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({
+          type: 'file_edited',
+          path: filePath,
+          appliedEdits: result.appliedEdits,
+          totalEdits: result.totalEdits
+        }));
+      }
+      return result.success
+        ? `编辑成功: ${filePath} (已应用 ${result.appliedEdits}/${result.totalEdits} 个编辑)`
+        : `编辑部分失败: ${result.message}`;
+    }
+
+    case 'multi_edit': {
+      const files = tool.input?.files;
+
+      if (!files || !Array.isArray(files)) {
+        return '错误：参数不完整';
+      }
+
+      const multiEdits = files.map((f: any) => ({
+        filePath: resolveToWorkingDir(f.path),
+        edits: f.edits as EditOperation[],
+        createIfNotExists: f.create_if_not_exists
+      }));
+
+      const results = editMultipleFiles(multiEdits);
+      const successCount = results.filter(r => r.success).length;
+
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'multi_file_edited',
+          results: results.map(r => ({
+            path: r.filePath,
+            success: r.success,
+            appliedEdits: r.appliedEdits
+          }))
+        }));
+      }
+
+      const summary = results.map(r =>
+        `${r.filePath}: ${r.success ? '成功' : '失败'} (${r.appliedEdits} 个编辑)`
+      ).join('\n');
+
+      return `批量编辑完成 (${successCount}/${results.length} 成功):\n${summary}`;
     }
 
     case 'list_directory': {
@@ -882,6 +1225,303 @@ export async function executeTool(
       }
       const escaped = xmlEscape(text);
       return `转义结果:\n${escaped}`;
+    }
+
+    // ========== Notebook 编辑工具 ==========
+    case 'notebook_read': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+
+      if (!filePath) return '错误：文件路径为空';
+
+      const notebook = readNotebook(filePath);
+      if (!notebook) {
+        return `无法读取 Notebook 文件: ${filePath}`;
+      }
+
+      const output = notebook.cells.map((cell, index) => {
+        const source = Array.isArray(cell.source) ? cell.source.join('') : cell.source;
+        const type = cell.cell_type.toUpperCase();
+        return `--- [${index}] ${type} ---\n${source}`;
+      }).join('\n\n');
+
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'notebook_read', path: filePath, cells: notebook.cells.length }));
+      }
+
+      return `Notebook: ${filePath} (${notebook.cells.length} 个单元格)\n\n${output}`;
+    }
+
+    case 'notebook_edit_cell': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+      const cellIndex = tool.input?.cell_index;
+      const newSource = tool.input?.new_source;
+      const cellType = tool.input?.cell_type;
+
+      if (!filePath || cellIndex === undefined || newSource === undefined) {
+        return '错误：参数不完整';
+      }
+
+      const result = editNotebookCell(filePath, cellIndex, newSource, cellType);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'notebook_cell_edited', path: filePath, cellIndex }));
+      }
+      return result.message;
+    }
+
+    case 'notebook_add_cell': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+      const cellType = tool.input?.cell_type as 'markdown' | 'code' | 'raw';
+      const source = tool.input?.source;
+      const position = tool.input?.position;
+
+      if (!filePath || !cellType || source === undefined) {
+        return '错误：参数不完整';
+      }
+
+      const result = addNotebookCell(filePath, cellType, source, position);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'notebook_cell_added', path: filePath }));
+      }
+      return result.message;
+    }
+
+    case 'notebook_delete_cell': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+      const cellIndex = tool.input?.cell_index;
+
+      if (!filePath || cellIndex === undefined) {
+        return '错误：参数不完整';
+      }
+
+      const result = deleteNotebookCell(filePath, cellIndex);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'notebook_cell_deleted', path: filePath, cellIndex }));
+      }
+      return result.message;
+    }
+
+    // ========== 异步任务工具 ==========
+    case 'task_create': {
+      const taskId = tool.input?.task_id;
+      const name = tool.input?.name;
+
+      if (!taskId || !name) {
+        return '错误：缺少任务 ID 或名称';
+      }
+
+      const task = createTask(taskId, name);
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'task_created', taskId, name }));
+      }
+      return `任务已创建: ${taskId} - ${name}`;
+    }
+
+    case 'task_get': {
+      const taskId = tool.input?.task_id;
+      if (!taskId) return '错误：缺少任务 ID';
+
+      const task = getTask(taskId);
+      if (!task) {
+        return `任务不存在: ${taskId}`;
+      }
+
+      return `任务详情:\nID: ${task.id}\n名称: ${task.name}\n状态: ${task.status}\n创建时间: ${task.createdAt.toLocaleString()}\n更新时间: ${task.updatedAt.toLocaleString()}${task.progress ? `\n进度: ${task.progress}%` : ''}${task.result ? `\n结果: ${task.result}` : ''}${task.error ? `\n错误: ${task.error}` : ''}`;
+    }
+
+    case 'task_list': {
+      const status = tool.input?.status as AsyncTask['status'] | undefined;
+      const tasks = listTasks(status);
+
+      if (tasks.length === 0) {
+        return status ? `没有状态为 ${status} 的任务` : '没有任务';
+      }
+
+      const output = tasks.map(t => {
+        const statusIcon = { pending: '⏳', running: '🔄', completed: '✅', failed: '❌', cancelled: '🚫' }[t.status];
+        return `${statusIcon} ${t.id}: ${t.name} (${t.status})`;
+      }).join('\n');
+
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'task_list', tasks: tasks.map(t => ({ id: t.id, name: t.name, status: t.status })) }));
+      }
+      return `任务列表 (${tasks.length} 个):\n${output}`;
+    }
+
+    case 'task_update': {
+      const taskId = tool.input?.task_id;
+      const status = tool.input?.status;
+      const progress = tool.input?.progress;
+      const result = tool.input?.result;
+      const error = tool.input?.error;
+
+      if (!taskId) return '错误：缺少任务 ID';
+
+      const updates: any = {};
+      if (status) updates.status = status;
+      if (progress !== undefined) updates.progress = progress;
+      if (result !== undefined) updates.result = result;
+      if (error !== undefined) updates.error = error;
+
+      const task = updateTask(taskId, updates);
+      if (!task) {
+        return `任务不存在: ${taskId}`;
+      }
+
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'task_updated', taskId, status: task.status, progress: task.progress }));
+      }
+      return `任务已更新: ${taskId} (${task.status})`;
+    }
+
+    case 'task_stop': {
+      const taskId = tool.input?.task_id;
+      if (!taskId) return '错误：缺少任务 ID';
+
+      const task = stopTask(taskId);
+      if (!task) {
+        return `任务不存在: ${taskId}`;
+      }
+
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'task_stopped', taskId }));
+      }
+      return `任务已停止: ${taskId}`;
+    }
+
+    // ========== Plan 模式工具 ==========
+    case 'plan_create': {
+      const planId = tool.input?.plan_id;
+      const title = tool.input?.title;
+      const steps = tool.input?.steps as string[];
+
+      if (!planId || !title || !steps || !Array.isArray(steps)) {
+        return '错误：参数不完整';
+      }
+
+      const plan = createPlan(planId, title, steps);
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'plan_created', planId, title, stepCount: steps.length }));
+      }
+
+      const stepsList = steps.map((s, i) => `${i + 1}. ${s}`).join('\n');
+      return `计划已创建: ${title}\n\n步骤:\n${stepsList}`;
+    }
+
+    case 'plan_get': {
+      const planId = tool.input?.plan_id;
+      if (!planId) return '错误：缺少计划 ID';
+
+      const plan = getPlan(planId);
+      if (!plan) {
+        return `计划不存在: ${planId}`;
+      }
+
+      const stepsList = plan.steps.map((s, i) => {
+        const statusIcon = { pending: '⏳', in_progress: '🔄', completed: '✅' }[s.status];
+        return `${statusIcon} ${i + 1}. ${s.content}`;
+      }).join('\n');
+
+      return `计划: ${plan.title}\n\n步骤:\n${stepsList}`;
+    }
+
+    case 'plan_update_step': {
+      const planId = tool.input?.plan_id;
+      const stepId = tool.input?.step_id;
+      const status = tool.input?.status;
+
+      if (!planId || !stepId || !status) {
+        return '错误：参数不完整';
+      }
+
+      const plan = updatePlanStep(planId, stepId, status);
+      if (!plan) {
+        return `计划或步骤不存在`;
+      }
+
+      if (ws) {
+        ws.send(JSON.stringify({ type: 'plan_step_updated', planId, stepId, status }));
+      }
+      return `步骤已更新: ${stepId} -> ${status}`;
+    }
+
+    // ========== Git Worktree 工具 ==========
+    case 'worktree_list': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path);
+
+      const worktrees = await listWorktrees(repoPath);
+      if (worktrees.length === 0) {
+        return `未找到工作树，或不是 Git 仓库`;
+      }
+
+      const output = worktrees.map(w => {
+        const mainTag = w.isMain ? ' [MAIN]' : '';
+        return `${mainTag} ${w.path}\n    分支: ${w.branch || '(detached)'}\n    HEAD: ${w.head?.substring(0, 8)}`;
+      }).join('\n\n');
+
+      return `Git 工作树 (${worktrees.length} 个):\n\n${output}`;
+    }
+
+    case 'worktree_create': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path);
+      const branchName = tool.input?.branch_name;
+      const worktreePath = tool.input?.worktree_path;
+
+      if (!branchName || !worktreePath) {
+        return '错误：缺少分支名称或工作树路径';
+      }
+
+      const result = await createWorktree(repoPath, branchName, worktreePath);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'worktree_created', branchName, worktreePath }));
+      }
+      return result.message;
+    }
+
+    case 'worktree_remove': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path);
+      const worktreePath = tool.input?.worktree_path;
+
+      if (!worktreePath) {
+        return '错误：缺少工作树路径';
+      }
+
+      const result = await removeWorktree(repoPath, worktreePath);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'worktree_removed', worktreePath }));
+      }
+      return result.message;
+    }
+
+    // ========== Agent 工具 ==========
+    case 'agent_spawn': {
+      const agentId = tool.input?.agent_id;
+      const task = tool.input?.task;
+      const agentType = tool.input?.agent_type || 'explore';
+
+      if (!agentId || !task) {
+        return '错误：缺少代理 ID 或任务描述';
+      }
+
+      // 创建任务来跟踪代理
+      const agentTask = createTask(agentId, `[Agent] ${task}`);
+      updateTask(agentId, { status: 'running' });
+
+      if (ws) {
+        ws.send(JSON.stringify({
+          type: 'agent_spawned',
+          agentId,
+          task,
+          agentType,
+          status: 'running'
+        }));
+      }
+
+      // 注意：实际的代理执行逻辑需要在 LLM 循环中处理
+      return `代理已创建: ${agentId}\n类型: ${agentType}\n任务: ${task}\n\n代理将在后台执行任务，使用 task_get 查询进度。`;
     }
 
     default:

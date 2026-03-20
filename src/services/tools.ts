@@ -549,6 +549,106 @@ function getPermissions(mode: number): string {
   return perms.join('');
 }
 
+// ==================== Edit 文件编辑 ====================
+
+export interface EditOperation {
+  oldText: string;
+  newText: string;
+}
+
+export interface EditResult {
+  success: boolean;
+  message: string;
+  appliedEdits: number;
+  totalEdits: number;
+}
+
+export function editFile(filePath: string, edits: EditOperation[], createIfNotExists?: boolean): EditResult {
+  try {
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      if (createIfNotExists) {
+        // 创建新文件
+        if (edits.length === 1 && edits[0].oldText === '') {
+          fs.writeFileSync(filePath, edits[0].newText, 'utf-8');
+          return { success: true, message: '文件创建成功', appliedEdits: 1, totalEdits: 1 };
+        }
+        return { success: false, message: '新文件需要提供一个空的 oldText', appliedEdits: 0, totalEdits: edits.length };
+      }
+      return { success: false, message: '文件不存在', appliedEdits: 0, totalEdits: edits.length };
+    }
+
+    let content = fs.readFileSync(filePath, 'utf-8');
+    let appliedEdits = 0;
+
+    for (const edit of edits) {
+      if (edit.oldText === '') {
+        // 空的 oldText 表示在文件末尾追加
+        content += edit.newText;
+        appliedEdits++;
+        continue;
+      }
+
+      // 检查是否存在匹配
+      if (!content.includes(edit.oldText)) {
+        continue;
+      }
+
+      // 检查是否唯一匹配
+      const matches = content.split(edit.oldText).length - 1;
+      if (matches > 1) {
+        // 多个匹配，尝试使用更精确的上下文
+        continue;
+      }
+
+      // 执行替换
+      content = content.replace(edit.oldText, edit.newText);
+      appliedEdits++;
+    }
+
+    if (appliedEdits > 0) {
+      fs.writeFileSync(filePath, content, 'utf-8');
+    }
+
+    return {
+      success: appliedEdits === edits.length,
+      message: appliedEdits === edits.length
+        ? '所有编辑已应用'
+        : `已应用 ${appliedEdits}/${edits.length} 个编辑`,
+      appliedEdits,
+      totalEdits: edits.length
+    };
+  } catch (error: any) {
+    return { success: false, message: error.message, appliedEdits: 0, totalEdits: edits.length };
+  }
+}
+
+// 多文件编辑
+export interface MultiFileEdit {
+  filePath: string;
+  edits: EditOperation[];
+  createIfNotExists?: boolean;
+}
+
+export interface MultiFileEditResult {
+  filePath: string;
+  success: boolean;
+  message: string;
+  appliedEdits: number;
+}
+
+export function editMultipleFiles(edits: MultiFileEdit[]): MultiFileEditResult[] {
+  return edits.map(edit => {
+    const result = editFile(edit.filePath, edit.edits, edit.createIfNotExists);
+    return {
+      filePath: edit.filePath,
+      success: result.success,
+      message: result.message,
+      appliedEdits: result.appliedEdits
+    };
+  });
+}
+
 // ==================== Ask User ====================
 
 export interface QuestionOption {
@@ -561,4 +661,313 @@ export interface Question {
   header: string;
   options: QuestionOption[];
   multiSelect: boolean;
+}
+
+// ==================== Notebook 编辑 ====================
+
+export interface NotebookCell {
+  cell_type: 'markdown' | 'code' | 'raw';
+  source: string | string[];
+  metadata?: Record<string, any>;
+  execution_count?: number | null;
+  outputs?: any[];
+}
+
+export interface Notebook {
+  cells: NotebookCell[];
+  metadata: Record<string, any>;
+  nbformat: number;
+  nbformat_minor: number;
+}
+
+export function readNotebook(filePath: string): Notebook | null {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return JSON.parse(content) as Notebook;
+  } catch {
+    return null;
+  }
+}
+
+export function writeNotebook(filePath: string, notebook: Notebook): boolean {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(notebook, null, 1), 'utf-8');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function editNotebookCell(
+  filePath: string,
+  cellIndex: number,
+  newSource: string | string[],
+  cellType?: 'markdown' | 'code' | 'raw'
+): { success: boolean; message: string } {
+  try {
+    const notebook = readNotebook(filePath);
+    if (!notebook) {
+      return { success: false, message: '无法读取 Notebook 文件' };
+    }
+
+    if (cellIndex < 0 || cellIndex >= notebook.cells.length) {
+      return { success: false, message: `无效的单元格索引: ${cellIndex}` };
+    }
+
+    notebook.cells[cellIndex].source = newSource;
+    if (cellType) {
+      notebook.cells[cellIndex].cell_type = cellType;
+    }
+
+    writeNotebook(filePath, notebook);
+    return { success: true, message: `单元格 ${cellIndex} 已更新` };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+export function addNotebookCell(
+  filePath: string,
+  cellType: 'markdown' | 'code' | 'raw',
+  source: string | string[],
+  position?: number
+): { success: boolean; message: string } {
+  try {
+    const notebook = readNotebook(filePath);
+    if (!notebook) {
+      return { success: false, message: '无法读取 Notebook 文件' };
+    }
+
+    const newCell: NotebookCell = {
+      cell_type: cellType,
+      source: source,
+      metadata: {},
+      execution_count: cellType === 'code' ? null : undefined,
+      outputs: cellType === 'code' ? [] : undefined
+    };
+
+    if (position !== undefined && position >= 0 && position <= notebook.cells.length) {
+      notebook.cells.splice(position, 0, newCell);
+    } else {
+      notebook.cells.push(newCell);
+    }
+
+    writeNotebook(filePath, notebook);
+    return { success: true, message: `新单元格已添加` };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+export function deleteNotebookCell(
+  filePath: string,
+  cellIndex: number
+): { success: boolean; message: string } {
+  try {
+    const notebook = readNotebook(filePath);
+    if (!notebook) {
+      return { success: false, message: '无法读取 Notebook 文件' };
+    }
+
+    if (cellIndex < 0 || cellIndex >= notebook.cells.length) {
+      return { success: false, message: `无效的单元格索引: ${cellIndex}` };
+    }
+
+    notebook.cells.splice(cellIndex, 1);
+    writeNotebook(filePath, notebook);
+    return { success: true, message: `单元格 ${cellIndex} 已删除` };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+// ==================== 异步任务系统 ====================
+
+export interface AsyncTask {
+  id: string;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress?: number;
+  result?: any;
+  error?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const asyncTasks: Map<string, AsyncTask> = new Map();
+
+export function createTask(id: string, name: string): AsyncTask {
+  const task: AsyncTask = {
+    id,
+    name,
+    status: 'pending',
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  asyncTasks.set(id, task);
+  return task;
+}
+
+export function getTask(id: string): AsyncTask | undefined {
+  return asyncTasks.get(id);
+}
+
+export function listTasks(status?: AsyncTask['status']): AsyncTask[] {
+  const tasks = Array.from(asyncTasks.values());
+  if (status) {
+    return tasks.filter(t => t.status === status);
+  }
+  return tasks;
+}
+
+export function updateTask(
+  id: string,
+  updates: Partial<Pick<AsyncTask, 'status' | 'progress' | 'result' | 'error'>>
+): AsyncTask | null {
+  const task = asyncTasks.get(id);
+  if (!task) return null;
+
+  Object.assign(task, updates, { updatedAt: new Date() });
+  return task;
+}
+
+export function stopTask(id: string): AsyncTask | null {
+  const task = asyncTasks.get(id);
+  if (!task) return null;
+
+  if (task.status === 'running') {
+    task.status = 'cancelled';
+    task.updatedAt = new Date();
+  }
+  return task;
+}
+
+export function deleteTask(id: string): boolean {
+  return asyncTasks.delete(id);
+}
+
+// ==================== Plan 模式 ====================
+
+export interface PlanStep {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
+export interface Plan {
+  id: string;
+  title: string;
+  steps: PlanStep[];
+  createdAt: Date;
+}
+
+const plans: Map<string, Plan> = new Map();
+
+export function createPlan(id: string, title: string, steps: string[]): Plan {
+  const plan: Plan = {
+    id,
+    title,
+    steps: steps.map((content, index) => ({
+      id: `${id}-${index}`,
+      content,
+      status: 'pending' as const
+    })),
+    createdAt: new Date()
+  };
+  plans.set(id, plan);
+  return plan;
+}
+
+export function getPlan(id: string): Plan | undefined {
+  return plans.get(id);
+}
+
+export function updatePlanStep(
+  planId: string,
+  stepId: string,
+  status: PlanStep['status']
+): Plan | null {
+  const plan = plans.get(planId);
+  if (!plan) return null;
+
+  const step = plan.steps.find(s => s.id === stepId);
+  if (!step) return null;
+
+  step.status = status;
+  return plan;
+}
+
+export function deletePlan(id: string): boolean {
+  return plans.delete(id);
+}
+
+// ==================== Git Worktree ====================
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  head: string;
+  isMain: boolean;
+}
+
+export async function listWorktrees(repoPath: string): Promise<WorktreeInfo[]> {
+  try {
+    const { stdout } = await execAsync('git worktree list --porcelain', { cwd: repoPath });
+    const worktrees: WorktreeInfo[] = [];
+    const lines = stdout.split('\n');
+
+    let currentWorktree: Partial<WorktreeInfo> = {};
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) {
+        if (currentWorktree.path) {
+          worktrees.push(currentWorktree as WorktreeInfo);
+        }
+        currentWorktree = { path: line.substring(9) };
+      } else if (line.startsWith('HEAD ')) {
+        currentWorktree.head = line.substring(5);
+      } else if (line.startsWith('branch ')) {
+        currentWorktree.branch = line.substring(7);
+      }
+    }
+    if (currentWorktree.path) {
+      worktrees.push(currentWorktree as WorktreeInfo);
+    }
+
+    // 标记主工作树
+    if (worktrees.length > 0) {
+      worktrees[0].isMain = true;
+    }
+
+    return worktrees;
+  } catch {
+    return [];
+  }
+}
+
+export async function createWorktree(
+  repoPath: string,
+  branchName: string,
+  worktreePath: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    await execAsync(`git worktree add "${worktreePath}" -b "${branchName}"`, { cwd: repoPath });
+    return { success: true, message: `工作树创建成功: ${worktreePath}` };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
+}
+
+export async function removeWorktree(
+  repoPath: string,
+  worktreePath: string
+): Promise<{ success: boolean; message: string }> {
+  try {
+    await execAsync(`git worktree remove "${worktreePath}"`, { cwd: repoPath });
+    return { success: true, message: `工作树已删除: ${worktreePath}` };
+  } catch (error: any) {
+    return { success: false, message: error.message };
+  }
 }

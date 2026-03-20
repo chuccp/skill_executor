@@ -250,6 +250,65 @@ PROMPT:
 | `todo_write` | 写入任务列表 | `todos[]` |
 | `todo_read` | 读取任务列表 | - |
 
+### 高级编辑工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `edit` | 高级文件编辑（支持多个编辑操作） | `file_path`, `edits[]`, `create_if_not_exists?` |
+| `multi_edit` | 批量编辑多个文件 | `files[]` |
+
+### Notebook 编辑工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `notebook_read` | 读取 Jupyter Notebook 文件 | `file_path` |
+| `notebook_edit_cell` | 编辑 Notebook 单元格 | `file_path`, `cell_index`, `new_source`, `cell_type?` |
+| `notebook_add_cell` | 添加 Notebook 单元格 | `file_path`, `cell_type`, `source`, `position?` |
+| `notebook_delete_cell` | 删除 Notebook 单元格 | `file_path`, `cell_index` |
+
+### 异步任务工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `task_create` | 创建异步任务 | `task_id`, `name` |
+| `task_get` | 获取任务详情 | `task_id` |
+| `task_list` | 列出所有任务 | `status?` |
+| `task_update` | 更新任务状态 | `task_id`, `status?`, `progress?`, `result?`, `error?` |
+| `task_stop` | 停止任务 | `task_id` |
+
+### Plan 模式工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `plan_create` | 创建执行计划 | `plan_id`, `title`, `steps[]` |
+| `plan_get` | 获取计划详情 | `plan_id` |
+| `plan_update_step` | 更新计划步骤状态 | `plan_id`, `step_id`, `status` |
+
+### Git Worktree 工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `worktree_list` | 列出所有工作树 | `repo_path?` |
+| `worktree_create` | 创建新工作树 | `branch_name`, `worktree_path`, `repo_path?` |
+| `worktree_remove` | 删除工作树 | `worktree_path`, `repo_path?` |
+
+### Agent 工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `agent_spawn` | 创建子代理执行任务 | `agent_id`, `task`, `agent_type?` |
+
+### 文件操作工具
+
+| 工具 | 说明 | 参数 |
+|------|------|------|
+| `copy_file` | 复制文件 | `source`, `destination` |
+| `move_file` | 移动/重命名文件 | `source`, `destination` |
+| `delete_file` | 删除文件或目录 | `file_path` |
+| `create_directory` | 创建目录 | `path` |
+| `file_info` | 获取文件详细信息 | `file_path` |
+| `file_exists` | 检查文件是否存在 | `file_path` |
+
 ### 其他工具
 
 | 工具 | 说明 | 参数 |
