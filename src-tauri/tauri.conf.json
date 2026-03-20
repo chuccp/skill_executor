@@ -4,10 +4,10 @@
   "version": "1.0.0",
   "identifier": "com.skill-executor.app",
   "build": {
-    "beforeDevCommand": "pnpm run dev",
-    "devUrl": "http://localhost:38592",
-    "beforeBuildCommand": "pnpm run build",
-    "frontendDist": "../dist/public"
+    "beforeDevCommand": "npm run dev:all",
+    "devUrl": "http://localhost:38593",
+    "beforeBuildCommand": "npm run build:web && npm run build",
+    "frontendDist": "../web/dist"
   },
   "app": {
     "withGlobalTauri": true,

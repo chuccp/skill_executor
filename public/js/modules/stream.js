@@ -6,6 +6,51 @@
 var thinkingContent = '';
 var thinkingPanelVisible = false;
 
+// 随机文案
+var statusMessages = [
+  '思考中...',
+  '让子弹飞一会儿...',
+  '脑细胞正在努力...',
+  '正在召唤AI之力...',
+  '码字中...',
+  '正在搬运知识...',
+  '灵感加载中...',
+  '正在施展魔法...',
+  '冥想中...',
+  '正在调取记忆...',
+  '大脑飞速运转...',
+  '正在编织答案...',
+  '努力不掉链子...',
+  '正在捣鼓代码...',
+  '认真干活中...',
+  '正在消化问题...',
+  'CPU在燃烧...',
+  '正在翻译人类语言...',
+  '蓄力中...',
+  '即将揭晓答案...',
+  '最后冲刺...',
+  '精雕细琢中...',
+  '马上就好...',
+  '收尾中...'
+];
+var statusTimer = null;
+var lastStatusIndex = -1;
+
+// 随机显示状态文案
+function randomStatusMessage() {
+  var statusEl = window.$('messages').querySelector('.streaming .stream-status');
+  if (!statusEl) return;
+  
+  // 随机选择一个不同的文案
+  var index;
+  do {
+    index = Math.floor(Math.random() * statusMessages.length);
+  } while (index === lastStatusIndex && statusMessages.length > 1);
+  lastStatusIndex = index;
+  
+  statusEl.textContent = statusMessages[index];
+}
+
 // 显示思考面板（在当前 streaming 消息内）
 function showThinkingPanel() {
   if (thinkingPanelVisible) return;
@@ -96,19 +141,22 @@ window.startStream = function() {
   updateSendButton();
   thinkingContent = '';
   thinkingPanelVisible = false;
+  lastStatusIndex = -1;
   
   const div = document.createElement('div');
   div.className = 'message assistant streaming';
-  div.innerHTML = '<div class="role">AI</div><div class="content"><span class="typing"></span></div>';
+  div.innerHTML = '<div class="role">AI</div><div class="content"></div><span class="stream-status">思考中...</span>';
   window.$('messages').appendChild(div);
   window.scrollToBottom();
+  
+  // 启动随机文案定时器
+  randomStatusMessage();
+  statusTimer = setInterval(randomStatusMessage, 2000);
 };
 
 function appendStreamText(text) {
   const el = window.$('messages').querySelector('.streaming .content');
   if (el) {
-    const t = el.querySelector('.typing');
-    if (t) t.remove();
     el.textContent += text;
     window.scrollToBottom();
   }
@@ -118,35 +166,23 @@ window.finishStream = function() {
   window.state.isStreaming = false;
   window.state.abortController = null;
   updateSendButton();
+  
+  // 停止随机文案定时器
+  if (statusTimer) {
+    clearInterval(statusTimer);
+    statusTimer = null;
+  }
+  
+  // 只移除 streaming 标记，状态提示淡出隐藏
   const el = window.$('messages').querySelector('.streaming');
   if (el) {
     el.classList.remove('streaming');
-    
-    // 只对文本内容进行代码块格式化，保留工具结果等元素
-    const contentEl = el.querySelector('.content');
-    if (contentEl) {
-      // 获取工具结果容器，暂时移除
-      const toolContainer = contentEl.querySelector('.tool-results-container');
-      if (toolContainer) {
-        toolContainer.remove();
-      }
-      
-      // 格式化文本内容
-      const textContent = contentEl.textContent;
-      contentEl.innerHTML = formatCodeBlocks(textContent);
-      
-      // 重新添加工具结果容器
-      if (toolContainer && toolContainer.children.length > 0) {
-        contentEl.appendChild(toolContainer);
-      }
-    }
-    
-    // 折叠思考面板（但不清除内容，用户可以查看）
-    var thinkingPanel = el.querySelector('.thinking-panel');
-    if (thinkingPanel) {
-      thinkingPanel.classList.add('collapsed');
+    var statusEl = el.querySelector('.stream-status');
+    if (statusEl) {
+      statusEl.classList.add('fade-out');
     }
   }
+  
   hideProgressPanel();
   hideProgressIndicator();
   // 清理任务面板

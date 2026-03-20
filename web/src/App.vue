@@ -1,0 +1,140 @@
+<script setup lang="ts">
+import { onMounted } from 'vue'
+import Sidebar from './components/Sidebar.vue'
+import ChatContainer from './components/ChatContainer.vue'
+import InputArea from './components/InputArea.vue'
+import ConfigModal from './components/ConfigModal.vue'
+import SkillModal from './components/SkillModal.vue'
+import { useStore } from './stores/app'
+
+const { state, actions } = useStore()
+
+onMounted(async () => {
+  await Promise.all([
+    actions.loadPresets(),
+    actions.loadConversations(),
+    actions.loadSkills(),
+    actions.loadWorkdir()
+  ])
+
+  // Load last conversation
+  const lastId = localStorage.getItem('lastConversationId')
+  if (lastId && state.conversations.find(c => c.id === lastId)) {
+    await actions.selectConversation(lastId)
+  } else if (state.conversations.length > 0) {
+    await actions.selectConversation(state.conversations[0].id)
+  } else {
+    await actions.createConversation()
+  }
+})
+</script>
+
+<template>
+  <div class="app">
+    <Sidebar />
+    <main class="main">
+      <ChatContainer />
+      <InputArea />
+    </main>
+    <ConfigModal v-if="state.showConfigModal" />
+    <SkillModal v-if="state.showSkillModal" />
+  </div>
+</template>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f6f3ee;
+  --panel: #ffffff;
+  --text: #161616;
+  --muted: #6f6a63;
+  --border: #e6e0d6;
+  --accent: #0f766e;
+  --accent-strong: #0b5f59;
+  --accent-weak: #e6f4f1;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 12px 28px rgba(19, 24, 28, 0.08);
+  --mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+body {
+  font-family: var(--sans);
+  background: radial-gradient(1200px 800px at 10% -10%, #fff7eb 0%, transparent 60%),
+    radial-gradient(900px 600px at 95% 10%, #e9f5f3 0%, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  height: 100vh;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btn:hover {
+  background: #f5f2ec;
+  border-color: #d4cfc5;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-strong);
+}
+
+.btn-icon {
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+/* Form elements */
+select, input, textarea {
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.full-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+</style>

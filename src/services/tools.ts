@@ -2,8 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import * as os from 'os';
 
 const execAsync = promisify(exec);
+
+// ==================== 平台检测 ====================
+
+export const platform = {
+  isWindows: process.platform === 'win32',
+  isMac: process.platform === 'darwin',
+  isLinux: process.platform === 'linux',
+  name: process.platform,
+  homeDir: os.homedir(),
+  pathSeparator: path.sep
+};
 
 // ==================== Glob 文件搜索 ====================
 
@@ -17,13 +29,7 @@ export function globFiles(options: GlobOptions): string[] {
   const { pattern, path: searchPath = process.cwd(), ignore = [] } = options;
   const results: string[] = [];
   
-  // 解析 glob 模式
-  const parts = pattern.split('/');
-  const basePattern = parts[parts.length - 1];
-  const dirPattern = parts.slice(0, -1).join('/');
-  
   function matchPattern(str: string, pattern: string): boolean {
-    // 转换 glob 模式为正则
     let regex = pattern
       .replace(/\./g, '\\.')
       .replace(/\*\*/g, '<<<DOUBLE_STAR>>>')
@@ -45,7 +51,7 @@ export function globFiles(options: GlobOptions): string[] {
   }
   
   function walkDir(dir: string, depth: number = 0) {
-    if (depth > 20) return; // 限制深度
+    if (depth > 20) return;
     
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -58,46 +64,38 @@ export function globFiles(options: GlobOptions): string[] {
         if (entry.name.startsWith('.') && entry.name !== '.gitignore') continue;
         
         if (entry.isDirectory()) {
-          // ** 匹配任意深度目录
           if (pattern.includes('**')) {
             walkDir(fullPath, depth + 1);
           } else if (pattern.split('/').length > depth + 1) {
             walkDir(fullPath, depth + 1);
           }
         } else if (entry.isFile()) {
-          // 检查文件名是否匹配
           const fileName = entry.name;
           const relativePath = path.relative(searchPath, fullPath).replace(/\\/g, '/');
           
           if (pattern.includes('**')) {
-            // ** 模式：在整个路径中匹配
             const patternAfterDoubleStar = pattern.split('**').pop() || '';
             if (matchPattern(relativePath, pattern) || 
-                matchPattern(fileName, basePattern) ||
+                matchPattern(fileName, pattern.split('/').pop() || '') ||
                 matchPattern(relativePath, patternAfterDoubleStar.replace(/^\//, ''))) {
               results.push(fullPath);
             }
           } else if (pattern.includes('/')) {
-            // 有路径的模式
             if (matchPattern(relativePath, pattern)) {
               results.push(fullPath);
             }
           } else {
-            // 只有文件名模式
             if (matchPattern(fileName, pattern)) {
               results.push(fullPath);
             }
           }
         }
       }
-    } catch (e) {
-      // 忽略无权限目录
-    }
+    } catch (e) {}
   }
   
   walkDir(searchPath);
   
-  // 按修改时间排序（最新的在前）
   results.sort((a, b) => {
     try {
       const statA = fs.statSync(a);
@@ -128,15 +126,13 @@ export interface GrepResult {
 }
 
 export function grepContent(options: GrepOptions): GrepResult[] {
-  const { pattern, path: searchPath = process.cwd(), include, ignoreCase = true, context = 0 } = options;
+  const { pattern, path: searchPath = process.cwd(), include, ignoreCase = true } = options;
   const results: GrepResult[] = [];
   
-  // 构建文件列表
   let files: string[] = [];
   if (include) {
     files = globFiles({ pattern: include, path: searchPath });
   } else {
-    // 递归获取所有文本文件
     function getAllFiles(dir: string): string[] {
       const result: string[] = [];
       try {
@@ -155,7 +151,6 @@ export function grepContent(options: GrepOptions): GrepResult[] {
     files = getAllFiles(searchPath);
   }
   
-  // 搜索内容
   const regex = new RegExp(pattern, ignoreCase ? 'gi' : 'g');
   
   for (const file of files) {
@@ -165,19 +160,11 @@ export function grepContent(options: GrepOptions): GrepResult[] {
       
       for (let i = 0; i < lines.length; i++) {
         if (regex.test(lines[i])) {
-          results.push({
-            file,
-            line: i + 1,
-            content: lines[i].trim()
-          });
-          
-          // 限制结果数量
+          results.push({ file, line: i + 1, content: lines[i].trim() });
           if (results.length >= 100) break;
         }
       }
-    } catch (e) {
-      // 忽略二进制文件或无权限文件
-    }
+    } catch (e) {}
     
     if (results.length >= 100) break;
   }
@@ -194,8 +181,6 @@ export interface WebSearchResult {
 }
 
 export async function webSearch(query: string): Promise<WebSearchResult[]> {
-  // 使用 DuckDuckGo 或其他搜索 API
-  // 这里使用一个简单的实现，实际项目中可以使用 SerpAPI、Bing API 等
   try {
     const encodedQuery = encodeURIComponent(query);
     const url = `https://api.duckduckgo.com/?q=${encodedQuery}&format=json&no_html=1`;
@@ -205,7 +190,6 @@ export async function webSearch(query: string): Promise<WebSearchResult[]> {
     
     const results: WebSearchResult[] = [];
     
-    // 解析 DuckDuckGo 响应
     if (data.RelatedTopics) {
       for (const topic of data.RelatedTopics.slice(0, 10)) {
         if (topic.Text && topic.FirstURL) {
@@ -218,7 +202,6 @@ export async function webSearch(query: string): Promise<WebSearchResult[]> {
       }
     }
     
-    // 如果 DuckDuckGo 没有结果，返回提示
     if (results.length === 0) {
       results.push({
         title: '搜索提示',
@@ -255,49 +238,32 @@ export async function webFetch(url: string, prompt?: string): Promise<WebFetchRe
     });
     
     if (!response.ok) {
-      return {
-        url,
-        title: '',
-        content: '',
-        error: `HTTP ${response.status}: ${response.statusText}`
-      };
+      return { url, title: '', content: '', error: `HTTP ${response.status}: ${response.statusText}` };
     }
     
     const html = await response.text();
     
-    // 简单的 HTML 解析
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim() : url;
     
-    // 提取正文内容（简单实现）
     let content = html
-      // 移除 script 和 style
       .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
       .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      // 移除 HTML 标签
       .replace(/<[^>]+>/g, ' ')
-      // 合并空白
       .replace(/\s+/g, ' ')
       .trim();
     
-    // 限制长度
     if (content.length > 10000) {
       content = content.substring(0, 10000) + '\n... (内容已截断)';
     }
     
-    // 如果有 prompt，简单处理（实际应该用 LLM）
     if (prompt) {
       content = `[根据提示 "${prompt}" 提取的内容]\n\n${content}`;
     }
     
     return { url, title, content };
   } catch (error: any) {
-    return {
-      url,
-      title: '',
-      content: '',
-      error: error.message
-    };
+    return { url, title: '', content: '', error: error.message };
   }
 }
 
@@ -310,7 +276,6 @@ export interface TodoItem {
   priority?: 'high' | 'medium' | 'low';
 }
 
-// 每个会话的 todo 列表
 const sessionTodos: Map<string, TodoItem[]> = new Map();
 
 export function getTodos(sessionId: string): TodoItem[] {
@@ -323,12 +288,7 @@ export function setTodos(sessionId: string, todos: TodoItem[]): void {
 
 export function addTodo(sessionId: string, task: string, priority?: 'high' | 'medium' | 'low'): TodoItem {
   const todos = getTodos(sessionId);
-  const todo: TodoItem = {
-    id: Date.now().toString(),
-    task,
-    status: 'pending',
-    priority
-  };
+  const todo: TodoItem = { id: Date.now().toString(), task, status: 'pending', priority };
   todos.push(todo);
   setTodos(sessionId, todos);
   return todo;
@@ -390,26 +350,19 @@ export interface ReplaceResult {
   matches: number;
 }
 
-export function replaceInFile(
-  filePath: string,
-  oldString: string,
-  newString: string
-): ReplaceResult {
+export function replaceInFile(filePath: string, oldString: string, newString: string): ReplaceResult {
   try {
     if (!fs.existsSync(filePath)) {
       return { success: false, message: '文件不存在', matches: 0 };
     }
     
     const content = fs.readFileSync(filePath, 'utf-8');
-    
-    // 检查是否有匹配
     const matches = content.split(oldString).length - 1;
     
     if (matches === 0) {
       return { success: false, message: '未找到要替换的内容', matches: 0 };
     }
     
-    // 如果有多个匹配，警告
     if (matches > 1) {
       return { 
         success: false, 
@@ -418,7 +371,6 @@ export function replaceInFile(
       };
     }
     
-    // 执行替换
     const newContent = content.replace(oldString, newString);
     fs.writeFileSync(filePath, newContent, 'utf-8');
     
@@ -426,6 +378,175 @@ export function replaceInFile(
   } catch (error: any) {
     return { success: false, message: error.message, matches: 0 };
   }
+}
+
+// ==================== 文件操作工具 ====================
+
+export interface FileOperationResult {
+  success: boolean;
+  message: string;
+}
+
+// 复制文件
+export function copyFile(source: string, destination: string): FileOperationResult {
+  try {
+    if (!fs.existsSync(source)) {
+      return { success: false, message: `源文件不存在: ${source}` };
+    }
+    
+    const destDir = path.dirname(destination);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    fs.copyFileSync(source, destination);
+    return { success: true, message: `复制成功: ${source} -> ${destination}` };
+  } catch (error: any) {
+    return { success: false, message: `复制失败: ${error.message}` };
+  }
+}
+
+// 移动/重命名文件
+export function moveFile(source: string, destination: string): FileOperationResult {
+  try {
+    if (!fs.existsSync(source)) {
+      return { success: false, message: `源文件不存在: ${source}` };
+    }
+    
+    const destDir = path.dirname(destination);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    
+    fs.renameSync(source, destination);
+    return { success: true, message: `移动成功: ${source} -> ${destination}` };
+  } catch (error: any) {
+    return { success: false, message: `移动失败: ${error.message}` };
+  }
+}
+
+// 删除文件
+export function deleteFile(filePath: string): FileOperationResult {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, message: `文件不存在: ${filePath}` };
+    }
+    
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      fs.rmSync(filePath, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(filePath);
+    }
+    
+    return { success: true, message: `删除成功: ${filePath}` };
+  } catch (error: any) {
+    return { success: false, message: `删除失败: ${error.message}` };
+  }
+}
+
+// 创建目录
+export function createDirectory(dirPath: string): FileOperationResult {
+  try {
+    if (fs.existsSync(dirPath)) {
+      return { success: false, message: `目录已存在: ${dirPath}` };
+    }
+    
+    fs.mkdirSync(dirPath, { recursive: true });
+    return { success: true, message: `目录创建成功: ${dirPath}` };
+  } catch (error: any) {
+    return { success: false, message: `创建目录失败: ${error.message}` };
+  }
+}
+
+// ==================== 文件信息 ====================
+
+export interface FileInfo {
+  path: string;
+  name: string;
+  extension: string;
+  size: number;
+  sizeFormatted: string;
+  created: Date;
+  modified: Date;
+  accessed: Date;
+  isDirectory: boolean;
+  isFile: boolean;
+  permissions: string;
+}
+
+export function getFileInfo(filePath: string): FileInfo | null {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+    
+    const stat = fs.statSync(filePath);
+    const parsedPath = path.parse(filePath);
+    
+    return {
+      path: filePath,
+      name: parsedPath.base,
+      extension: parsedPath.ext,
+      size: stat.size,
+      sizeFormatted: formatBytes(stat.size),
+      created: stat.birthtime,
+      modified: stat.mtime,
+      accessed: stat.atime,
+      isDirectory: stat.isDirectory(),
+      isFile: stat.isFile(),
+      permissions: getPermissions(stat.mode)
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+// 检查文件是否存在
+export function fileExists(filePath: string): boolean {
+  return fs.existsSync(filePath);
+}
+
+// ==================== XML 转义 ====================
+
+export function xmlEscape(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// ==================== 辅助函数 ====================
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function getPermissions(mode: number): string {
+  const perms: string[] = [];
+  
+  // Owner
+  perms.push(mode & 0o400 ? 'r' : '-');
+  perms.push(mode & 0o200 ? 'w' : '-');
+  perms.push(mode & 0o100 ? 'x' : '-');
+  
+  // Group
+  perms.push(mode & 0o040 ? 'r' : '-');
+  perms.push(mode & 0o020 ? 'w' : '-');
+  perms.push(mode & 0o010 ? 'x' : '-');
+  
+  // Others
+  perms.push(mode & 0o004 ? 'r' : '-');
+  perms.push(mode & 0o002 ? 'w' : '-');
+  perms.push(mode & 0o001 ? 'x' : '-');
+  
+  return perms.join('');
 }
 
 // ==================== Ask User ====================
@@ -441,5 +562,3 @@ export interface Question {
   options: QuestionOption[];
   multiSelect: boolean;
 }
-
-// 这个工具在 WebSocket 中特殊处理，需要等待用户回复

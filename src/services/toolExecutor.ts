@@ -13,7 +13,14 @@ import {
   setTodos,
   listDirectory,
   replaceInFile,
-  TodoItem
+  TodoItem,
+  copyFile,
+  moveFile,
+  deleteFile,
+  createDirectory,
+  getFileInfo,
+  fileExists,
+  xmlEscape
 } from './tools';
 import { getWorkingDir } from './workingDir';
 
@@ -228,6 +235,87 @@ export const TOOLS = [
         file_path: { type: 'string', description: '媒体文件的绝对路径' }
       },
       required: ['file_path']
+    }
+  },
+  // ========== 文件操作工具 ==========
+  {
+    name: 'copy_file',
+    description: '复制文件到指定位置。如果目标目录不存在会自动创建。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: '源文件路径' },
+        destination: { type: 'string', description: '目标文件路径' }
+      },
+      required: ['source', 'destination']
+    }
+  },
+  {
+    name: 'move_file',
+    description: '移动或重命名文件。可以用于文件重命名或移动到不同目录。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: '源文件路径' },
+        destination: { type: 'string', description: '目标文件路径' }
+      },
+      required: ['source', 'destination']
+    }
+  },
+  {
+    name: 'delete_file',
+    description: '删除文件或目录。删除目录时会递归删除所有内容。危险操作，需谨慎使用。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '要删除的文件或目录路径' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'create_directory',
+    description: '创建新目录。支持递归创建父目录。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '要创建的目录路径' }
+      },
+      required: ['path']
+    }
+  },
+  {
+    name: 'file_info',
+    description: '获取文件的详细信息，包括大小、创建时间、修改时间、权限等。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '文件路径' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'file_exists',
+    description: '检查文件或目录是否存在。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '要检查的路径' }
+      },
+      required: ['file_path']
+    }
+  },
+  // ========== XML 转义工具 ==========
+  {
+    name: 'xml_escape',
+    description: '对文本进行 XML/HTML 转义，将特殊字符转换为实体。用于生成安全的 XML 或 HTML 内容。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: '要转义的文本' }
+      },
+      required: ['text']
     }
   }
 ];
@@ -654,7 +742,6 @@ export async function executeTool(
         const stat = fs.statSync(filePath);
         const fileSize = formatBytes(stat.size);
 
-        // WebSocket 模式：发送播放事件
         if (ws) {
           ws.send(JSON.stringify({
             type: 'play_media',
@@ -665,7 +752,6 @@ export async function executeTool(
           }));
         }
 
-        // SSE 模式：返回特殊格式供前端解析
         return `MEDIA_INFO:${JSON.stringify({
           type: mediaType,
           path: filePath,
@@ -675,6 +761,127 @@ export async function executeTool(
       } catch (e: any) {
         return `播放媒体失败: ${e.message}`;
       }
+    }
+
+    // ========== 文件操作工具 ==========
+    case 'copy_file': {
+      const source = resolveToWorkingDir(tool.input?.source);
+      const destination = resolveToWorkingDir(tool.input?.destination);
+
+      if (!source || !destination) {
+        return '错误：源路径和目标路径不能为空';
+      }
+
+      const result = copyFile(source, destination);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'file_copied', source, destination }));
+      }
+      return result.message;
+    }
+
+    case 'move_file': {
+      const source = resolveToWorkingDir(tool.input?.source);
+      const destination = resolveToWorkingDir(tool.input?.destination);
+
+      if (!source || !destination) {
+        return '错误：源路径和目标路径不能为空';
+      }
+
+      const result = moveFile(source, destination);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'file_moved', source, destination }));
+      }
+      return result.message;
+    }
+
+    case 'delete_file': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+
+      if (!filePath) return '错误：文件路径为空';
+
+      // 危险操作，需要确认
+      if (!commandExecutor.isSafeCommand(`rm ${filePath}`)) {
+        if (!ws || !pendingCommands) {
+          return `需要用户确认删除操作: ${filePath}`;
+        }
+        return new Promise((resolve) => {
+          const confirmId = `${conversationId}-${Date.now()}`;
+          pendingCommands.set(confirmId, { 
+            command: `删除: ${filePath}`, 
+            action: 'delete', 
+            path: filePath, 
+            ws, 
+            conversationId, 
+            resolve 
+          });
+          ws.send(JSON.stringify({ type: 'command_confirm', confirmId, command: `删除: ${filePath}` }));
+        });
+      }
+
+      const result = deleteFile(filePath);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'file_deleted', path: filePath }));
+      }
+      return result.message;
+    }
+
+    case 'create_directory': {
+      const dirPath = resolveToWorkingDir(tool.input?.path);
+
+      if (!dirPath) return '错误：目录路径为空';
+
+      const result = createDirectory(dirPath);
+      if (result.success && ws) {
+        ws.send(JSON.stringify({ type: 'directory_created', path: dirPath }));
+      }
+      return result.message;
+    }
+
+    case 'file_info': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+
+      if (!filePath) return '错误：文件路径为空';
+
+      const info = getFileInfo(filePath);
+      if (!info) {
+        return `文件不存在: ${filePath}`;
+      }
+
+      const output = [
+        `路径: ${info.path}`,
+        `名称: ${info.name}`,
+        `类型: ${info.isDirectory ? '目录' : '文件'}`,
+        `扩展名: ${info.extension || '(无)'}`,
+        `大小: ${info.sizeFormatted}`,
+        `创建时间: ${info.created.toLocaleString()}`,
+        `修改时间: ${info.modified.toLocaleString()}`,
+        `访问时间: ${info.accessed.toLocaleString()}`,
+        `权限: ${info.permissions}`
+      ].join('\n');
+
+      return `文件信息:\n${output}`;
+    }
+
+    case 'file_exists': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+
+      if (!filePath) return '错误：文件路径为空';
+
+      const exists = fileExists(filePath);
+      return exists ? `存在: ${filePath}` : `不存在: ${filePath}`;
+    }
+
+    // ========== XML 转义工具 ==========
+    case 'xml_escape': {
+      const text = tool.input?.text;
+      if (text === undefined || text === null) {
+        return '错误：文本不能为空';
+      }
+      const escaped = xmlEscape(text);
+      return `转义结果:\n${escaped}`;
     }
 
     default:

@@ -125,10 +125,15 @@ setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecuto
 
 // 启动服务器
 const PORT = process.env.PORT || 38592;
+const VITE_PORT = 38593;
 
 async function startServer() {
-  // 检查并释放端口
-  await checkAndFreePort(Number(PORT));
+  // 检查并释放后端端口和前端端口
+  console.log('Checking ports...');
+  await Promise.all([
+    checkAndFreePort(Number(PORT)),
+    checkAndFreePort(VITE_PORT)
+  ]);
 
   server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);

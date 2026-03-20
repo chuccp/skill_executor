@@ -362,6 +362,7 @@ body {
 }
 
 .message {
+  position: relative;
   margin-bottom: 14px;
   padding: 14px 18px;
   border-radius: var(--radius-lg);
@@ -372,6 +373,8 @@ body {
   border: 1px solid var(--border);
   box-shadow: 0 8px 20px rgba(18, 18, 18, 0.06);
   animation: fadeIn 0.15s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes fadeIn {
@@ -398,6 +401,7 @@ body {
   font-weight: 600;
   letter-spacing: 0.4px;
   text-transform: uppercase;
+  order: 1;
 }
 
 .message .content {
@@ -405,6 +409,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.95rem;
+  order: 3;
 }
 
 /* 代码块样式 */
@@ -1394,16 +1399,29 @@ body {
   background: #fafafa;
 }
 
-/* 流式消息光标 */
-.streaming .content::after {
-  content: '▋';
-  animation: blink 1s infinite;
-  color: #111;
+/* 流式消息状态提示 */
+.message .stream-status {
+  color: var(--accent);
+  font-size: 0.85rem;
+  display: block;
+  animation: statusPulse 1.5s infinite;
+  transition: opacity 0.5s ease, visibility 0.5s ease;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  order: 99;
 }
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+.message .stream-status.fade-out {
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+@keyframes statusPulse {
+  0% { opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { opacity: 0.6; }
 }
 
 /* 模型配置区域 */
@@ -1511,11 +1529,15 @@ body {
   flex: 1;
   max-height: none;
   overflow: visible;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 技能管理模态框的 body 不滚动 */
 .modal-body:has(.skill-manager) {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .form-group {
@@ -1584,6 +1606,7 @@ body {
 /* 大模态框 */
 .modal-large {
   max-width: 90vw;
+  min-height: 450px;
 }
 
 /* 统一由上方 .modal-body 控制高度 */
@@ -1593,7 +1616,8 @@ body {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 12px;
-  height: 350px;
+  height: 100%;
+  min-height: 300px;
 }
 
 .skill-list-panel,
@@ -2275,6 +2299,7 @@ body {
   font-size: 0.75rem;
   color: #8b6914;
   overflow: hidden;
+  order: 2;
 }
 
 .message .thinking-panel.visible {
