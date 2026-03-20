@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ChatContainer from './components/ChatContainer.vue'
 import InputArea from './components/InputArea.vue'
@@ -7,8 +7,10 @@ import ConfigModal from './components/ConfigModal.vue'
 import SkillModal from './components/SkillModal.vue'
 import NotifyContainer from './components/NotifyContainer.vue'
 import { useStore } from './stores/app'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 const { state, actions } = useStore()
+let unlistenFileDrop: UnlistenFn | null = null
 
 onMounted(async () => {
   await Promise.all([
@@ -27,7 +29,25 @@ onMounted(async () => {
     await actions.createConversation()
   }
 
-  // 拖拽事件
+  // 监听 Tauri 文件拖放事件
+  unlistenFileDrop = await listen<string[]>('file-drop', (event) => {
+    const paths = event.payload
+    if (paths && paths.length > 0) {
+      const input = document.querySelector('#user-input') as HTMLTextAreaElement
+      if (input) {
+        // 添加 @ 前缀，多个文件用空格分隔
+        const pathRefs = paths.map(p => '@' + p).join(' ')
+        const currentValue = input.value.trim()
+        input.value = currentValue ? currentValue + ' ' + pathRefs : pathRefs
+        // 触发 input 事件以更新高度
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        // 聚焦输入框
+        input.focus()
+      }
+    }
+  })
+
+  // 同时保留 DOM 拖放事件（用于非 Tauri 环境）
   document.addEventListener('dragover', (e) => e.preventDefault())
   document.addEventListener('drop', (e) => {
     e.preventDefault()
@@ -42,16 +62,21 @@ onMounted(async () => {
       if (paths.length) {
         const input = document.querySelector('#user-input') as HTMLTextAreaElement
         if (input) {
-          // 添加 @ 前缀，多个文件用空格分隔
           const pathRefs = paths.map(p => '@' + p).join(' ')
           const currentValue = input.value.trim()
           input.value = currentValue ? currentValue + ' ' + pathRefs : pathRefs
-          // 触发 input 事件以更新高度
           input.dispatchEvent(new Event('input', { bubbles: true }))
+          input.focus()
         }
       }
     }
   })
+})
+
+onUnmounted(() => {
+  if (unlistenFileDrop) {
+    unlistenFileDrop()
+  }
 })
 </script>
 
