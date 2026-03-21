@@ -21,7 +21,7 @@ const { state } = useStore()
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isSystem = computed(() => props.message.role === 'system')
 const isUser = computed(() => props.message.role === 'user')
-const showThinking = ref(false)
+const showThinking = ref(true)
 const thinkingRef = ref<HTMLElement | null>(null)
 
 // Use stored thinking or streaming thinking
@@ -62,6 +62,15 @@ const toolResults = computed(() => {
   return props.streamingToolResults || []
 })
 
+// Separate media and non-media tool results
+const mediaResults = computed(() => {
+  return toolResults.value.filter(r => r.type === 'media')
+})
+
+const nonMediaToolResults = computed(() => {
+  return toolResults.value.filter(r => r.type !== 'media')
+})
+
 // Use stored todos from message or streaming todos for the current streaming message
 const todos = computed(() => {
   if (props.message.todos && props.message.todos.length > 0) {
@@ -75,6 +84,28 @@ const formattedContent = computed(() => {
   return formatContent(props.message.content)
 })
 
+// Content with media placeholders replaced by actual players
+const contentWithMedia = computed(() => {
+  let html = formattedContent.value
+  if (!html) return ''
+  
+  // Only replace placeholders if content actually has them
+  if (!hasMediaPlaceholders.value) return html
+
+  // Replace MEDIA_PLACEHOLDER markers with actual media players
+  html = html.replace(/<!-- MEDIA_PLACEHOLDER:(\d+) -->/g, (match, index) => {
+    return renderMediaPlayer(parseInt(index))
+  })
+
+  return html
+})
+
+// Check if content has media placeholders
+const hasMediaPlaceholders = computed(() => {
+  if (!props.message.content) return false
+  return /<!--\s*media:\d+\s*-->|\[media:\d+\]/.test(props.message.content)
+})
+
 const roleLabel = computed(() => {
   if (isSystem.value) return '系统'
   return isAssistant.value ? 'AI' : 'You'
@@ -86,17 +117,53 @@ function formatBlockContent(content: string): string {
   return formatContent(content)
 }
 
-function formatContent(content: string): string {
+// Parse content and insert media players at placeholder positions
+function parseContentWithMedia(content: string): string {
   if (!content) return ''
+  
   let result = escapeHtml(content)
+  
+  // Replace code blocks first
   result = result.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
+  
+  // Replace media placeholders with special markers
+  // Format: <!-- media:0 --> or [media:0]
+  result = result.replace(/<!--\s*media:(\d+)\s*-->/g, '<!-- MEDIA_PLACEHOLDER:$1 -->')
+  result = result.replace(/\[media:(\d+)\]/g, '<!-- MEDIA_PLACEHOLDER:$1 -->')
+  
+  // Replace newlines with <br>
   result = result.replace(/\n/g, '<br>')
+  
   return result
 }
 
-// Export media file
-const exportMedia = (url: string, name: string) => {
+function formatContent(content: string): string {
+  return parseContentWithMedia(content)
+}
+
+// Render media player HTML
+function renderMediaPlayer(index: number): string {
+  if (index < 0 || index >= mediaResults.value.length) return ''
+  
+  const result = mediaResults.value[index]
+  if (!result || !result.data) return ''
+  
+  const { type, name, url } = result.data
+  const exportBtn = `<button class="btn btn-small" onclick="exportMediaFromContent('${url}', '${name}')">导出</button>`
+  
+  if (type === 'image') {
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🖼️ ${name}</span>${exportBtn}</div><img src="${url}" class="media-thumb" alt="image" /></div>`
+  } else if (type === 'audio') {
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎵 ${name}</span>${exportBtn}</div><audio controls src="${url}"></audio></div>`
+  } else if (type === 'video') {
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎬 ${name}</span>${exportBtn}</div><video controls playsinline webkit-playsinline src="${url}" class="media-video"></video></div>`
+  }
+  return ''
+}
+
+// Export for inline media
+;(window as any).exportMediaFromContent = (url: string, name: string) => {
   const link = document.createElement('a')
   link.href = url
   link.download = name
@@ -112,17 +179,44 @@ const exportMedia = (url: string, name: string) => {
     <div class="role">{{ roleLabel }}</div>
 
     <!-- Thinking process first - always after role, before content -->
-    <div v-if="isAssistant && thinkingContent" class="thinking-panel" :class="{ visible: true, collapsed: !showThinking && !isStreaming }">
+    <div v-if="isAssistant && thinkingContent" class="thinking-panel" :class="{ visible: true, collapsed: !showThinking }">
       <div class="thinking-header" @click="showThinking = !showThinking">
         <span class="thinking-icon">💭</span>
         <span class="thinking-title">思考过程</span>
-        <button class="thinking-toggle">{{ showThinking || isStreaming ? '▼' : '▶' }}</button>
+        <button class="thinking-toggle">{{ !showThinking ? '▶' : '▼' }}</button>
       </div>
-      <div v-show="showThinking || isStreaming" ref="thinkingRef" class="thinking-content">{{ thinkingContent }}</div>
+      <div v-show="showThinking" ref="thinkingRef" class="thinking-content">{{ thinkingContent }}</div>
     </div>
 
-    <!-- Content after thinking -->
-    <div v-if="props.message.content" class="content" v-html="formattedContent"></div>
+    <!-- Content after thinking (with media placeholders replaced) -->
+    <div v-if="props.message.content" class="content" v-html="contentWithMedia"></div>
+
+    <!-- Media results (only shown if no placeholders were used in content) -->
+    <div v-if="isAssistant && mediaResults.length && !hasMediaPlaceholders" class="media-results-inline">
+      <div v-for="(result, idx) in mediaResults" :key="idx">
+        <div v-if="result.data.type === 'image'">
+          <div class="media-header">
+            <span class="media-label">🖼️ {{ result.data.name }}</span>
+            <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+          </div>
+          <img :src="result.data.url" class="media-thumb" alt="image" />
+        </div>
+        <div v-else-if="result.data.type === 'audio'">
+          <div class="media-header">
+            <span class="media-label">🎵 {{ result.data.name }}</span>
+            <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+          </div>
+          <audio controls :src="result.data.url"></audio>
+        </div>
+        <div v-else-if="result.data.type === 'video'">
+          <div class="media-header">
+            <span class="media-label">🎬 {{ result.data.name }}</span>
+            <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+          </div>
+          <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video"></video>
+        </div>
+      </div>
+    </div>
 
     <!-- Progress -->
     <div v-if="isAssistant && progressText && isStreaming" class="progress-panel">
@@ -140,9 +234,9 @@ const exportMedia = (url: string, name: string) => {
       </div>
     </div>
 
-    <!-- Tool results -->
-    <div v-if="isAssistant && toolResults && toolResults.length" class="tool-results">
-      <div v-for="(result, idx) in toolResults" :key="idx">
+    <!-- Tool results (non-media) -->
+    <div v-if="isAssistant && nonMediaToolResults.length" class="tool-results">
+      <div v-for="(result, idx) in nonMediaToolResults" :key="idx">
         <!-- File content -->
         <div v-if="result.type === 'file'" class="file-preview">
           <div class="fp-header">
@@ -183,31 +277,6 @@ const exportMedia = (url: string, name: string) => {
             <code class="bash-cmd">{{ result.data.command }}</code>
           </div>
           <pre class="bash-output">{{ result.data.output.slice(0, 300) }}{{ result.data.output.length > 300 ? '\n...' : '' }}</pre>
-        </div>
-
-        <!-- Media result -->
-        <div v-else-if="result.type === 'media'" class="media-result">
-          <div v-if="result.data.type === 'image'">
-            <div class="media-header">
-              <span class="media-label">🖼️ {{ result.data.name }}</span>
-              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
-            </div>
-            <img :src="result.data.url" class="media-thumb" alt="image" />
-          </div>
-          <div v-else-if="result.data.type === 'audio'">
-            <div class="media-header">
-              <span class="media-label">🎵 {{ result.data.name }}</span>
-              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
-            </div>
-            <audio controls :src="result.data.url"></audio>
-          </div>
-          <div v-else-if="result.data.type === 'video'">
-            <div class="media-header">
-              <span class="media-label">🎬 {{ result.data.name }}</span>
-              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
-            </div>
-            <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video"></video>
-          </div>
         </div>
       </div>
     </div>
@@ -275,6 +344,10 @@ const exportMedia = (url: string, name: string) => {
   word-break: break-word;
   font-size: 0.95rem;
   order: 3;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .stream-status {
@@ -477,6 +550,73 @@ const exportMedia = (url: string, name: string) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.media-result {
+  background: #f8f6f2;
+  border-radius: var(--radius-sm);
+  padding: 10px;
+}
+
+/* Media results inline (shown right after content) */
+.media-results-inline {
+  order: 4;
+  margin-top: 10px;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Media inline (when inserted via placeholder in content) */
+.media-inline {
+  margin: 10px 0;
+  padding: 10px;
+  background: #f8f6f2;
+  border-radius: var(--radius-sm);
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.media-inline .media-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.media-inline .media-label {
+  font-size: 0.85rem;
+  word-break: break-word;
+  max-width: calc(100% - 60px);
+}
+
+.media-inline .media-thumb {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  cursor: pointer;
+  width: auto;
+  height: auto;
+  display: block;
+}
+
+.media-inline .media-video {
+  max-width: 100% !important;
+  width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  background: #000;
+  outline: none;
+  display: block;
+  object-fit: contain;
 }
 
 .media-label {

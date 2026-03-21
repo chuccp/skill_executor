@@ -2,6 +2,7 @@
 import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { useStore } from '../stores/app'
 import { wsService } from '../services/websocket'
+import { api } from '../services/api'
 
 const { state, actions } = useStore()
 const inputText = ref('')
@@ -28,6 +29,14 @@ const handleProgress = (data: any) => {
   actions.setProgress(data.content || data)
 }
 
+const focusInput = () => {
+  nextTick(() => {
+    if (inputRef.value) {
+      inputRef.value.focus()
+    }
+  })
+}
+
 const handleAskUser = (data: any) => {
   // 当AI暂停等待用户回答时，先把当前已有的思考、工具结果、任务列表保存到消息对象，防止后续清空后丢失
   const lastMsg = state.messages[state.messages.length - 1]
@@ -41,10 +50,25 @@ const handleAskUser = (data: any) => {
     if (state.todos.length) {
       lastMsg.todos = state.todos
     }
+    // Save to backend
+    if (state.currentConversationId) {
+      const msgIndex = state.messages.length - 1
+      api.updateMessage(state.currentConversationId, msgIndex, {
+        thinking: state.thinkingContent || undefined,
+        toolResults: state.currentToolResults.length ? state.currentToolResults : undefined,
+        todos: state.todos.length ? state.todos : undefined
+      }).catch(err => console.error('Failed to save message extras:', err))
+    }
   }
+  // Finish the current stream - AI is paused waiting for user answer
+  actions.finishStream()
   state.askId = data.askId
   state.askQuestion = data.question
   state.askOptions = data.options || []
+  // When AI asks a question without options, auto-focus input
+  if (!data.options || data.options.length === 0) {
+    focusInput()
+  }
 }
 
 const handleDone = () => {
@@ -116,6 +140,7 @@ const sendMessage = async () => {
     const askId = state.askId
     const answerText = content
     actions.addMessage('user', `[回答] ${answerText}`)
+    actions.addMessage('assistant', '')
     actions.startStream()
     wsService.sendAskResponse(askId, { value: content, label: answerText })
     // 清空询问状态
@@ -153,16 +178,24 @@ const handleToolResultData = (data: { name: string; result: string }) => {
       const mediaInfo = JSON.parse(result.substring(11))
       // Build URL from path
       const url = buildMediaUrl(mediaInfo.path)
-      actions.addToolResult({
-        type: 'media',
-        data: {
-          type: mediaInfo.type,
-          name: mediaInfo.name,
-          path: mediaInfo.path,
-          url: url,
-          size: mediaInfo.size
-        }
-      })
+      
+      // Check if this media file is already added to avoid duplicates
+      const isMediaAlreadyAdded = state.currentToolResults.some(
+        r => r.type === 'media' && r.data?.path === mediaInfo.path
+      );
+      
+      if (!isMediaAlreadyAdded) {
+        actions.addToolResult({
+          type: 'media',
+          data: {
+            type: mediaInfo.type,
+            name: mediaInfo.name,
+            path: mediaInfo.path,
+            url: url,
+            size: mediaInfo.size
+          }
+        })
+      }
     } catch (e) {}
     return
   }
@@ -194,9 +227,11 @@ const handleToolResultData = (data: { name: string; result: string }) => {
       actions.addToolResult({ type: 'search', data: { query: '内容搜索', files: lines, total: parseInt(match[1]) } })
     }
   } else if (name === 'write_file') {
-    const match = result.match(/写入文件成功：(.+)/)
     let filePath = ''
     let content = result
+
+    // Format 1: 写入文件成功：file/path.ext
+    const match = result.match(/写入文件成功：(.+)/)
     if (match) {
       filePath = match[1]
       // Extract content after the first line
@@ -205,6 +240,21 @@ const handleToolResultData = (data: { name: string; result: string }) => {
         content = result.substring(firstLineEnd + 1)
       } else {
         content = ''
+      }
+    } else {
+      // Format 2: Extract media file path from markdown output like "**输出路径**: media/video/file.mp4"
+      const lines = result.split('\n')
+      const mediaExts = ['mp4', 'mp3', 'webm', 'avi', 'mov', 'mkv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
+      for (const line of lines) {
+        // Match patterns like "path: filename.ext" or "**output**:\nfilename.ext"
+        for (const ext of mediaExts) {
+          const extracted = line.match(/(?:.*:|.*：)?\s*([^\s]+\.${ext})\b/i)
+          if (extracted) {
+            filePath = extracted[1]
+            break
+          }
+        }
+        if (filePath) break
       }
     }
 
@@ -217,7 +267,14 @@ const handleToolResultData = (data: { name: string; result: string }) => {
     // Text/code extensions that should show preview
     const textExts = ['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'html', 'css', 'scss', 'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'sh', 'bash']
 
-    if (filePath && imageExts.includes(ext)) {
+    // Check if this media file is already added to avoid duplicates
+    const isMediaAlreadyAdded = state.currentToolResults.some(
+      r => r.type === 'media' && r.data?.path === filePath
+    );
+
+    if (isMediaAlreadyAdded) {
+      // Already exists, don't add again
+    } else if (filePath && imageExts.includes(ext)) {
       actions.addToolResult({
         type: 'media',
         data: {

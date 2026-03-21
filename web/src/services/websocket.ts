@@ -37,6 +37,7 @@ export type WSServerMessageType =
   | 'pong'
   | 'config_updated'
   | 'progress'
+  | 'play_media'
 
 export interface WSMessage {
   type: WSMessageType

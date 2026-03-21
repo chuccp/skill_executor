@@ -373,6 +373,44 @@ export function createApiRouter(
     }
   });
 
+  // 媒体文件 URL API - 返回媒体文件的可访问 URL
+  router.get('/media/url', (req: Request, res: Response) => {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      res.json({ success: false, error: 'Missing path parameter' });
+      return;
+    }
+
+    // 解析路径
+    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(getWorkingDir(), filePath);
+
+    // 安全检查
+    if (!fs.existsSync(absolutePath)) {
+      res.json({ success: false, error: 'File not found' });
+      return;
+    }
+
+    if (!fs.statSync(absolutePath).isFile()) {
+      res.json({ success: false, error: 'Path is not a file' });
+      return;
+    }
+
+    // 生成相对路径 URL（用于前端访问）
+    const relativePath = path.relative(path.join(process.cwd(), 'media'), absolutePath);
+    const mediaUrl = `/file?path=${encodeURIComponent(absolutePath)}`;
+
+    res.json({
+      success: true,
+      data: {
+        path: absolutePath.replace(/\\/g, '/'),
+        url: mediaUrl,
+        name: path.basename(absolutePath),
+        type: path.extname(absolutePath).toLowerCase()
+      }
+    });
+  });
+
   // 文件代理 API - 用于访问非 media 目录的文件
   router.get('/file', (req: Request, res: Response) => {
     const filePath = req.query.path as string;

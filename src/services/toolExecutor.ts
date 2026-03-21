@@ -1244,21 +1244,15 @@ export async function executeTool(
         const stat = fs.statSync(filePath);
         const fileSize = formatBytes(stat.size);
 
-        if (ws) {
-          ws.send(JSON.stringify({
-            type: 'play_media',
-            mediaType,
-            path: filePath,
-            name: fileName,
-            size: fileSize
-          }));
-        }
+        // 生成媒体文件 URL（通过后端 API 代理访问）
+        const mediaUrl = `/api/file?path=${encodeURIComponent(filePath)}`;
 
         return `MEDIA_INFO:${JSON.stringify({
           type: mediaType,
           path: filePath,
           name: fileName,
-          size: fileSize
+          size: fileSize,
+          url: mediaUrl
         })}`;
       } catch (e: any) {
         return `播放媒体失败: ${e.message}`;
@@ -2107,17 +2101,15 @@ ${result}`;
           cwd: process.cwd()
         });
 
-        // 发送播放事件
-        if (ctx.ws) {
-          ctx.ws.send(JSON.stringify({
-            type: 'play_media',
-            mediaType: 'audio',
-            path: outputPath,
-            name: path.basename(outputPath)
-          }));
-        }
+        // 生成媒体文件 URL（通过后端 API 代理访问）
+        const mediaUrl = `/api/file?path=${encodeURIComponent(outputPath)}`;
 
-        return `语音生成成功：${outputPath}\n\n已自动播放`;
+        return `MEDIA_INFO:${JSON.stringify({
+          type: 'audio',
+          path: outputPath,
+          name: path.basename(outputPath),
+          url: mediaUrl
+        })}`;
       } catch (e: any) {
         // Python 版本失败时尝试 Node.js 版本
         try {
@@ -2139,16 +2131,15 @@ ${result}`;
           const pathMatch = result.match(/OUTPUT_PATH=(.+)/);
           const outPath = pathMatch ? pathMatch[1].trim() : null;
 
-          if (outPath && ctx.ws) {
-            ctx.ws.send(JSON.stringify({
-              type: 'play_media',
-              mediaType: 'audio',
-              path: outPath,
-              name: path.basename(outPath)
-            }));
-          }
+          // 生成媒体文件 URL（通过后端 API 代理访问）
+          const mediaUrl = outPath ? `/api/file?path=${encodeURIComponent(outPath)}` : '';
 
-          return result.split('\n').filter((line: string) => !line.startsWith('OUTPUT_PATH=')).join('\n');
+          return `MEDIA_INFO:${JSON.stringify({
+            type: 'audio',
+            path: outPath || '',
+            name: outPath ? path.basename(outPath) : '',
+            url: mediaUrl
+          })}`;
         } catch (e2: any) {
           return '文字转语音失败：' + e2.message + '\n请确保已安装 edge-tts: pip install edge-tts';
         }

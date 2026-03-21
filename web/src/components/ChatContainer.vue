@@ -127,16 +127,16 @@ const sendAskResponse = async (value: any) => {
 .ask-bubble {
   background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
   border: 1px solid #fde68a;
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 10px 12px;
   display: flex;
-  gap: 12px;
-  max-width: 90%;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  gap: 8px;
+  max-width: 85%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 .ask-icon {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   flex-shrink: 0;
 }
 
@@ -146,32 +146,32 @@ const sendAskResponse = async (value: any) => {
 }
 
 .ask-question {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--text);
-  margin-bottom: 12px;
-  line-height: 1.5;
+  margin-bottom: 8px;
+  line-height: 1.4;
 }
 
 .ask-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .ask-option-btn {
   background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
   border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px 14px;
+  border-radius: 8px;
+  padding: 6px 10px;
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  min-width: 100px;
+  min-width: 80px;
   flex: 1;
-  max-width: 200px;
+  max-width: 160px;
 }
 
 .ask-option-btn:hover {
@@ -184,12 +184,12 @@ const sendAskResponse = async (value: any) => {
 
 .option-label {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .option-desc {
-  font-size: 0.75rem;
-  opacity: 0.8;
+  font-size: 0.65rem;
+  opacity: 0.7;
 }
 
 /* Custom input when no options */
