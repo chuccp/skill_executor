@@ -108,7 +108,7 @@ export async function* streamChat(
       }
       toolCalls = uniqueToolCalls;
 
-      // 检测重复调用
+      // 检测重复调用（只在连续 3 次完全相同时才阻止）
       const currentToolKeys = toolCalls.map(t => `${t.name}:${stableStringify(t.input || {})}`);
       const isSameAsLast = currentToolKeys.length > 0 &&
         currentToolKeys.length === lastToolKeys.length &&
@@ -120,11 +120,12 @@ export async function* streamChat(
         repeatStreak = 0;
       }
 
-      if (repeatStreak >= 2) {
+      // 只在连续 3 次重复时才阻止（允许一定程度的重复调用）
+      if (repeatStreak >= 3) {
         const cachedResults = currentToolKeys.map(k => toolCache.get(k)).filter((v): v is string => !!v);
-        let msg = '检测到相同工具调用重复，已停止。请提供更具体的文件名或路径。';
+        let msg = '检测到相同操作重复执行，已停止。请提供更具体的参数或检查输入。';
         if (cachedResults.length > 0) {
-          msg += '\n\n' + cachedResults.join('\n\n');
+          msg += '\n\n最近执行结果：\n' + cachedResults.join('\n\n');
         }
         yield { type: 'text', data: msg };
         conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n' + msg);
