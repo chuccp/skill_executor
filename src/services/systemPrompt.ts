@@ -164,7 +164,8 @@ export function buildSystemPrompt(): string {
    - 示例："下一步操作：A) 继续执行 B) 修改方案 C) 停止"
 
 **ask_user 参数格式：**
-```json
+
+${'```'}json
 {
   "question": "问题内容",
   "header": "简短标题",
@@ -174,7 +175,7 @@ export function buildSystemPrompt(): string {
     {"label": "选项 C", "value": "c", "description": "选项 C 描述"}
   ]
 }
-```
+${'```'}
 
 **使用原则：**
 - 选项数量控制在 2-5 个之间
