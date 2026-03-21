@@ -25,7 +25,7 @@ const state = reactive({
   presets: [] as Preset[],
   isStreaming: false,
   selectedModel: localStorage.getItem('selectedModel') || '',
-  selectedSkill: '',
+  selectedSkill: localStorage.getItem('selectedSkill') || '',
   streamStatus: '',
   abortController: null as AbortController | null,
 
@@ -34,6 +34,14 @@ const state = reactive({
   currentToolResults: [] as ToolResultDisplay[],
   todos: [] as TodoItem[],
   progressText: '',
+
+  // Streaming content blocks - preserve order of thinking/text alternation
+  streamingBlocks: [] as Array<{type: 'thinking' | 'text', content: string}>,
+
+  // Ask user state
+  askQuestion: '',
+  askOptions: [] as any[],
+  askId: '',
 
   // Modal states
   showConfigModal: false,
@@ -151,6 +159,20 @@ export const actions = {
   },
 
   async selectConversation(id: string, moveToTop: boolean = false) {
+    // Stop any ongoing streaming before switching conversation
+    if (state.isStreaming) {
+      this.stopStream()
+    }
+    // Clear all streaming state
+    state.thinkingContent = ''
+    state.currentToolResults = []
+    state.todos = []
+    state.progressText = ''
+    state.streamingBlocks = []
+    state.askQuestion = ''
+    state.askOptions = []
+    state.askId = ''
+
     state.currentConversationId = id
     localStorage.setItem('lastConversationId', id)
     const messages = await api.getConversation(id)
@@ -194,6 +216,7 @@ export const actions = {
     state.currentToolResults = []
     state.todos = []
     state.progressText = ''
+    state.streamingBlocks = []
     state.abortController = new AbortController()
     randomStatusMessage()
     statusTimer = window.setInterval(randomStatusMessage, 2000)
@@ -239,6 +262,7 @@ export const actions = {
       statusTimer = null
     }
     state.progressText = ''
+    state.streamingBlocks = []
   },
 
   addMessage(role: 'user' | 'assistant', content: string) {
@@ -250,10 +274,29 @@ export const actions = {
     if (lastMsg && lastMsg.role === 'assistant') {
       lastMsg.content += text
     }
+    // 追加到流式块，保持输出顺序
+    const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1]
+    if (lastBlock && lastBlock.type === 'text') {
+      // 连续text追加到同一块
+      lastBlock.content += text
+    } else if (text.trim()) {
+      // 新的text块
+      state.streamingBlocks.push({ type: 'text', content: text })
+    }
   },
 
   appendThinking(text: string) {
+    // 累计到全局状态（兼容历史保存）
     state.thinkingContent += text
+    // 追加到流式块，保持输出顺序
+    const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1]
+    if (lastBlock && lastBlock.type === 'thinking') {
+      // 连续thinking追加到同一块
+      lastBlock.content += text
+    } else if (text.trim()) {
+      // 新的thinking块
+      state.streamingBlocks.push({ type: 'thinking', content: text })
+    }
   },
 
   setStreamStatus(status: string) {
@@ -262,6 +305,7 @@ export const actions = {
 
   // Tool results
   addToolResult(result: ToolResultDisplay) {
+    // 累计到全局流式状态，显示在当前AI消息中
     state.currentToolResults.push(result)
   },
 

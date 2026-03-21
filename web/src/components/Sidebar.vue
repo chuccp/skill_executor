@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useStore } from '../stores/app'
 import { formatTime } from '../utils'
 import ConversationModal from './ConversationModal.vue'
 
 const { state, actions } = useStore()
+
+// Save selected skill to localStorage when changed
+watch(() => state.selectedSkill, (newVal) => {
+  localStorage.setItem('selectedSkill', newVal)
+})
 
 const MAX_VISIBLE = 3
 const visibleConversations = computed(() => state.conversations.slice(0, MAX_VISIBLE))

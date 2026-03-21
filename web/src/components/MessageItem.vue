@@ -12,7 +12,11 @@ const props = defineProps<{
   streamingToolResults?: ToolResultDisplay[]
   streamingTodos?: any[]
   streamingProgress?: string
+  streamingBlocks?: Array<{type: 'thinking' | 'text', content: string}>
 }>()
+
+import { useStore } from '../stores/app'
+const { state } = useStore()
 
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isSystem = computed(() => props.message.role === 'system')
@@ -25,24 +29,46 @@ const thinkingContent = computed(() => {
   return props.message.thinking || props.streamingThinking || ''
 })
 
+// Streaming blocks - ordered as they were generated
+const streamingBlocks = computed(() => {
+  return props.isStreaming ? state.streamingBlocks : []
+})
+
 // Auto-scroll thinking content to bottom when streaming
-watch(thinkingContent, () => {
+watch(() => streamingBlocks.value.length, () => {
   if (props.isStreaming) {
     nextTick(() => {
-      if (thinkingRef.value) {
-        thinkingRef.value.scrollTop = thinkingRef.value.scrollHeight
+      if (containerRef.value) {
+        containerRef.value.scrollTop = containerRef.value.scrollHeight
       }
+    })
+  }
+})
+
+// Auto-scroll thinking panel to bottom when streaming new thinking
+watch(() => state.thinkingContent, () => {
+  if (props.isStreaming && thinkingRef.value) {
+    nextTick(() => {
+      thinkingRef.value.scrollTop = thinkingRef.value.scrollHeight
     })
   }
 })
 
 // Use stored tool results or streaming tool results
 const toolResults = computed(() => {
-  return props.message.toolResults || props.streamingToolResults || []
+  if (props.message.toolResults && props.message.toolResults.length > 0) {
+    return props.message.toolResults
+  }
+  return props.streamingToolResults || []
 })
 
-// Only streaming has todos and progress
-const todos = computed(() => props.streamingTodos || [])
+// Use stored todos from message or streaming todos for the current streaming message
+const todos = computed(() => {
+  if (props.message.todos && props.message.todos.length > 0) {
+    return props.message.todos
+  }
+  return props.streamingTodos || []
+})
 const progressText = computed(() => props.streamingProgress || '')
 
 const formattedContent = computed(() => {
@@ -53,6 +79,12 @@ const roleLabel = computed(() => {
   if (isSystem.value) return '系统'
   return isAssistant.value ? 'AI' : 'You'
 })
+
+const containerRef = ref<HTMLElement | null>(null)
+
+function formatBlockContent(content: string): string {
+  return formatContent(content)
+}
 
 function formatContent(content: string): string {
   if (!content) return ''
@@ -76,10 +108,10 @@ const exportMedia = (url: string, name: string) => {
 </script>
 
 <template>
-  <div class="message" :class="{ assistant: isAssistant, user: isUser, system: isSystem }">
+  <div class="message" :class="{ assistant: isAssistant, user: isUser, system: isSystem }" ref="containerRef">
     <div class="role">{{ roleLabel }}</div>
 
-    <!-- Thinking panel -->
+    <!-- Thinking process first - always after role, before content -->
     <div v-if="isAssistant && thinkingContent" class="thinking-panel" :class="{ visible: true, collapsed: !showThinking && !isStreaming }">
       <div class="thinking-header" @click="showThinking = !showThinking">
         <span class="thinking-icon">💭</span>
@@ -88,6 +120,9 @@ const exportMedia = (url: string, name: string) => {
       </div>
       <div v-show="showThinking || isStreaming" ref="thinkingRef" class="thinking-content">{{ thinkingContent }}</div>
     </div>
+
+    <!-- Content after thinking -->
+    <div v-if="props.message.content" class="content" v-html="formattedContent"></div>
 
     <!-- Progress -->
     <div v-if="isAssistant && progressText && isStreaming" class="progress-panel">
@@ -157,7 +192,7 @@ const exportMedia = (url: string, name: string) => {
               <span class="media-label">🖼️ {{ result.data.name }}</span>
               <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
             </div>
-            <img :src="result.data.url" class="media-thumb" />
+            <img :src="result.data.url" class="media-thumb" alt="image" />
           </div>
           <div v-else-if="result.data.type === 'audio'">
             <div class="media-header">
@@ -176,8 +211,6 @@ const exportMedia = (url: string, name: string) => {
         </div>
       </div>
     </div>
-
-    <div class="content" v-html="formattedContent"></div>
 
     <!-- Stream status -->
     <span v-if="isStreaming" class="stream-status">{{ streamStatus }}</span>
@@ -241,7 +274,7 @@ const exportMedia = (url: string, name: string) => {
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 0.95rem;
-  order: 2;
+  order: 3;
 }
 
 .stream-status {
@@ -309,13 +342,15 @@ const exportMedia = (url: string, name: string) => {
   max-height: 90px;
 }
 
+
 /* Progress */
 .progress-panel {
-  order: 2;
+  order: 20;
   background: #f0f7ff;
   border-radius: var(--radius-sm);
   padding: 8px 12px;
-  margin-bottom: 10px;
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 
 .progress-text {
@@ -325,8 +360,9 @@ const exportMedia = (url: string, name: string) => {
 
 /* Tool results */
 .tool-results {
-  order: 2;
-  margin-bottom: 10px;
+  order: 40;
+  margin-top: 10px;
+  margin-bottom: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -463,11 +499,12 @@ const exportMedia = (url: string, name: string) => {
 
 /* Todos */
 .todo-panel {
-  order: 2;
+  order: 30;
   background: #f8f6f2;
   border-radius: var(--radius-sm);
   padding: 10px;
-  margin-bottom: 10px;
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 
 .todo-header {

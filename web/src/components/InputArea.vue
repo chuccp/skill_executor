@@ -1,15 +1,11 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { useStore } from '../stores/app'
 import { wsService } from '../services/websocket'
 
 const { state, actions } = useStore()
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-const askQuestion = ref('')
-const askOptions = ref<any[]>([])
-const askId = ref('')
-const showAskDialog = ref(false)
 
 // WebSocket 事件处理器
 const handleText = (data: any) => {
@@ -33,14 +29,29 @@ const handleProgress = (data: any) => {
 }
 
 const handleAskUser = (data: any) => {
-  askId.value = data.askId
-  askQuestion.value = data.question
-  askOptions.value = data.options || []
-  showAskDialog.value = true
+  // 当AI暂停等待用户回答时，先把当前已有的思考、工具结果、任务列表保存到消息对象，防止后续清空后丢失
+  const lastMsg = state.messages[state.messages.length - 1]
+  if (lastMsg && lastMsg.role === 'assistant') {
+    if (state.thinkingContent) {
+      lastMsg.thinking = state.thinkingContent
+    }
+    if (state.currentToolResults.length) {
+      lastMsg.toolResults = state.currentToolResults
+    }
+    if (state.todos.length) {
+      lastMsg.todos = state.todos
+    }
+  }
+  state.askId = data.askId
+  state.askQuestion = data.question
+  state.askOptions = data.options || []
 }
 
 const handleDone = () => {
   actions.setProgress('')
+  state.askQuestion = ''
+  state.askOptions = []
+  state.askId = ''
   actions.finishStream()
   actions.loadConversations()
 }
@@ -76,7 +87,22 @@ onUnmounted(() => {
   wsService.off('error', handleError)
 })
 
+const canSend = computed(() => {
+  // When waiting for answer to a question, allow sending even if streaming is active
+  if (state.askQuestion && state.askId) {
+    return state.selectedModel && inputText.value.trim()
+  }
+  return state.selectedModel && (!state.isStreaming || inputText.value.trim())
+})
+
+// Stop button should always be enabled when streaming
+const canStop = computed(() => {
+  return state.selectedModel && state.isStreaming && !state.askQuestion
+})
+
 const sendMessage = async () => {
+  if (!canSend.value) return
+
   if (state.isStreaming) {
     actions.stopStream()
     return
@@ -85,6 +111,22 @@ const sendMessage = async () => {
   const content = inputText.value.trim()
   if (!content || !state.currentConversationId) return
 
+  // 如果正在等待用户提问回答，将输入作为回答发送
+  if (state.askQuestion && state.askId) {
+    const askId = state.askId
+    const answerText = content
+    actions.addMessage('user', `[回答] ${answerText}`)
+    actions.startStream()
+    wsService.sendAskResponse(askId, { value: content, label: answerText })
+    // 清空询问状态
+    state.askQuestion = ''
+    state.askOptions = []
+    state.askId = ''
+    inputText.value = ''
+    return
+  }
+
+  // 正常发送聊天消息
   inputText.value = ''
   actions.addMessage('user', content)
   actions.addMessage('assistant', '')
@@ -92,26 +134,6 @@ const sendMessage = async () => {
 
   // 通过 WebSocket 发送聊天消息
   wsService.sendChat(state.currentConversationId, content, state.selectedSkill || undefined)
-}
-
-// Send ask response
-const sendAskResponse = async (value: any) => {
-  if (!askId.value || !state.currentConversationId) return
-
-  showAskDialog.value = false
-
-  // Add user message with answer
-  const option = askOptions.value.find(o => o.value === value)
-  const answerText = option ? option.label : String(value)
-  actions.addMessage('user', `[选择] ${answerText}`)
-  actions.addMessage('assistant', '')
-  actions.startStream()
-
-  // 通过 WebSocket 发送用户选择
-  wsService.sendChat(state.currentConversationId, `[用户选择] ${value}`, state.selectedSkill || undefined)
-
-  // 同时发送 ask_response 用于服务器端确认
-  wsService.sendAskResponse(askId.value, { value, label: answerText })
 }
 
 // Build media URL from file path - always use API proxy for better compatibility
@@ -243,25 +265,6 @@ const adjustHeight = () => {
 
 <template>
   <div class="input-area">
-    <!-- Ask Dialog -->
-    <div v-if="showAskDialog" class="ask-overlay">
-      <div class="ask-dialog">
-        <div class="ask-header">{{ askOptions[0]?.label ? '请选择' : '问题' }}</div>
-        <div class="ask-question">{{ askQuestion }}</div>
-        <div class="ask-options">
-          <button
-            v-for="(option, index) in askOptions"
-            :key="index"
-            class="ask-option"
-            @click="sendAskResponse(option.value)"
-          >
-            <div class="option-label">{{ option.label }}</div>
-            <div class="option-desc">{{ option.description }}</div>
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div class="input-wrapper">
       <div class="input-row">
         <textarea
@@ -273,14 +276,23 @@ const adjustHeight = () => {
           @keydown="handleKeydown"
           @input="adjustHeight"
           :disabled="!state.selectedModel"
+          class="input-textarea"
         ></textarea>
         <button
-          class="btn"
-          :class="state.isStreaming ? 'btn-stop' : 'btn-primary'"
+          v-if="state.isStreaming && !state.askQuestion"
+          class="btn btn-stop"
           @click="sendMessage"
-          :disabled="!state.selectedModel || (!state.isStreaming && !inputText.trim())"
+          :disabled="!canStop"
         >
-          {{ state.isStreaming ? '停止' : '发送' }}
+          停止
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          @click="sendMessage"
+          :disabled="!canSend"
+        >
+          发送
         </button>
       </div>
     </div>
@@ -295,76 +307,6 @@ const adjustHeight = () => {
   position: relative;
 }
 
-/* Ask Dialog */
-.ask-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.ask-dialog {
-  background: var(--bg);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-}
-
-.ask-header {
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: var(--text);
-}
-
-.ask-question {
-  font-size: 1rem;
-  color: var(--text-secondary);
-  margin-bottom: 20px;
-  line-height: 1.6;
-}
-
-.ask-options {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.ask-option {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 16px;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.ask-option:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: white;
-}
-
-.option-label {
-  font-weight: 600;
-  font-size: 1rem;
-  margin-bottom: 4px;
-}
-
-.option-desc {
-  font-size: 0.85rem;
-  opacity: 0.8;
-}
-
 .input-wrapper {
   max-width: 800px;
   margin: 0 auto;
@@ -376,7 +318,7 @@ const adjustHeight = () => {
   align-items: flex-end;
 }
 
-.input-row textarea {
+.input-textarea {
   flex: 1;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -387,26 +329,36 @@ const adjustHeight = () => {
   font-family: inherit;
   max-height: 200px;
   overflow-y: auto;
+  transition: all 0.2s;
 }
 
-.input-row textarea:focus {
+.input-textarea:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.1);
 }
 
-.input-row textarea:disabled {
+.input-textarea:disabled {
   background: #f5f2ec;
+  cursor: not-allowed;
 }
 
 .input-row .btn {
   padding: 12px 20px;
   min-width: 80px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-stop {
   background: #dc2626;
   color: white;
-  border-color: var(--border);
+  border-color: #dc2626;
 }
 
 .btn-stop:hover {

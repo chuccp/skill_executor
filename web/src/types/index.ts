@@ -15,10 +15,11 @@ export interface ToolResultDisplay {
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system'
+  role: 'user' | 'assistant' | 'system' | 'thinking' | 'tool_result'
   content: string
   thinking?: string
   toolResults?: ToolResultDisplay[]
+  toolResult?: ToolResultDisplay
 }
 
 export interface Skill {
