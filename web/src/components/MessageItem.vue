@@ -153,11 +153,11 @@ function renderMediaPlayer(index: number): string {
   const exportBtn = `<button class="btn btn-small" onclick="exportMediaFromContent('${url}', '${name}')">导出</button>`
   
   if (type === 'image') {
-    return `<div class="media-inline"><div class="media-header"><span class="media-label">🖼️ ${name}</span>${exportBtn}</div><img src="${url}" class="media-thumb" alt="image" /></div>`
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🖼️ ${name}</span>${exportBtn}</div><div class="media-wrapper"><img src="${url}" class="media-thumb" alt="image" style="width:100%;max-width:100%;height:auto" /></div></div>`
   } else if (type === 'audio') {
-    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎵 ${name}</span>${exportBtn}</div><audio controls src="${url}"></audio></div>`
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎵 ${name}</span>${exportBtn}</div><div class="media-wrapper"><audio controls src="${url}" style="width:100%;max-width:100%"></audio></div></div>`
   } else if (type === 'video') {
-    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎬 ${name}</span>${exportBtn}</div><video controls playsinline webkit-playsinline src="${url}" class="media-video"></video></div>`
+    return `<div class="media-inline"><div class="media-header"><span class="media-label">🎬 ${name}</span>${exportBtn}</div><div class="media-wrapper"><video controls playsinline webkit-playsinline src="${url}" class="media-video" style="width:100%;max-width:100%;max-height:400px"></video></div></div>`
   }
   return ''
 }
@@ -344,10 +344,12 @@ function renderMediaPlayer(index: number): string {
   word-break: break-word;
   font-size: 0.95rem;
   order: 3;
+  width: 100%;
   max-width: 100%;
   overflow-wrap: break-word;
   min-width: 0;
   overflow: hidden;
+  display: block;
 }
 
 .stream-status {
@@ -576,10 +578,12 @@ function renderMediaPlayer(index: number): string {
   padding: 10px;
   background: #f8f6f2;
   border-radius: var(--radius-sm);
+  width: 100%;
   max-width: 100%;
   overflow: hidden;
   box-sizing: border-box;
   min-width: 0;
+  display: block;
 }
 
 .media-inline .media-header {
@@ -590,6 +594,23 @@ function renderMediaPlayer(index: number): string {
   flex-wrap: wrap;
   gap: 4px;
   max-width: 100%;
+}
+
+/* Media wrapper to constrain media elements */
+.media-wrapper {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.media-wrapper video,
+.media-wrapper audio,
+.media-wrapper img {
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  display: block;
 }
 
 .media-inline .media-label {
@@ -603,20 +624,12 @@ function renderMediaPlayer(index: number): string {
   max-height: 200px;
   border-radius: 8px;
   cursor: pointer;
-  width: auto;
-  height: auto;
-  display: block;
 }
 
 .media-inline .media-video {
-  max-width: 100% !important;
-  width: 100%;
-  max-height: 400px;
   border-radius: 8px;
   background: #000;
   outline: none;
-  display: block;
-  object-fit: contain;
 }
 
 .media-label {
