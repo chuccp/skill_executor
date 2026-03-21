@@ -4,30 +4,57 @@ import { Skill } from '../types';
 
 export class SkillLoader {
   private skillsDir: string;
+  private systemSkillsDir?: string;  // 系统技能目录（可选）
   private skills: Map<string, Skill> = new Map();
 
-  constructor(skillsDir: string) {
+  constructor(skillsDir: string, systemSkillsDir?: string) {
     this.skillsDir = skillsDir;
+    this.systemSkillsDir = systemSkillsDir;
   }
 
-  // 加载所有 skills
+  // 加载所有 skills（包括系统技能）
   loadAll(): Skill[] {
+    const loadedSkills: Skill[] = [];
+
+    // 先加载系统技能（优先级低，可被用户技能覆盖）
+    if (this.systemSkillsDir && fs.existsSync(this.systemSkillsDir)) {
+      const systemFiles = fs.readdirSync(this.systemSkillsDir).filter(f => f.endsWith('.md'));
+      for (const file of systemFiles) {
+        const skill = this.load(path.join(this.systemSkillsDir, file));
+        if (skill) {
+          // 系统技能作为默认值，如果已存在则不覆盖
+          if (!this.skills.has(skill.name)) {
+            this.skills.set(skill.name, skill);
+            loadedSkills.push(skill);
+          }
+        }
+      }
+      console.log(`Loaded ${loadedSkills.length} system skills`);
+    }
+
+    // 再加载用户技能（优先级高，会覆盖同名的系统技能）
     if (!fs.existsSync(this.skillsDir)) {
       fs.mkdirSync(this.skillsDir, { recursive: true });
-      return [];
+      return loadedSkills;
     }
 
     const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.md'));
-    const loadedSkills: Skill[] = [];
+    let userSkillCount = 0;
 
     for (const file of files) {
       const skill = this.load(path.join(this.skillsDir, file));
       if (skill) {
+        const isUpdate = this.skills.has(skill.name);
         this.skills.set(skill.name, skill);
         loadedSkills.push(skill);
+        userSkillCount++;
+        if (isUpdate) {
+          console.log(`Overridden system skill: ${skill.name}`);
+        }
       }
     }
 
+    console.log(`Loaded ${userSkillCount} user skills`);
     return loadedSkills;
   }
 

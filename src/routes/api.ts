@@ -204,10 +204,33 @@ export function createApiRouter(
 
   // ========== Skill 管理 ==========
 
-  // 获取所有 skills
+  // 获取所有 skills（区分系统和用户技能）
   router.get('/skills', (req: Request, res: Response) => {
     const skills = skillLoader.getAll();
-    res.json({ success: true, data: skills });
+    const systemSkillsDir = require('path').join(process.cwd(), 'system', 'skills');
+    const systemSkillNames = new Set<string>();
+    
+    try {
+      if (require('fs').existsSync(systemSkillsDir)) {
+        const files = require('fs').readdirSync(systemSkillsDir).filter((f: string) => f.endsWith('.md'));
+        for (const file of files) {
+          const content = require('fs').readFileSync(require('path').join(systemSkillsDir, file), 'utf-8');
+          const nameMatch = content.match(/^# (.+)$/m);
+          if (nameMatch) {
+            systemSkillNames.add(nameMatch[1].trim());
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read system skills:', e);
+    }
+    
+    const skillsWithSource = skills.map(skill => ({
+      ...skill,
+      isSystem: systemSkillNames.has(skill.name)
+    }));
+    
+    res.json({ success: true, data: skillsWithSource });
   });
 
   // 重新加载 skills

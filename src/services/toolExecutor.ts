@@ -552,7 +552,94 @@ export const TOOLS = [
       required: ['plan_id', 'step_id', 'status']
     }
   },
-  // ========== Git Worktree 工具 ==========
+  // ========== Git 增强工具 ==========
+  {
+    name: 'git_status',
+    description: '查看 Git 仓库的当前状态（修改、暂存、未跟踪的文件）。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'git_diff',
+    description: '查看工作区与暂存区或上一次提交之间的差异。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        staged: { type: 'boolean', description: '是否查看暂存区的差异（默认 false，查看工作区）' },
+        file_path: { type: 'string', description: '可选：只看特定文件的差异' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'git_log',
+    description: '查看 Git 提交历史。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        max_count: { type: 'number', description: '最大显示条数（默认 10）' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'git_branch',
+    description: '列出 Git 仓库的所有分支。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        remote: { type: 'boolean', description: '是否显示远程分支（默认 false）' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'git_checkout',
+    description: '切换 Git 分支或标签。需要提供分支名称。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        branch_name: { type: 'string', description: '要切换到的分支或标签名称' },
+        create_new: { type: 'boolean', description: '是否创建新分支（默认 false）' }
+      },
+      required: ['branch_name']
+    }
+  },
+  {
+    name: 'git_add',
+    description: '将文件添加到 Git 暂存区。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        files: { type: 'array', items: { type: 'string' }, description: '要添加的文件列表，或使用 "." 添加所有' }
+      },
+      required: ['files']
+    }
+  },
+  {
+    name: 'git_commit',
+    description: '提交 Git 暂存区的更改。需要用户确认。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        repo_path: { type: 'string', description: '仓库路径（默认当前目录）' },
+        message: { type: 'string', description: '提交信息' },
+        amend: { type: 'boolean', description: '是否修正上一次提交（默认 false）' }
+      },
+      required: ['message']
+    }
+  },
+  // ========== Worktree 工具 ==========
   {
     name: 'worktree_list',
     description: '列出 Git 仓库中的所有工作树。',
@@ -589,7 +676,77 @@ export const TOOLS = [
       required: ['worktree_path']
     }
   },
-  // ========== Agent 工具 ==========
+  // ========== 项目索引工具 ==========
+  {
+    name: 'project_index',
+    description: '生成项目的索引，包括目录结构、文件类型统计和入口点分析。帮助快速理解代码库结构。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        root_path: { type: 'string', description: '项目根路径（默认当前工作目录）' },
+        max_depth: { type: 'number', description: '最大遍历深度（默认 5）' },
+        include_patterns: { type: 'array', items: { type: 'string' }, description: '可选：包含的文件模式，如 ["*.ts", "*.js"]' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'find_entry_points',
+    description: '查找项目的入口文件（如 main.ts, index.js, app.py 等）。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        root_path: { type: 'string', description: '项目根路径（默认当前工作目录）' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'analyze_dependencies',
+    description: '分析项目的依赖关系（读取 package.json, requirements.txt 等）。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        root_path: { type: 'string', description: '项目根路径（默认当前工作目录）' }
+      },
+      required: []
+    }
+  },
+    // ========== TTS 工具 ==========
+  {
+    name: 'tts_list_voices',
+    description: '列出所有可用的 TTS 音色。使用 edge-tts-node 包。',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'tts_convert',
+    description: '将文字转换为语音。使用微软 Edge TTS 引擎（Node.js 实现）。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: '要转换的文字' },
+        voice: { type: 'string', description: '音色名称，默认 zh-CN-XiaoxiaoNeural' },
+        rate: { type: 'number', description: '语速，范围 -100 到 100，默认 0' },
+        pitch: { type: 'number', description: '音调，范围 -100 到 100，默认 0' },
+        output_file: { type: 'string', description: '输出文件名（可选，默认自动生成）' }
+      },
+      required: ['text']
+    }
+  },
+  {
+    name: 'tts_get_recommended',
+    description: '获取推荐的 TTS 音色列表（中文/英文男女声）。',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+// ========== Agent 工具 ==========
   {
     name: 'agent_spawn',
     description: '创建一个子代理来执行特定任务。子代理可以并行工作，处理独立的研究或操作。',
@@ -616,6 +773,7 @@ export interface ToolContext {
   ws?: WebSocket;  // WebSocket 模式下用于发送事件
   pendingCommands?: Map<string, any>;
   pendingQuestions?: Map<string, any>;
+  agentOrchestrator?: import('./agentOrchestrator').AgentOrchestrator;  // 可选的代理编排器
 }
 
 // ==================== 工具执行函数 ====================
@@ -1506,12 +1664,37 @@ export async function executeTool(
         return '错误：缺少代理 ID 或任务描述';
       }
 
-      // 创建任务来跟踪代理
+      if (ctx.agentOrchestrator) {
+        try {
+          const agent = await ctx.agentOrchestrator.spawn({
+            id: agentId,
+            type: agentType as 'explore' | 'code' | 'research',
+            task,
+            parentConversationId: ctx.conversationId
+          });
+
+          if (ctx.ws) {
+            ctx.ws.send(JSON.stringify({
+              type: 'agent_spawned',
+              agentId,
+              task,
+              agentType,
+              status: 'running'
+            }));
+          }
+
+          return `代理已创建：${agentId}\n类型：${agentType}\n任务：${task}\n\n代理正在后台执行，使用 task_get 查询进度。`;
+        } catch (error: any) {
+          return `代理创建失败：${error.message}`;
+        }
+      }
+
+      // 降级处理：仅创建任务跟踪
       const agentTask = createTask(agentId, `[Agent] ${task}`);
       updateTask(agentId, { status: 'running' });
 
-      if (ws) {
-        ws.send(JSON.stringify({
+      if (ctx.ws) {
+        ctx.ws.send(JSON.stringify({
           type: 'agent_spawned',
           agentId,
           task,
@@ -1521,7 +1704,407 @@ export async function executeTool(
       }
 
       // 注意：实际的代理执行逻辑需要在 LLM 循环中处理
-      return `代理已创建: ${agentId}\n类型: ${agentType}\n任务: ${task}\n\n代理将在后台执行任务，使用 task_get 查询进度。`;
+      return `代理已创建: ${agentId}\n类型: ${agentType}\n任务: ${task}\n\n注意：未初始化 AgentOrchestrator，代理不会实际执行。`;
+    }
+
+
+    // ========== Git 增强工具 ==========
+    case 'git_status': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      
+      try {
+        const { execSync } = require('child_process');
+        const result = execSync('git status --short', { cwd: repoPath, encoding: 'utf-8' });
+        
+        if (!result.trim()) {
+          return 'Git 状态：工作区干净，没有未提交的更改';
+        }
+        
+        return `Git 状态 (${repoPath}):
+${result}`;
+      } catch (e: any) {
+        return `获取 Git 状态失败：${e.message}`;
+      }
+    }
+
+    case 'git_diff': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const staged = tool.input?.staged ? '--staged' : '';
+      const filePath = tool.input?.file_path || '';
+      
+      try {
+        const { execSync } = require('child_process');
+        const cmd = `git diff ${staged} ${filePath}`.trim();
+        const result = execSync(cmd, { cwd: repoPath, encoding: 'utf-8' });
+        
+        if (!result.trim()) {
+          return `Git 差异：${staged ? '暂存区' : '工作区'} 没有变化`;
+        }
+        
+        return `Git 差异 (${repoPath}):
+${result}`;
+      } catch (e: any) {
+        return `获取 Git 差异失败：${e.message}`;
+      }
+    }
+
+    case 'git_log': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const maxCount = tool.input?.max_count || 10;
+      
+      try {
+        const { execSync } = require('child_process');
+        const format = '--pretty=format:"%h - %an, %ar : %s"';
+        const result = execSync(`git log ${format} -n ${maxCount}`, { cwd: repoPath, encoding: 'utf-8' });
+        
+        if (!result.trim()) {
+          return 'Git 日志：没有找到提交记录';
+        }
+        
+        return `Git 提交历史 (${repoPath}, 最近 ${maxCount} 条):
+${result}`;
+      } catch (e: any) {
+        return `获取 Git 日志失败：${e.message}`;
+      }
+    }
+
+    case 'git_branch': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const remote = tool.input?.remote ? '-r' : '';
+      
+      try {
+        const { execSync } = require('child_process');
+        const result = execSync(`git branch ${remote}`, { cwd: repoPath, encoding: 'utf-8' });
+        
+        if (!result.trim()) {
+          return 'Git 分支：没有找到分支';
+        }
+        
+        return `Git 分支 (${repoPath}):
+${result}`;
+      } catch (e: any) {
+        return `获取 Git 分支失败：${e.message}`;
+      }
+    }
+
+    case 'git_checkout': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const branchName = tool.input?.branch_name;
+      const createNew = tool.input?.create_new || false;
+      
+      if (!branchName) {
+        return '错误：分支名称不能为空';
+      }
+      
+      try {
+        const { execSync } = require('child_process');
+        const cmd = createNew ? `git checkout -b ${branchName}` : `git checkout ${branchName}`;
+        const result = execSync(cmd, { cwd: repoPath, encoding: 'utf-8' });
+        
+        return `Git 切换分支：${createNew ? '创建并切换到' : '已切换到'} ${branchName}
+${result}`;
+      } catch (e: any) {
+        return `Git 切换分支失败：${e.message}`;
+      }
+    }
+
+    case 'git_add': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const files = tool.input?.files || [];
+      
+      if (!files.length) {
+        return '错误：文件列表不能为空';
+      }
+      
+      try {
+        const { execSync } = require('child_process');
+        const cmd = `git add ${files.join(' ')}`;
+        execSync(cmd, { cwd: repoPath, encoding: 'utf-8' });
+        
+        return `Git 添加文件成功：${files.join(', ')}`;
+      } catch (e: any) {
+        return `Git 添加文件失败：${e.message}`;
+      }
+    }
+
+    case 'git_commit': {
+      const repoPath = resolveToWorkingDir(tool.input?.repo_path) || getWorkingDir();
+      const message = tool.input?.message;
+      const amend = tool.input?.amend || false;
+      
+      if (!message) {
+        return '错误：提交信息不能为空';
+      }
+      
+      // 危险操作，需要确认
+      if (!ctx.ws || !ctx.pendingCommands) {
+        return `需要用户确认提交：${message}`;
+      }
+      
+      return new Promise((resolve) => {
+        const confirmId = `${conversationId}-${Date.now()}`;
+        ctx.pendingCommands!.set(confirmId, { 
+          command: `git commit ${amend ? '--amend' : ''} -m "${message}"`, 
+          action: 'git_commit',
+          ws: ctx.ws, 
+          conversationId, 
+          resolve 
+        });
+        ctx.ws!.send(JSON.stringify({ 
+          type: 'command_confirm', 
+          confirmId, 
+          command: `Git 提交：${message}${amend ? ' (修正上一次提交)' : ''}` 
+        }));
+      });
+    }
+
+
+    // ========== 项目索引工具 ==========
+    case 'project_index': {
+      const rootPath = resolveToWorkingDir(tool.input?.root_path) || getWorkingDir();
+      const maxDepth = tool.input?.max_depth || 5;
+      
+      try {
+        const { execSync } = require('child_process');
+        
+        let structure = '';
+        try {
+          const treeCmd = process.platform === 'win32' ? 'tree /F' : 'find . -type f | head -200';
+          structure = execSync(treeCmd, { cwd: rootPath, encoding: 'utf-8', maxBuffer: 1024 * 1024 });
+        } catch (e) {
+          structure = '无法生成树状图';
+        }
+        
+        const fileTypes: Record<string, number> = {};
+        const { readdirSync } = require('fs');
+        const { extname } = require('path');
+        
+        function countFiles(dir: string, depth: number) {
+          if (depth > maxDepth) return;
+          
+          let items;
+          try {
+            items = readdirSync(dir, { withFileTypes: true });
+          } catch (e) {
+            return;
+          }
+          
+          for (const item of items) {
+            if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+            
+            if (item.isDirectory()) {
+              countFiles(path.join(dir, item.name), depth + 1);
+            } else if (item.isFile()) {
+              const ext = extname(item.name).toLowerCase() || '(无扩展名)';
+              fileTypes[ext] = (fileTypes[ext] || 0) + 1;
+            }
+          }
+        }
+        
+        countFiles(rootPath, 0);
+        
+        const typeSummary = Object.entries(fileTypes)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(function(entry) { return '  ' + entry[0] + ': ' + entry[1] + ' 个文件'; })
+          .join('\n');
+        
+        const totalFiles = Object.values(fileTypes).reduce(function(a: number, b: number) { return a + b; }, 0);
+        
+        return '项目索引 (' + rootPath + '):\n\n' +
+          '📁 目录结构:\n' + structure + '\n\n' +
+          '📊 文件类型统计 (共 ' + totalFiles + ' 个文件):\n' + typeSummary;
+      } catch (e: any) {
+        return '生成项目索引失败：' + e.message;
+      }
+    }
+
+    case 'find_entry_points': {
+      const rootPath = resolveToWorkingDir(tool.input?.root_path) || getWorkingDir();
+      
+      try {
+        const { readdirSync, existsSync, readFileSync } = require('fs');
+        const { join } = require('path');
+        
+        const entryNames = [
+          'main.ts', 'main.js', 'main.py', 'main.go', 'main.rs',
+          'index.ts', 'index.js', 'index.py',
+          'app.ts', 'app.js', 'app.py',
+          'server.ts', 'server.js', 'server.py'
+        ];
+        
+        const entries: string[] = [];
+        
+        function findEntries(dir: string, depth: number) {
+          if (depth > 3) return;
+          
+          let items;
+          try {
+            items = readdirSync(dir, { withFileTypes: true });
+          } catch (e) {
+            return;
+          }
+          
+          for (const item of items) {
+            if (item.name.startsWith('.') || item.name === 'node_modules') continue;
+            
+            const fullPath = join(dir, item.name);
+            
+            if (item.isDirectory()) {
+              if (entryNames.includes(item.name)) {
+                entries.push('[DIR] ' + fullPath);
+              }
+              findEntries(fullPath, depth + 1);
+            } else if (item.isFile() && entryNames.includes(item.name)) {
+              entries.push('[FILE] ' + fullPath);
+            }
+          }
+        }
+        
+        findEntries(rootPath, 0);
+        
+        const pkgPath = join(rootPath, 'package.json');
+        if (existsSync(pkgPath)) {
+          try {
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            if (pkg.main) {
+              entries.unshift('[npm main] ' + pkg.main);
+            }
+          } catch (e: any) {}
+        }
+        
+        if (entries.length === 0) {
+          return '未找到明显的入口点文件';
+        }
+        
+        return '项目入口点 (' + rootPath + '):\n' + entries.join('\n');
+      } catch (e: any) {
+        return '查找入口点失败：' + e.message;
+      }
+    }
+
+    case 'analyze_dependencies': {
+      const rootPath = resolveToWorkingDir(tool.input?.root_path) || getWorkingDir();
+      
+      try {
+        const { readFileSync, existsSync } = require('fs');
+        const { join } = require('path');
+        
+        const deps: string[] = [];
+        
+        const pkgPath = join(rootPath, 'package.json');
+        if (existsSync(pkgPath)) {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+          const depCount = pkg.dependencies ? Object.keys(pkg.dependencies).length : 0;
+          const devDepCount = pkg.devDependencies ? Object.keys(pkg.devDependencies).length : 0;
+          deps.push('Node.js 项目：' + (pkg.name || 'unknown') + '@' + (pkg.version || '0.0.0') + ' - 生产依赖：' + depCount + ' 个，开发依赖：' + devDepCount + ' 个');
+        }
+        
+        const reqPath = join(rootPath, 'requirements.txt');
+        if (existsSync(reqPath)) {
+          const content = readFileSync(reqPath, 'utf-8');
+          const packages = content.split('\n').filter(function(line: string) { return line.trim() && !line.startsWith('#'); }).length;
+          deps.push('Python 项目：' + packages + ' 个依赖包');
+        }
+        
+        const goPath = join(rootPath, 'go.mod');
+        if (existsSync(goPath)) {
+          const content = readFileSync(goPath, 'utf-8');
+          const moduleMatch = content.match(/module\s+(\S+)/);
+          deps.push('Go 模块：' + (moduleMatch ? moduleMatch[1] : 'unknown'));
+        }
+        
+        const cargoPath = join(rootPath, 'Cargo.toml');
+        if (existsSync(cargoPath)) {
+          const content = readFileSync(cargoPath, 'utf-8');
+          const nameMatch = content.match(/^name\s*=\s*"([^"]+)"/m);
+          deps.push('Rust 项目：' + (nameMatch ? nameMatch[1] : 'unknown'));
+        }
+        
+        if (deps.length === 0) {
+          return '未找到常见的依赖配置文件';
+        }
+        
+        return '项目依赖分析 (' + rootPath + '):\n\n' + deps.join('\n');
+      } catch (e: any) {
+        return '分析依赖失败：' + e.message;
+      }
+    }
+
+
+  
+    // ========== TTS 工具 ==========
+    case 'tts_list_voices': {
+      try {
+        const { execSync } = require('child_process');
+        const result = execSync('tsx src/utils/tts-runner.ts --list-voices', { 
+          encoding: 'utf-8',
+          cwd: process.cwd()
+        });
+        return result;
+      } catch (e: any) {
+        return '获取音色列表失败：' + e.message;
+      }
+    }
+
+    case 'tts_convert': {
+      const text = tool.input?.text;
+      const voice = tool.input?.voice;
+      const rate = tool.input?.rate;
+      const pitch = tool.input?.pitch;
+      const outputFile = tool.input?.output_file;
+      
+      if (!text) {
+        return '错误：文字不能为空';
+      }
+      
+      try {
+        const { execSync } = require('child_process');
+        
+        let cmd = 'tsx src/utils/tts-runner.ts --text ' + JSON.stringify(text);
+        if (voice) cmd += ' --voice ' + voice;
+        if (rate !== undefined) cmd += ' --rate ' + rate;
+        if (pitch !== undefined) cmd += ' --pitch ' + pitch;
+        if (outputFile) cmd += ' --output ' + outputFile;
+        
+        const result = execSync(cmd, { 
+          encoding: 'utf-8',
+          cwd: process.cwd()
+        });
+        
+        // 解析输出获取文件路径
+        const pathMatch = result.match(/OUTPUT_PATH=(.+)/);
+        const outputPath = pathMatch ? pathMatch[1].trim() : null;
+        
+        if (outputPath && ctx.ws) {
+          ctx.ws.send(JSON.stringify({
+            type: 'play_media',
+            mediaType: 'audio',
+            path: outputPath,
+            name: path.basename(outputPath)
+          }));
+        }
+        
+        return result.split('\n').filter((line: string) => !line.startsWith('OUTPUT_PATH=')).join('\n');
+      } catch (e: any) {
+        return '文字转语音失败：' + e.message;
+      }
+    }
+
+    case 'tts_get_recommended': {
+      const recommended = {
+        '中文女声': { name: 'zh-CN-XiaoxiaoNeural', desc: '温暖、亲切，适合日常对话' },
+        '中文男声': { name: 'zh-CN-YunxiNeural', desc: '沉稳、专业，适合正式场合' },
+        '英文女声': { name: 'en-US-JennyNeural', desc: '清晰、友好，美式发音' },
+        '英文男声': { name: 'en-US-GuyNeural', desc: '自然、流畅，美式发音' }
+      };
+      
+      const summary = Object.entries(recommended).map(([label, info]) => 
+        label + ': ' + info.name + '\n  ' + info.desc
+      ).join('\n\n');
+      
+      return '推荐音色:\n\n' + summary + 
+        '\n\n使用 tts_convert 工具时，可通过 voice 参数指定这些音色';
     }
 
     default:
@@ -1531,9 +2114,33 @@ export async function executeTool(
 
 // ==================== 辅助函数 ====================
 
+/**
+ * 验证解析后的路径是否在工作目录内（防止路径遍历攻击）
+ */
+function validatePath(resolvedPath: string, workingDir: string): boolean {
+  const normalizedResolved = path.normalize(resolvedPath);
+  const normalizedWorking = path.normalize(workingDir);
+  // 确保解析后的路径以工作目录开头（考虑 Windows 盘符大小写）
+  return normalizedResolved.toLowerCase().startsWith(normalizedWorking.toLowerCase());
+}
+
+/**
+ * 将目标路径解析到工作目录，并进行安全验证
+ * @throws Error 如果路径遍历到工作目录外
+ */
 function resolveToWorkingDir(target?: string): string {
-  if (!target) return getWorkingDir();
-  return path.isAbsolute(target) ? target : path.resolve(getWorkingDir(), target);
+  const workingDir = getWorkingDir();
+  
+  if (!target) return workingDir;
+  
+  const resolvedPath = path.isAbsolute(target) ? target : path.resolve(workingDir, target);
+  
+  // 安全检查：防止路径遍历攻击（如 ../../../etc/passwd）
+  if (!validatePath(resolvedPath, workingDir)) {
+    throw new Error(`路径不允许：${target} - 无法访问工作目录外的文件`);
+  }
+  
+  return resolvedPath;
 }
 
 function formatBytes(bytes: number): string {

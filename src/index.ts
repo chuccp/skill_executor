@@ -10,6 +10,7 @@ import { SkillLoader } from './services/skillLoader';
 import { LLMService } from './services/llm';
 import { ConfigLoader } from './services/configLoader';
 import { CommandExecutor } from './services/commandExecutor';
+import { AgentOrchestrator } from './services/agentOrchestrator';
 import { setWorkingDir } from './services/workingDir';
 import { createApiRouter } from './routes/api';
 import { setupWebSocket } from './services/websocket';
@@ -67,8 +68,9 @@ async function checkAndFreePort(port: number): Promise<void> {
 
 // 初始化服务
 const skillsDir = path.join(process.cwd(), 'skills');
+const systemSkillsDir = path.join(process.cwd(), 'system', 'skills');
 const settingsPath = path.join(process.cwd(), 'setting', 'settings.json');
-const skillLoader = new SkillLoader(skillsDir);
+const skillLoader = new SkillLoader(skillsDir, systemSkillsDir);
 const configLoader = new ConfigLoader(settingsPath);
 const conversationManager = new ConversationManager();
 const commandExecutor = new CommandExecutor(process.cwd());
@@ -94,6 +96,9 @@ if (presets.length > 0) {
 }
 
 const llmService = new LLMService(defaultConfig);
+
+// 创建 Agent 编排器
+const agentOrchestrator = new AgentOrchestrator(llmService, conversationManager, commandExecutor, skillLoader);
 
 // 加载 skills
 const loadedSkills = skillLoader.loadAll();
@@ -121,7 +126,7 @@ app.get('/health', (req, res) => {
 });
 
 // 设置 WebSocket
-setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecutor);
+setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecutor, agentOrchestrator);
 
 // 启动服务器
 const PORT = process.env.PORT || 38592;
