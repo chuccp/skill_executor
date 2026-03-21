@@ -195,48 +195,65 @@ const handleToolResultData = (data: { name: string; result: string }) => {
     }
   } else if (name === 'write_file') {
     const match = result.match(/写入文件成功：(.+)/)
+    let filePath = ''
+    let content = result
     if (match) {
-      const filePath = match[1]
-      const ext = filePath.split('.').pop()?.toLowerCase() || ''
-
-      // Check if it's a media file
-      const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']
-      const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']
-      const videoExts = ['mp4', 'webm', 'avi', 'mov', 'mkv']
-
-      if (imageExts.includes(ext)) {
-        actions.addToolResult({
-          type: 'media',
-          data: {
-            type: 'image',
-            name: filePath.split(/[\\/]/).pop(),
-            path: filePath,
-            url: buildMediaUrl(filePath)
-          }
-        })
-      } else if (audioExts.includes(ext)) {
-        actions.addToolResult({
-          type: 'media',
-          data: {
-            type: 'audio',
-            name: filePath.split(/[\\/]/).pop(),
-            path: filePath,
-            url: buildMediaUrl(filePath)
-          }
-        })
-      } else if (videoExts.includes(ext)) {
-        actions.addToolResult({
-          type: 'media',
-          data: {
-            type: 'video',
-            name: filePath.split(/[\\/]/).pop(),
-            path: filePath,
-            url: buildMediaUrl(filePath)
-          }
-        })
+      filePath = match[1]
+      // Extract content after the first line
+      const firstLineEnd = result.indexOf('\n')
+      if (firstLineEnd !== -1) {
+        content = result.substring(firstLineEnd + 1)
       } else {
-        actions.addToolResult({ type: 'write', data: { path: filePath } })
+        content = ''
       }
+    }
+
+    const ext = filePath ? filePath.split('.').pop()?.toLowerCase() || '' : ''
+
+    // Check if it's a media file
+    const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']
+    const videoExts = ['mp4', 'webm', 'avi', 'mov', 'mkv']
+    // Text/code extensions that should show preview
+    const textExts = ['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'html', 'css', 'scss', 'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'sh', 'bash']
+
+    if (filePath && imageExts.includes(ext)) {
+      actions.addToolResult({
+        type: 'media',
+        data: {
+          type: 'image',
+          name: filePath.split(/[\\/]/).pop(),
+          path: filePath,
+          url: buildMediaUrl(filePath)
+        }
+      })
+    } else if (filePath && audioExts.includes(ext)) {
+      actions.addToolResult({
+        type: 'media',
+        data: {
+          type: 'audio',
+          name: filePath.split(/[\\/]/).pop(),
+          path: filePath,
+          url: buildMediaUrl(filePath)
+        }
+      })
+    } else if (filePath && videoExts.includes(ext)) {
+      actions.addToolResult({
+        type: 'media',
+        data: {
+          type: 'video',
+          name: filePath.split(/[\\/]/).pop(),
+          path: filePath,
+          url: buildMediaUrl(filePath)
+        }
+      })
+    } else if (filePath && content && content.trim()) {
+      // Show content preview for text/code files
+      actions.addToolResult({ type: 'file', data: { filePath, content: content.trim() } })
+      // Also keep the write confirmation
+      actions.addToolResult({ type: 'write', data: { path: filePath } })
+    } else if (filePath) {
+      actions.addToolResult({ type: 'write', data: { path: filePath } })
     }
   } else if (name === 'bash') {
     const match = result.match(/命令：(.+)\n([\s\S]*)/)
