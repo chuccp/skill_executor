@@ -4,20 +4,22 @@ import { Skill } from '../types';
 
 export class SkillLoader {
   private skillsDir: string;
-  private systemSkillsDir?: string;  // 系统技能目录（可选）
+  private systemSkillsDir?: string;  // 系统技能目录（可选，默认不加载）
+  private loadSystemSkills: boolean;  // 是否加载系统技能
   private skills: Map<string, Skill> = new Map();
 
-  constructor(skillsDir: string, systemSkillsDir?: string) {
+  constructor(skillsDir: string, systemSkillsDir?: string, loadSystemSkills: boolean = false) {
     this.skillsDir = skillsDir;
     this.systemSkillsDir = systemSkillsDir;
+    this.loadSystemSkills = loadSystemSkills;
   }
 
-  // 加载所有 skills（包括系统技能）
+  // 加载所有 skills（默认只加载用户技能）
   loadAll(): Skill[] {
     const loadedSkills: Skill[] = [];
 
-    // 先加载系统技能（优先级低，可被用户技能覆盖）
-    if (this.systemSkillsDir && fs.existsSync(this.systemSkillsDir)) {
+    // 只有在明确启用时才加载系统技能
+    if (this.loadSystemSkills && this.systemSkillsDir && fs.existsSync(this.systemSkillsDir)) {
       const systemFiles = fs.readdirSync(this.systemSkillsDir).filter(f => f.endsWith('.md'));
       for (const file of systemFiles) {
         const skill = this.load(path.join(this.systemSkillsDir, file));
@@ -32,10 +34,9 @@ export class SkillLoader {
       console.log(`Loaded ${loadedSkills.length} system skills`);
     }
 
-    // 再加载用户技能（优先级高，会覆盖同名的系统技能）
+    // 加载用户技能（优先级高）
     if (!fs.existsSync(this.skillsDir)) {
       fs.mkdirSync(this.skillsDir, { recursive: true });
-      return loadedSkills;
     }
 
     const files = fs.readdirSync(this.skillsDir).filter(f => f.endsWith('.md'));

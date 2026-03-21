@@ -70,7 +70,8 @@ async function checkAndFreePort(port: number): Promise<void> {
 const skillsDir = path.join(process.cwd(), 'skills');
 const systemSkillsDir = path.join(process.cwd(), 'system', 'skills');
 const settingsPath = path.join(process.cwd(), 'setting', 'settings.json');
-const skillLoader = new SkillLoader(skillsDir, systemSkillsDir);
+// 默认加载系统技能（system/skills/），用户技能保存到 skills/
+const skillLoader = new SkillLoader(skillsDir, systemSkillsDir, true);
 const configLoader = new ConfigLoader(settingsPath);
 const conversationManager = new ConversationManager();
 const commandExecutor = new CommandExecutor(process.cwd());
