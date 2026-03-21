@@ -230,6 +230,38 @@ async function handleChat(
         break;
       }
 
+      // 检查是否接近最大迭代次数，询问用户是否继续
+      if (iteration >= MAX_ITERATIONS - 1 && toolCalls.length > 0) {
+        const askId = `continue-${Date.now()}`;
+        ws.send(JSON.stringify({
+          type: 'ask_user',
+          askId: askId,
+          question: '任务执行了较多步骤，是否继续执行？',
+          header: '确认继续',
+          options: [
+            { label: '继续执行', value: 'continue', description: '继续执行剩余操作' },
+            { label: '停止并总结', value: 'stop', description: '停止执行并总结当前结果' },
+            { label: '跳过此步骤', value: 'skip', description: '跳过当前工具调用，继续后续操作' }
+          ]
+        }));
+
+        // 等待用户回答
+        const answer = await new Promise<any>((resolve) => {
+          pendingQuestions.set(askId, { resolve });
+        });
+
+        if (answer.value === 'stop') {
+          ws.send(JSON.stringify({ type: 'text', content: '\n\n[已停止执行] 当前已完成上述任务，如需继续请告诉我。' }));
+          conversationManager.addMessage(conversationId, 'assistant', fullResponse + '\n\n[已停止执行] 当前已完成上述任务，如需继续请告诉我。');
+          break;
+        } else if (answer.value === 'skip') {
+          ws.send(JSON.stringify({ type: 'text', content: '\n\n[已跳过当前步骤] 继续执行其他操作。' }));
+          conversationManager.addMessage(conversationId, 'user', '[用户选择] 跳过当前步骤');
+          continue;
+        }
+        // continue: 继续执行
+      }
+
       // 并行执行优化：将工具调用分组
       const toolGroups = groupToolsForParallelExecution(toolCalls);
       console.log(`[WS] 工具分组：${toolGroups.length} 组`);

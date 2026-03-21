@@ -274,7 +274,7 @@ export const TOOLS = [
   // ========== 询问用户工具 ==========
   {
     name: 'ask_user',
-    description: '向用户提问并等待回复。用于需要用户决策的情况。',
+    description: '向用户提问并等待回复。用于需要用户决策、选择方案、确认操作等场景。支持多选项选择。',
     input_schema: {
       type: 'object',
       properties: {
@@ -285,12 +285,13 @@ export const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              label: { type: 'string', description: '选项标签' },
-              description: { type: 'string', description: '选项描述' }
+              label: { type: 'string', description: '选项标签（显示给用户）' },
+              value: { type: 'string', description: '选项值（返回给 AI）' },
+              description: { type: 'string', description: '选项详细描述' }
             },
-            required: ['label', 'description']
+            required: ['label', 'value']
           },
-          description: '可选的选项列表'
+          description: '可选的选项列表（2-5 个选项）'
         }
       },
       required: ['question']

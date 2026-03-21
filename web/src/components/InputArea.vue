@@ -6,6 +6,10 @@ import { api } from '../services/api'
 const { state, actions } = useStore()
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const askQuestion = ref('')
+const askOptions = ref<any[]>([])
+const askId = ref('')
+const showAskDialog = ref(false)
 
 const sendMessage = async () => {
   if (state.isStreaming) {
@@ -25,6 +29,74 @@ const sendMessage = async () => {
     await api.streamChat(
       state.currentConversationId,
       content,
+      state.selectedSkill || undefined,
+      (event, data) => {
+        switch (event) {
+          case 'text':
+            actions.appendStreamText(data)
+            break
+          case 'thinking':
+            actions.appendThinking(data)
+            break
+          case 'tool_result':
+            handleToolResult(data)
+            break
+          case 'todo':
+            actions.setTodos(data)
+            break
+          case 'progress':
+            actions.setProgress(data)
+            break
+          case 'ask_user':
+            handleAskUser(data)
+            break
+          case 'done':
+            actions.setProgress('')
+            break
+          case 'error':
+            console.error('Stream error:', data)
+            break
+        }
+      },
+      state.abortController!.signal
+    )
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      actions.appendStreamText('\n\n⏹️ 已停止生成')
+    } else {
+      console.error('Chat error:', error)
+    }
+  } finally {
+    actions.finishStream()
+    await actions.loadConversations()
+  }
+}
+
+// Handle ask_user event
+const handleAskUser = (data: { askId: string; question: string; header: string; options: any[] }) => {
+  askId.value = data.askId
+  askQuestion.value = data.question
+  askOptions.value = data.options || []
+  showAskDialog.value = true
+}
+
+// Send ask response
+const sendAskResponse = async (value: any) => {
+  if (!askId.value || !state.currentConversationId) return
+
+  showAskDialog.value = false
+  
+  // Add user message with answer
+  const option = askOptions.value.find(o => o.value === value)
+  const answerText = option ? option.label : String(value)
+  actions.addMessage('user', `[选择] ${answerText}`)
+  actions.addMessage('assistant', '')
+  actions.startStream()
+
+  try {
+    await api.streamChat(
+      state.currentConversationId,
+      `[用户选择] ${value}`,
       state.selectedSkill || undefined,
       (event, data) => {
         switch (event) {
@@ -194,6 +266,25 @@ const adjustHeight = () => {
 
 <template>
   <div class="input-area">
+    <!-- Ask Dialog -->
+    <div v-if="showAskDialog" class="ask-overlay">
+      <div class="ask-dialog">
+        <div class="ask-header">{{ askOptions[0]?.label ? '请选择' : '问题' }}</div>
+        <div class="ask-question">{{ askQuestion }}</div>
+        <div class="ask-options">
+          <button
+            v-for="(option, index) in askOptions"
+            :key="index"
+            class="ask-option"
+            @click="sendAskResponse(option.value)"
+          >
+            <div class="option-label">{{ option.label }}</div>
+            <div class="option-desc">{{ option.description }}</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="input-wrapper">
       <div class="input-row">
         <textarea
@@ -224,6 +315,77 @@ const adjustHeight = () => {
   padding: 16px;
   background: var(--panel);
   border-top: 1px solid var(--border);
+  position: relative;
+}
+
+/* Ask Dialog */
+.ask-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.ask-dialog {
+  background: var(--bg);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.ask-header {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+
+.ask-question {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  line-height: 1.6;
+}
+
+.ask-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ask-option {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ask-option:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.option-label {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.option-desc {
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 .input-wrapper {
@@ -267,7 +429,7 @@ const adjustHeight = () => {
 .btn-stop {
   background: #dc2626;
   color: white;
-  border-color: #dc2626;
+  border-color: var(--border);
 }
 
 .btn-stop:hover {

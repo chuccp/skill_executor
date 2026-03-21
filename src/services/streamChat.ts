@@ -97,6 +97,28 @@ export async function* streamChat(
         break;
       }
 
+      // 检查是否接近最大迭代次数，询问用户是否继续
+      if (iteration >= MAX_ITERATIONS - 1 && toolCalls.length > 0) {
+        yield {
+          type: 'ask_user',
+          data: {
+            askId: `continue-${Date.now()}`,
+            question: '任务执行了较多步骤，是否继续执行？',
+            header: '确认继续',
+            options: [
+              { label: '继续执行', value: 'continue', description: '继续执行剩余操作' },
+              { label: '停止并总结', value: 'stop', description: '停止执行并总结当前结果' },
+              { label: '跳过此步骤', value: 'skip', description: '跳过当前工具调用，继续后续操作' }
+            ]
+          }
+        };
+
+        // SSE 模式下不支持实时交互，直接停止
+        yield { type: 'text', data: '\n\n[已停止执行] 任务执行步骤较多，如需继续请回复"继续"。' };
+        conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n[已停止执行] 任务执行步骤较多，如需继续请回复"继续"。');
+        break;
+      }
+
       // 去重当前批次内完全相同的工具调用
       const batchSeen = new Set<string>();
       const uniqueToolCalls: any[] = [];
@@ -109,7 +131,7 @@ export async function* streamChat(
       toolCalls = uniqueToolCalls;
 
       // 检测重复调用（只在连续 3 次完全相同时才阻止）
-      const currentToolKeys = toolCalls.map(t => `${t.name}:${stableStringify(t.input || {})}`);
+      const currentToolKeys = toolCalls.map(t => `${tool.name}:${stableStringify(t.input || {})}`);
       const isSameAsLast = currentToolKeys.length > 0 &&
         currentToolKeys.length === lastToolKeys.length &&
         currentToolKeys.every((k, i) => k === lastToolKeys[i]);
@@ -120,16 +142,41 @@ export async function* streamChat(
         repeatStreak = 0;
       }
 
-      // 只在连续 3 次重复时才阻止（允许一定程度的重复调用）
-      if (repeatStreak >= 3) {
-        const cachedResults = currentToolKeys.map(k => toolCache.get(k)).filter((v): v is string => !!v);
-        let msg = '检测到相同操作重复执行，已停止。请提供更具体的参数或检查输入。';
-        if (cachedResults.length > 0) {
-          msg += '\n\n最近执行结果：\n' + cachedResults.join('\n\n');
+      // 检查是否是有效的迭代执行（参数不同或结果不同）
+      const hasDifferentParams = currentToolKeys.some((k, i) => {
+        const lastKey = lastToolKeys[i];
+        if (!lastKey || k === lastKey) return false;
+        // 如果工具名相同但参数不同，说明是迭代处理不同数据
+        const currentToolName = k.split(':')[0];
+        const lastToolName = lastKey.split(':')[0];
+        return currentToolName === lastToolName && k !== lastKey;
+      });
+
+      // 检查工具执行结果是否包含成功/完成标记
+      const hasSuccessResult = Array.from(toolCache.values()).some(result => 
+        result.includes('成功') || 
+        result.includes('完成') || 
+        result.includes('已生成') ||
+        result.includes('已创建') ||
+        result.includes('已保存到')
+      );
+
+      // 只在连续 3 次重复且参数完全相同时才阻止（允许迭代执行）
+      // 如果参数不同或执行成功，重置重复计数
+      if (isSameAsLast && !hasDifferentParams && !hasSuccessResult) {
+        if (repeatStreak >= 3) {
+          const cachedResults = currentToolKeys.map(k => toolCache.get(k)).filter((v): v is string => !!v);
+          let msg = '检测到相同操作重复执行，已停止。请提供更具体的参数或检查输入。';
+          if (cachedResults.length > 0) {
+            msg += '\n\n最近执行结果：\n' + cachedResults.join('\n\n');
+          }
+          yield { type: 'text', data: msg };
+          conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n' + msg);
+          break;
         }
-        yield { type: 'text', data: msg };
-        conversationManager.addMessage(conversationId, 'assistant', accumulatedResponse + '\n\n' + msg);
-        break;
+      } else {
+        // 参数不同或执行成功，允许继续迭代
+        repeatStreak = 0;
       }
 
       // 有工具调用，保存响应
