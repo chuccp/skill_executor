@@ -121,7 +121,8 @@ async function convertToSpeech(options: TTSOptions) {
     // 输出路径供调用者使用
     console.log(`OUTPUT_PATH=${outputPath}`);
   } catch (error: any) {
-    console.error('转换失败:', error.message);
+    console.error('转换失败:', error.message || error);
+    console.error('详细错误:', error);
     process.exit(1);
   }
 }
