@@ -87,6 +87,34 @@ export function buildSystemPrompt(): string {
 2. 找到目标文件后用 play_media 播放
 3. 文件会直接在聊天界面显示播放器
 
+## TTS 文字转语音工具 🗣️
+
+当用户需要将文字转换为语音时，使用 TTS 工具：
+
+**tts_list_voices**: 列出所有可用的音色
+- 无参数
+- 返回所有支持的音色列表
+
+**tts_convert**: 将文字转换为语音
+- 参数：text（文字内容）, voice（音色，默认 zh-CN-XiaoxiaoNeural）, rate（语速 -100~100）, pitch（音调 -100~100）, output_file（输出路径）
+- 示例：tts_convert(text="你好，欢迎使用", voice="zh-CN-XiaoxiaoNeural")
+- 输出：自动保存到 media/audio/ 目录，并自动播放
+
+**tts_get_recommended**: 获取推荐音色列表
+- 无参数
+- 返回常用的中英文音色推荐
+
+**推荐音色：**
+- 中文女声：zh-CN-XiaoxiaoNeural（温暖亲切）
+- 中文男声：zh-CN-YunxiNeural（沉稳专业）
+- 英文女声：en-US-JennyNeural（清晰友好）
+- 英文男声：en-US-GuyNeural（自然流畅）
+
+**使用流程：**
+1. 使用 tts_convert 将文字转换为语音
+2. 音频自动保存到 media/audio/ 目录
+3. 自动播放生成的音频文件
+
 ## 环境信息
 
 - 操作系统：${osName}
@@ -141,7 +169,10 @@ export const toolDisplayNames: Record<string, string> = {
   'todo_write': '更新任务',
   'todo_read': '读取任务',
   'get_files': '获取文件列表',
-  'play_media': '播放媒体'
+  'play_media': '播放媒体',
+  'tts_convert': '文字转语音',
+  'tts_list_voices': '列出音色',
+  'tts_get_recommended': '推荐音色'
 };
 
 // 生成详细的任务描述
@@ -206,6 +237,17 @@ export function getDetailedTaskDescription(toolName: string, input: any): string
       const filePath = input?.file_path || '';
       const fileName = filePath.split(/[/\\]/).pop() || filePath;
       return `🎵 播放 ${truncate(fileName, 20)}`;
+    }
+    case 'tts_convert': {
+      const text = input?.text || '';
+      const voice = input?.voice || 'zh-CN-XiaoxiaoNeural';
+      return `🗣️ 转语音 (${truncate(voice, 15)}): ${truncate(text, 15)}`;
+    }
+    case 'tts_list_voices': {
+      return '🗣️ 列出所有音色';
+    }
+    case 'tts_get_recommended': {
+      return '🗣️ 获取推荐音色';
     }
     default: {
       return toolDisplayNames[toolName] || toolName;

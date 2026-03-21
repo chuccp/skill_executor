@@ -715,7 +715,7 @@ export const TOOLS = [
     // ========== TTS 工具 ==========
   {
     name: 'tts_list_voices',
-    description: '列出所有可用的 TTS 音色。使用 edge-tts-node 包。',
+    description: '列出所有可用的 TTS 音色。使用微软 Edge TTS 引擎（推荐 Python edge-tts）。',
     input_schema: {
       type: 'object',
       properties: {},
@@ -724,15 +724,15 @@ export const TOOLS = [
   },
   {
     name: 'tts_convert',
-    description: '将文字转换为语音。使用微软 Edge TTS 引擎（Node.js 实现）。',
+    description: '将文字转换为语音。使用微软 Edge TTS 引擎（推荐 Python edge-tts，更稳定）。支持中文和英文多种音色。',
     input_schema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: '要转换的文字' },
-        voice: { type: 'string', description: '音色名称，默认 zh-CN-XiaoxiaoNeural' },
-        rate: { type: 'number', description: '语速，范围 -100 到 100，默认 0' },
-        pitch: { type: 'number', description: '音调，范围 -100 到 100，默认 0' },
-        output_file: { type: 'string', description: '输出文件名（可选，默认自动生成）' }
+        voice: { type: 'string', description: '音色名称，默认 zh-CN-XiaoxiaoNeural（中文女声）' },
+        rate: { type: 'number', description: '语速调整，范围 -100 到 100，默认 0' },
+        pitch: { type: 'number', description: '音调调整，范围 -100 到 100，默认 0' },
+        output_file: { type: 'string', description: '输出文件路径（可选，默认保存到 media/audio/ 目录）' }
       },
       required: ['text']
     }
@@ -2037,46 +2037,77 @@ ${result}`;
     case 'tts_list_voices': {
       try {
         const { execSync } = require('child_process');
-        const result = execSync('tsx src/utils/tts-runner.ts --list-voices', { 
+        // 优先使用 Python edge-tts
+        const result = execSync('edge-tts --list-voices', { 
           encoding: 'utf-8',
           cwd: process.cwd()
         });
         return result;
       } catch (e: any) {
-        return '获取音色列表失败：' + e.message;
+        // Python 版本失败时尝试 Node.js 版本
+        try {
+          const { execSync } = require('child_process');
+          const result = execSync('tsx src/utils/tts-runner.ts --list-voices', { 
+            encoding: 'utf-8',
+            cwd: process.cwd()
+          });
+          return result;
+        } catch (e2: any) {
+          return '获取音色列表失败：' + e2.message + '\n请安装 edge-tts: pip install edge-tts';
+        }
       }
     }
 
     case 'tts_convert': {
       const text = tool.input?.text;
-      const voice = tool.input?.voice;
+      const voice = tool.input?.voice || 'zh-CN-XiaoxiaoNeural';
       const rate = tool.input?.rate;
       const pitch = tool.input?.pitch;
       const outputFile = tool.input?.output_file;
-      
+
       if (!text) {
         return '错误：文字不能为空';
       }
-      
+
       try {
         const { execSync } = require('child_process');
+        const path = require('path');
+        const fs = require('fs');
+
+        // 确保输出目录存在
+        const audioDir = path.join(process.cwd(), 'media', 'audio');
+        if (!fs.existsSync(audioDir)) {
+          fs.mkdirSync(audioDir, { recursive: true });
+        }
+
+        // 生成输出文件路径
+        let outputPath = outputFile;
+        if (!outputPath) {
+          const timestamp = Date.now();
+          outputPath = path.join(audioDir, `tts_${timestamp}.mp3`);
+        }
+
+        // 构建 edge-tts 命令（Python 版本）
+        let cmd = `edge-tts --text ${JSON.stringify(text)} --voice ${voice}`;
         
-        let cmd = 'tsx src/utils/tts-runner.ts --text ' + JSON.stringify(text);
-        if (voice) cmd += ' --voice ' + voice;
-        if (rate !== undefined) cmd += ' --rate ' + rate;
-        if (pitch !== undefined) cmd += ' --pitch ' + pitch;
-        if (outputFile) cmd += ' --output ' + outputFile;
+        if (rate !== undefined) {
+          const rateStr = rate > 0 ? `+${rate}%` : `${rate}%`;
+          cmd += ` --rate ${rateStr}`;
+        }
+        if (pitch !== undefined) {
+          const pitchStr = pitch > 0 ? `+${pitch}%` : `${pitch}%`;
+          cmd += ` --pitch ${pitchStr}`;
+        }
         
-        const result = execSync(cmd, { 
+        cmd += ` --write-media ${outputPath}`;
+
+        const result = execSync(cmd, {
           encoding: 'utf-8',
           cwd: process.cwd()
         });
-        
-        // 解析输出获取文件路径
-        const pathMatch = result.match(/OUTPUT_PATH=(.+)/);
-        const outputPath = pathMatch ? pathMatch[1].trim() : null;
-        
-        if (outputPath && ctx.ws) {
+
+        // 发送播放事件
+        if (ctx.ws) {
           ctx.ws.send(JSON.stringify({
             type: 'play_media',
             mediaType: 'audio',
@@ -2084,10 +2115,42 @@ ${result}`;
             name: path.basename(outputPath)
           }));
         }
-        
-        return result.split('\n').filter((line: string) => !line.startsWith('OUTPUT_PATH=')).join('\n');
+
+        return `语音生成成功：${outputPath}\n\n已自动播放`;
       } catch (e: any) {
-        return '文字转语音失败：' + e.message;
+        // Python 版本失败时尝试 Node.js 版本
+        try {
+          const { execSync } = require('child_process');
+          const path = require('path');
+
+          let nodeCmd = 'tsx src/utils/tts-runner.ts --text ' + JSON.stringify(text);
+          if (voice) nodeCmd += ' --voice ' + voice;
+          if (rate !== undefined) nodeCmd += ' --rate ' + rate;
+          if (pitch !== undefined) nodeCmd += ' --pitch ' + pitch;
+          if (outputFile) nodeCmd += ' --output ' + outputFile;
+
+          const result = execSync(nodeCmd, {
+            encoding: 'utf-8',
+            cwd: process.cwd()
+          });
+
+          // 解析输出获取文件路径
+          const pathMatch = result.match(/OUTPUT_PATH=(.+)/);
+          const outPath = pathMatch ? pathMatch[1].trim() : null;
+
+          if (outPath && ctx.ws) {
+            ctx.ws.send(JSON.stringify({
+              type: 'play_media',
+              mediaType: 'audio',
+              path: outPath,
+              name: path.basename(outPath)
+            }));
+          }
+
+          return result.split('\n').filter((line: string) => !line.startsWith('OUTPUT_PATH=')).join('\n');
+        } catch (e2: any) {
+          return '文字转语音失败：' + e2.message + '\n请确保已安装 edge-tts: pip install edge-tts';
+        }
       }
     }
 
@@ -2095,15 +2158,17 @@ ${result}`;
       const recommended = {
         '中文女声': { name: 'zh-CN-XiaoxiaoNeural', desc: '温暖、亲切，适合日常对话' },
         '中文男声': { name: 'zh-CN-YunxiNeural', desc: '沉稳、专业，适合正式场合' },
+        '中文新闻男声': { name: 'zh-CN-YunyangNeural', desc: '新闻播报风格' },
+        '中文活泼女声': { name: 'zh-CN-XiaoyiNeural', desc: '活泼、年轻' },
         '英文女声': { name: 'en-US-JennyNeural', desc: '清晰、友好，美式发音' },
         '英文男声': { name: 'en-US-GuyNeural', desc: '自然、流畅，美式发音' }
       };
-      
-      const summary = Object.entries(recommended).map(([label, info]) => 
+
+      const summary = Object.entries(recommended).map(([label, info]) =>
         label + ': ' + info.name + '\n  ' + info.desc
       ).join('\n\n');
-      
-      return '推荐音色:\n\n' + summary + 
+
+      return '推荐音色:\n\n' + summary +
         '\n\n使用 tts_convert 工具时，可通过 voice 参数指定这些音色';
     }
 
