@@ -18,6 +18,7 @@ const handleThinking = (data: any) => {
 }
 
 const handleToolResult = (data: any) => {
+  console.log('[InputArea] handleToolResult event received:', data)
   handleToolResultData(data)
 }
 
@@ -171,18 +172,23 @@ const buildMediaUrl = (filePath: string): string => {
 // Handle tool results
 const handleToolResultData = (data: { name: string; result: string }) => {
   const { name, result } = data
+  console.log('[InputArea] handleToolResultData called:', name, result.substring(0, 100))
 
   // Check for MEDIA_INFO format
   if (result.startsWith('MEDIA_INFO:')) {
+    console.log('[InputArea] Processing MEDIA_INFO')
     try {
       const mediaInfo = JSON.parse(result.substring(11))
+      console.log('[InputArea] Parsed mediaInfo:', mediaInfo)
       // Build URL from path
       const url = buildMediaUrl(mediaInfo.path)
+      console.log('[InputArea] Built URL:', url)
       
       // Check if this media file is already added to avoid duplicates
       const isMediaAlreadyAdded = state.currentToolResults.some(
         r => r.type === 'media' && r.data?.path === mediaInfo.path
       );
+      console.log('[InputArea] Is already added:', isMediaAlreadyAdded, 'currentToolResults:', state.currentToolResults.length)
       
       if (!isMediaAlreadyAdded) {
         actions.addToolResult({
@@ -195,8 +201,11 @@ const handleToolResultData = (data: { name: string; result: string }) => {
             size: mediaInfo.size
           }
         })
+        console.log('[InputArea] Added media result, now currentToolResults:', state.currentToolResults.length)
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('[InputArea] Failed to parse MEDIA_INFO:', e)
+    }
     return
   }
 

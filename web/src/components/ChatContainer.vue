@@ -59,7 +59,7 @@ const sendAskResponse = async (value: any) => {
           :isStreaming="state.isStreaming && idx === state.messages.length - 1"
           :streamStatus="state.streamStatus"
           :streamingThinking="state.isStreaming && idx === state.messages.length - 1 ? state.thinkingContent : ''"
-          :streamingToolResults="state.isStreaming && idx === state.messages.length - 1 ? state.currentToolResults : []"
+          :streamingToolResults="state.currentToolResults"
           :streamingTodos="state.isStreaming && idx === state.messages.length - 1 ? state.todos : []"
           :streamingProgress="state.isStreaming && idx === state.messages.length - 1 ? state.progressText : ''"
           :streamingBlocks="state.isStreaming && idx === state.messages.length - 1 ? state.streamingBlocks : []"

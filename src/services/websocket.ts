@@ -312,6 +312,7 @@ async function handleChat(
           // 发送 tool_result 事件给前端
           const toolCall = group.find(t => t.id === toolId);
           if (toolCall) {
+            console.log('[WS] Sending tool_result:', toolCall.name, result.substring(0, 100))
             ws.send(JSON.stringify({
               type: 'tool_result',
               name: toolCall.name,

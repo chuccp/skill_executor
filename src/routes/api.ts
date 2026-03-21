@@ -420,8 +420,11 @@ export function createApiRouter(
       return;
     }
 
+    // 解码 URL 编码的路径
+    const decodedPath = decodeURIComponent(filePath);
+
     // 解析路径
-    const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(getWorkingDir(), filePath);
+    const absolutePath = path.isAbsolute(decodedPath) ? decodedPath : path.join(getWorkingDir(), decodedPath);
 
     // 安全检查
     if (!fs.existsSync(absolutePath)) {
