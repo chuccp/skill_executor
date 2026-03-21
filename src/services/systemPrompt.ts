@@ -95,17 +95,15 @@ export function buildSystemPrompt(): string {
 - 参数：file_path（媒体文件的绝对路径）
 - 示例：play_media(file_path="media/audio/output.mp3")
 - 支持的格式：mp3, wav, ogg, m4a（音频）；mp4, webm, avi（视频）；jpg, png, gif, webp（图片）
-- **重要**：在回复中使用 [media:序号] 占位符来指定播放器显示位置，例如 [media:0]、[media:1]
-- **注意**：不要输出 HTML 标签（如 <video>、<audio>、<img> 等），只使用占位符
 - 示例用法：
-  - 视频："请看下面的演示：[media:0] 如视频所示..."
-  - 音频："点击播放录音：[media:0] 这是刚才的录音..."
-  - 图片："参考下图：[media:0] 如图所示..."
+  - 视频："请看下面的演示："（然后调用 play_media，视频会自动显示）
+  - 音频："点击播放录音："（然后调用 play_media，音频播放器会自动显示）
+  - 图片："参考下图："（然后调用 play_media，图片会自动显示）
 
 **使用流程：**
 1. 先用 get_files 查找可用的媒体文件
 2. 找到目标文件后用 play_media 播放
-3. 在回复中使用占位符指定播放器位置，播放器会显示在占位符处
+3. 媒体播放器会自动显示在你的回复中
 
 ## TTS 文字转语音工具 🗣️
 

@@ -256,8 +256,8 @@ const handleToolResultData = (data: { name: string; result: string }) => {
       const mediaExts = ['mp4', 'mp3', 'webm', 'avi', 'mov', 'mkv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
       for (const line of lines) {
         // Match patterns like "path: filename.ext" or "**output**:\nfilename.ext"
-        for (const ext of mediaExts) {
-          const extracted = line.match(/(?:.*:|.*：)?\s*([^\s]+\.${ext})\b/i)
+        for (const _ext of mediaExts) {
+          const extracted = line.match(/(?:.*:|.*：)?\s*([^\s]+\.${_ext})\b/i)
           if (extracted) {
             filePath = extracted[1]
             break
@@ -274,7 +274,6 @@ const handleToolResultData = (data: { name: string; result: string }) => {
     const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']
     const videoExts = ['mp4', 'webm', 'avi', 'mov', 'mkv']
     // Text/code extensions that should show preview
-    const textExts = ['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'c', 'cpp', 'h', 'go', 'rs', 'html', 'css', 'scss', 'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'xml', 'sh', 'bash']
 
     // Check if this media file is already added to avoid duplicates
     const isMediaAlreadyAdded = state.currentToolResults.some(

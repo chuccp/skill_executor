@@ -49,50 +49,61 @@ watch(() => streamingBlocks.value.length, () => {
 watch(() => state.thinkingContent, () => {
   if (props.isStreaming && thinkingRef.value) {
     nextTick(() => {
-      thinkingRef.value.scrollTop = thinkingRef.value.scrollHeight
+      thinkingRef.value!.scrollTop = thinkingRef.value!.scrollHeight
     })
   }
 })
 
-// Use stored tool results or streaming tool results
-// Merge both to ensure we have all results during and after streaming
-const toolResults = computed(() => {
+// Separate media and non-media tool results
+// Use refs to cache media results and prevent re-rendering on every text update
+const mediaResultsRef = ref<any[]>([])
+const nonMediaToolResultsRef = ref<any[]>([])
+
+// Watch for changes in tool results and update media cache only when media actually changes
+watch(() => [props.message.toolResults, props.streamingToolResults], () => {
   const msgResults = props.message.toolResults || []
   const streamResults = props.streamingToolResults || []
   
-  // During streaming, use streaming results (which are being updated in real-time)
-  // After streaming, use message results (which were saved by finishStream)
-  if (props.isStreaming) {
-    if (streamResults.length > 0) {
-      console.log('[MessageItem] Using streamingToolResults:', streamResults.length, streamResults.map(r => r.type))
-      return streamResults
+  // Merge results
+  const merged = [...msgResults]
+  for (const streamResult of streamResults) {
+    const exists = merged.some(r => r.type === streamResult.type && r.data?.url === streamResult.data?.url)
+    if (!exists) {
+      merged.push(streamResult)
     }
   }
   
-  // After streaming or if no streaming results, use message results
-  if (msgResults.length > 0) {
-    console.log('[MessageItem] Using message.toolResults:', msgResults.length, msgResults.map(r => ({ type: r.type, data: r.data })))
-    return msgResults
-  }
-  
-  // Fallback to streaming results if message has none
-  if (streamResults.length > 0) {
-    console.log('[MessageItem] Fallback to streamingToolResults:', streamResults.length)
-    return streamResults
-  }
-  
-  return []
-})
+  const media = merged.filter(r => r.type === 'media')
+  const nonMedia = merged.filter(r => r.type !== 'media')
 
-// Separate media and non-media tool results
-const mediaResults = computed(() => {
-  const results = toolResults.value.filter(r => r.type === 'media')
-  console.log('[MessageItem] mediaResults:', results.length, results.map(r => r.data?.type))
-  return results
-})
+  // Use path as stable identifier (more stable than URL which may have query params)
+  const oldIds = mediaResultsRef.value.map(r => r._stableId)
+  const newIds = media.map((r, idx) => {
+    // Prefer path over URL for stability
+    return (r.data?.path || r.data?.url || `media-${idx}`)
+  })
 
-const nonMediaToolResults = computed(() => {
-  return toolResults.value.filter(r => r.type !== 'media')
+  const hasChanged = oldIds.length !== newIds.length ||
+                     oldIds.some((id, i) => id !== newIds[i])
+
+  if (hasChanged) {
+    mediaResultsRef.value = media.map((r, idx) => ({
+      ...r,
+      _stableId: r.data?.path || r.data?.url || `media-${idx}`
+    }))
+    console.log('[MessageItem] Media results changed, updated cache:', mediaResultsRef.value.length)
+  } else {
+    console.log('[MessageItem] Media results unchanged, using cache:', mediaResultsRef.value.length)
+  }
+
+  nonMediaToolResultsRef.value = nonMedia
+}, { immediate: true })
+
+const nonMediaToolResults = computed(() => nonMediaToolResultsRef.value)
+
+// Stable key for media results - only changes when media actually changes
+const mediaResultsKey = computed(() => {
+  return mediaResultsRef.value.map(r => r._stableId).join(',')
 })
 
 // Use stored todos from message or streaming todos for the current streaming message
@@ -104,58 +115,21 @@ const todos = computed(() => {
 })
 const progressText = computed(() => props.streamingProgress || '')
 
-const formattedContent = computed(() => {
-  return formatContent(props.message.content)
-})
-
-// Content with media - renders media inline at placeholder positions
-// This is called AFTER formatContent, so we need to work with the formatted HTML
-const contentWithMedia = computed(() => {
-  const html = formattedContent.value
-  if (!html) return ''
-
-  // Replace media placeholders with actual media elements
-  // Note: At this point, placeholders are NOT escaped because we protected them in formatContent
-  const newHtml = html.replace(/\[media:(\d+)\]/g, (match, indexStr) => {
-    const index = parseInt(indexStr)
-    console.log('[MessageItem] Replacing media placeholder:', index, 'mediaResults.length:', mediaResults.value.length)
-    // If media not ready yet, keep placeholder to avoid flickering
-    if (index >= mediaResults.value.length) {
-      console.log('[MessageItem] Media not ready, keeping placeholder')
-      return match
-    }
-    
-    const media = mediaResults.value[index]
-    if (!media || !media.data) {
-      console.log('[MessageItem] Media data missing:', media)
-      return match
-    }
-    
-    console.log('[MessageItem] Rendering media:', media.data.type, media.data.url)
-    if (media.data.type === 'image') {
-      return `<div class="media-inline"><img src="${media.data.url}" alt="${media.data.name}" style="width:100%;max-width:100%;height:auto;border-radius:8px" /></div>`
-    } else if (media.data.type === 'audio') {
-      return `<div class="media-inline"><audio controls src="${media.data.url}" style="width:100%;max-width:100%"></audio></div>`
-    } else if (media.data.type === 'video') {
-      return `<div class="media-inline"><video controls playsinline webkit-playsinline src="${media.data.url}" class="media-video" style="width:100%;max-width:100%;max-height:400px;border-radius:8px;background:#000;display:block"></video></div>`
-    }
-    return match
-  })
-
-  console.log('[MessageItem] contentWithMedia hasMediaPlaceholders:', /\[media:\d+\]/.test(newHtml))
-  return newHtml
-})
-
-// No longer need separate media slots when using inline rendering
-const mediaSlots = computed(() => {
-  // Return empty array since we're rendering inline now
-  return []
-})
-
 // Check if content has media placeholders
 const hasMediaPlaceholders = computed(() => {
   if (!props.message.content) return false
   return /\[media:\d+\]/.test(props.message.content)
+})
+
+// Render content - text only, media rendered separately after content
+const contentHtml = computed(() => {
+  const content = props.message.content || ''
+  if (!content) return ''
+
+  // Remove media placeholders and format the text content
+  const textOnly = content.replace(/\[media:\d+\]/g, '')
+
+  return formatContent(textOnly)
 })
 
 const roleLabel = computed(() => {
@@ -165,34 +139,14 @@ const roleLabel = computed(() => {
 
 const containerRef = ref<HTMLElement | null>(null)
 
-function formatBlockContent(content: string): string {
-  return formatContent(content)
-}
-
 function formatContent(content: string): string {
   if (!content) return ''
-  
-  // First, protect media placeholders from HTML escaping
-  // Replace [media:N] with a temporary token that won't be escaped
-  const mediaPlaceholderMap = new Map<string, string>()
-  let placeholderIndex = 0
-  const protectedContent = content.replace(/(\[media:\d+\])/g, (match) => {
-    const token = `__MEDIA_PLACEHOLDER_${placeholderIndex}__`
-    mediaPlaceholderMap.set(token, match)
-    placeholderIndex++
-    return token
-  })
-  
-  let result = escapeHtml(protectedContent)
+
+  let result = escapeHtml(content)
   result = result.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
   result = result.replace(/\n/g, '<br>')
-  
-  // Restore media placeholders
-  mediaPlaceholderMap.forEach((original, token) => {
-    result = result.replace(token, original)
-  })
-  
+
   return result
 }
 
@@ -233,12 +187,45 @@ async function exportMedia(url: string, filename: string) {
       <div v-show="showThinking" ref="thinkingRef" class="thinking-content">{{ thinkingContent }}</div>
     </div>
 
-    <!-- Content after thinking (with media inline at placeholder positions) -->
-    <div v-if="props.message.content" class="content" v-html="contentWithMedia"></div>
+    <!-- Content after thinking - text content only, media rendered separately -->
+    <div v-if="props.message.content" class="content">
+      <!-- Render text content with v-html (media placeholders removed) -->
+      <span class="text-content" v-html="contentHtml"></span>
+      
+      <!-- Media elements rendered in a separate container after text -->
+      <!-- Only re-render when media results actually change (using v-memo for caching) -->
+      <div v-if="mediaResultsRef.length > 0 && hasMediaPlaceholders" class="media-container" v-memo="[mediaResultsKey]">
+        <div v-for="result in mediaResultsRef" :key="result._stableId" class="media-slot">
+          <div v-if="result.data?.type === 'image'" class="media-inline">
+            <div class="media-header">
+              <span class="media-label">🖼️ {{ result.data.name }}</span>
+              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+            </div>
+            <img :src="result.data.url" :alt="result.data.name" class="media-thumb" style="width:100%;max-width:100%;height:auto" />
+          </div>
 
-    <!-- Media results (only shown if no placeholders were used in content) -->
-    <div v-if="isAssistant && mediaResults.length && !hasMediaPlaceholders" class="media-results-inline">
-      <div v-for="(result, idx) in mediaResults" :key="idx">
+          <div v-else-if="result.data?.type === 'audio'" class="media-inline">
+            <div class="media-header">
+              <span class="media-label">🎵 {{ result.data.name }}</span>
+              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+            </div>
+            <audio controls :src="result.data.url" style="width:100%;max-width:100%"></audio>
+          </div>
+
+          <div v-else-if="result.data?.type === 'video'" class="media-inline">
+            <div class="media-header">
+              <span class="media-label">🎬 {{ result.data.name }}</span>
+              <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
+            </div>
+            <video controls playsinline webkit-playsinline :src="result.data.url" class="media-video" :key="`video-${result._stableId}`" style="width:100%;max-width:100%;max-height:400px"></video>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Media results fallback (only shown if no placeholders were used in content) -->
+    <div v-if="isAssistant && mediaResultsRef.length && !hasMediaPlaceholders" class="media-results-inline" v-memo="[mediaResultsKey]">
+      <div v-for="result in mediaResultsRef" :key="result._stableId">
         <div v-if="result.data.type === 'image'">
           <div class="media-header">
             <span class="media-label">🖼️ {{ result.data.name }}</span>
@@ -258,7 +245,7 @@ async function exportMedia(url: string, filename: string) {
             <span class="media-label">🎬 {{ result.data.name }}</span>
             <button class="btn btn-small" @click="exportMedia(result.data.url, result.data.name)">导出</button>
           </div>
-          <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video" style="width:100%;max-width:100%;max-height:400px"></video>
+          <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video" :key="`video-${result._stableId}`" style="width:100%;max-width:100%;max-height:400px"></video>
         </div>
       </div>
     </div>
@@ -394,19 +381,44 @@ async function exportMedia(url: string, filename: string) {
   overflow-wrap: break-word;
   min-width: 0;
   overflow: hidden;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* Media slots - shown after content */
-.media-slots {
-  order: 4;
-  margin-top: 10px;
-  margin-bottom: 0;
+/* Text content rendered with v-html */
+.text-content {
+  display: block;
+  line-height: 1.6;
+}
+
+.text-content :deep(pre.code-block) {
+  background: #1e1e1e;
+  color: #f5f5f5;
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.text-content :deep(code.inline-code) {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+}
+
+/* Media container - holds media elements in order */
+.media-container {
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 100%;
-  max-width: 100%;
+  margin-top: 8px;
+}
+
+.media-slot {
+  width: 100%;
 }
 
 /* Inline media in content */

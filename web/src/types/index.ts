@@ -20,6 +20,12 @@ export interface Message {
   thinking?: string
   toolResults?: ToolResultDisplay[]
   toolResult?: ToolResultDisplay
+  todos?: Array<{
+    id?: string
+    task: string
+    status: 'pending' | 'in_progress' | 'completed' | 'failed'
+    priority?: 'high' | 'medium' | 'low'
+  }>
 }
 
 export interface Skill {
