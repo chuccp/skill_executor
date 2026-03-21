@@ -108,18 +108,21 @@ console.log(`Loaded ${loadedSkills.length} skills`);
 // 创建 Express 应用
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ 
+  server,
+  path: '/ws'
+});
 
 // 中间件
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 静态文件服务 - 多媒体目录
 app.use('/media', express.static(path.join(process.cwd(), 'media')));
 
 // API 路由
-app.use('/api', createApiRouter(conversationManager, skillLoader, llmService, configLoader, commandExecutor));
+app.use('/api', createApiRouter(conversationManager, skillLoader, llmService, configLoader));
 
 // 健康检查
 app.get('/health', (req, res) => {

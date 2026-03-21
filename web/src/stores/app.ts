@@ -1,6 +1,7 @@
 import { reactive, computed } from 'vue'
 import type { Conversation, Message, Skill, Preset } from '../types'
 import { api } from '../services/api'
+import { wsService } from '../services/websocket'
 
 // Tool result type
 interface ToolResultDisplay {
@@ -107,6 +108,18 @@ function randomStatusMessage() {
 
 // Actions
 export const actions = {
+  async initWebSocket() {
+    // 初始化 WebSocket 连接（不阻塞，失败也不影响其他功能）
+    wsService.connect()
+      .then(() => console.log('[Store] WebSocket 已连接'))
+      .catch((error) => console.error('[Store] WebSocket 连接失败:', error))
+  },
+
+  async disconnectWebSocket() {
+    wsService.disconnect()
+    console.log('[Store] WebSocket 已断开')
+  },
+
   async loadPresets() {
     state.presets = await api.getPresets()
     const savedModel = localStorage.getItem('selectedModel')

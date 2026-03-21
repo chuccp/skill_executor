@@ -3,10 +3,7 @@ import { ConversationManager } from '../services/conversation';
 import { SkillLoader } from '../services/skillLoader';
 import { LLMService } from '../services/llm';
 import { ConfigLoader } from '../services/configLoader';
-import { CommandExecutor } from '../services/commandExecutor';
-import { streamChat } from '../services/streamChat';
-import { listDirectory } from '../services/tools';
-import { getWorkingDir, setWorkingDir } from '../services/workingDir';
+import { getWorkingDir } from '../services/workingDir';
 import { ChatMessage, LLMConfig } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -15,8 +12,7 @@ export function createApiRouter(
   conversationManager: ConversationManager,
   skillLoader: SkillLoader,
   llmService: LLMService,
-  configLoader: ConfigLoader,
-  commandExecutor?: CommandExecutor
+  configLoader: ConfigLoader
 ): Router {
   const router = Router();
   let workingDir = getWorkingDir();
@@ -153,53 +149,6 @@ export function createApiRouter(
 
     const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults });
     res.json({ success });
-  });
-
-  // 流式聊天（SSE）
-  router.post('/conversations/:id/stream', async (req: Request, res: Response) => {
-    const { content, skillName } = req.body;
-    console.log('[API SSE] 收到流式请求:', { content: content?.substring(0, 50), skillName });
-
-    const conversationId = req.params.id;
-    const conversation = conversationManager.get(conversationId);
-
-    if (!conversation) {
-      res.json({ success: false, error: 'Conversation not found' });
-      return;
-    }
-
-    if (!commandExecutor) {
-      res.json({ success: false, error: 'CommandExecutor not available' });
-      return;
-    }
-
-    // 设置 SSE 响应头
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-
-    const skillsDir = path.join(process.cwd(), 'skills');
-
-    try {
-      // 使用流式聊天
-      for await (const event of streamChat(conversationId, content, skillName, {
-        conversationManager,
-        skillLoader,
-        llmService,
-        commandExecutor,
-        skillsDir
-      })) {
-        // 发送 SSE 事件
-        res.write(`event: ${event.type}\n`);
-        res.write(`data: ${JSON.stringify(event.data)}\n\n`);
-      }
-    } catch (error: any) {
-      console.error('[API SSE] 错误:', error);
-      res.write(`event: error\ndata: ${JSON.stringify(error.message)}\n\n`);
-    }
-
-    res.end();
   });
 
   // ========== Skill 管理 ==========

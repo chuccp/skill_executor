@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useStore } from '../stores/app'
-import { api } from '../services/api'
+import { wsService } from '../services/websocket'
 
 const { state, actions } = useStore()
 const inputText = ref('')
@@ -10,6 +10,71 @@ const askQuestion = ref('')
 const askOptions = ref<any[]>([])
 const askId = ref('')
 const showAskDialog = ref(false)
+
+// WebSocket 事件处理器
+const handleText = (data: any) => {
+  actions.appendStreamText(data.content)
+}
+
+const handleThinking = (data: any) => {
+  actions.appendThinking(data.content)
+}
+
+const handleToolResult = (data: any) => {
+  handleToolResultData(data)
+}
+
+const handleTodo = (data: any) => {
+  actions.setTodos(data.todos || data)
+}
+
+const handleProgress = (data: any) => {
+  actions.setProgress(data.content || data)
+}
+
+const handleAskUser = (data: any) => {
+  askId.value = data.askId
+  askQuestion.value = data.question
+  askOptions.value = data.options || []
+  showAskDialog.value = true
+}
+
+const handleDone = () => {
+  actions.setProgress('')
+  actions.finishStream()
+  actions.loadConversations()
+}
+
+const handleError = (data: any) => {
+  console.error('Stream error:', data.content)
+  actions.finishStream()
+}
+
+// 注册 WebSocket 事件处理器
+onMounted(() => {
+  wsService.on('text', handleText)
+  wsService.on('thinking', handleThinking)
+  wsService.on('tool_result', handleToolResult)
+  wsService.on('todo_updated', handleTodo)
+  wsService.on('todo', handleTodo)
+  wsService.on('progress', handleProgress)
+  wsService.on('ask_user', handleAskUser)
+  wsService.on('done', handleDone)
+  wsService.on('error', handleError)
+})
+
+// 清理事件处理器
+onUnmounted(() => {
+  wsService.off('text', handleText)
+  wsService.off('thinking', handleThinking)
+  wsService.off('tool_result', handleToolResult)
+  wsService.off('todo_updated', handleTodo)
+  wsService.off('todo', handleTodo)
+  wsService.off('progress', handleProgress)
+  wsService.off('ask_user', handleAskUser)
+  wsService.off('done', handleDone)
+  wsService.off('error', handleError)
+})
 
 const sendMessage = async () => {
   if (state.isStreaming) {
@@ -25,59 +90,8 @@ const sendMessage = async () => {
   actions.addMessage('assistant', '')
   actions.startStream()
 
-  try {
-    await api.streamChat(
-      state.currentConversationId,
-      content,
-      state.selectedSkill || undefined,
-      (event, data) => {
-        switch (event) {
-          case 'text':
-            actions.appendStreamText(data)
-            break
-          case 'thinking':
-            actions.appendThinking(data)
-            break
-          case 'tool_result':
-            handleToolResult(data)
-            break
-          case 'todo':
-            actions.setTodos(data)
-            break
-          case 'progress':
-            actions.setProgress(data)
-            break
-          case 'ask_user':
-            handleAskUser(data)
-            break
-          case 'done':
-            actions.setProgress('')
-            break
-          case 'error':
-            console.error('Stream error:', data)
-            break
-        }
-      },
-      state.abortController!.signal
-    )
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      actions.appendStreamText('\n\n⏹️ 已停止生成')
-    } else {
-      console.error('Chat error:', error)
-    }
-  } finally {
-    actions.finishStream()
-    await actions.loadConversations()
-  }
-}
-
-// Handle ask_user event
-const handleAskUser = (data: { askId: string; question: string; header: string; options: any[] }) => {
-  askId.value = data.askId
-  askQuestion.value = data.question
-  askOptions.value = data.options || []
-  showAskDialog.value = true
+  // 通过 WebSocket 发送聊天消息
+  wsService.sendChat(state.currentConversationId, content, state.selectedSkill || undefined)
 }
 
 // Send ask response
@@ -85,7 +99,7 @@ const sendAskResponse = async (value: any) => {
   if (!askId.value || !state.currentConversationId) return
 
   showAskDialog.value = false
-  
+
   // Add user message with answer
   const option = askOptions.value.find(o => o.value === value)
   const answerText = option ? option.label : String(value)
@@ -93,48 +107,11 @@ const sendAskResponse = async (value: any) => {
   actions.addMessage('assistant', '')
   actions.startStream()
 
-  try {
-    await api.streamChat(
-      state.currentConversationId,
-      `[用户选择] ${value}`,
-      state.selectedSkill || undefined,
-      (event, data) => {
-        switch (event) {
-          case 'text':
-            actions.appendStreamText(data)
-            break
-          case 'thinking':
-            actions.appendThinking(data)
-            break
-          case 'tool_result':
-            handleToolResult(data)
-            break
-          case 'todo':
-            actions.setTodos(data)
-            break
-          case 'progress':
-            actions.setProgress(data)
-            break
-          case 'done':
-            actions.setProgress('')
-            break
-          case 'error':
-            console.error('Stream error:', data)
-            break
-        }
-      },
-      state.abortController!.signal
-    )
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      actions.appendStreamText('\n\n⏹️ 已停止生成')
-    } else {
-      console.error('Chat error:', error)
-    }
-  } finally {
-    actions.finishStream()
-    await actions.loadConversations()
-  }
+  // 通过 WebSocket 发送用户选择
+  wsService.sendChat(state.currentConversationId, `[用户选择] ${value}`, state.selectedSkill || undefined)
+
+  // 同时发送 ask_response 用于服务器端确认
+  wsService.sendAskResponse(askId.value, { value, label: answerText })
 }
 
 // Build media URL from file path - always use API proxy for better compatibility
@@ -145,7 +122,7 @@ const buildMediaUrl = (filePath: string): string => {
 }
 
 // Handle tool results
-const handleToolResult = (data: { name: string; result: string }) => {
+const handleToolResultData = (data: { name: string; result: string }) => {
   const { name, result } = data
 
   // Check for MEDIA_INFO format
@@ -195,7 +172,7 @@ const handleToolResult = (data: { name: string; result: string }) => {
       actions.addToolResult({ type: 'search', data: { query: '内容搜索', files: lines, total: parseInt(match[1]) } })
     }
   } else if (name === 'write_file') {
-    const match = result.match(/写入文件成功: (.+)/)
+    const match = result.match(/写入文件成功：(.+)/)
     if (match) {
       const filePath = match[1]
       const ext = filePath.split('.').pop()?.toLowerCase() || ''
@@ -240,7 +217,7 @@ const handleToolResult = (data: { name: string; result: string }) => {
       }
     }
   } else if (name === 'bash') {
-    const match = result.match(/命令: (.+)\n([\s\S]*)/)
+    const match = result.match(/命令：(.+)\n([\s\S]*)/)
     if (match) {
       actions.addToolResult({ type: 'bash', data: { command: match[1], output: match[2].trim() } })
     }

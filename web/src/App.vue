@@ -13,6 +13,9 @@ const { state, actions } = useStore()
 let unlistenFileDrop: UnlistenFn | null = null
 
 onMounted(async () => {
+  // 初始化 WebSocket（不阻塞其他加载）
+  actions.initWebSocket().catch(console.error)
+
   await Promise.all([
     actions.loadPresets(),
     actions.loadConversations(),
@@ -76,6 +79,8 @@ onUnmounted(() => {
   if (unlistenFileDrop) {
     unlistenFileDrop()
   }
+  // 断开 WebSocket 连接
+  actions.disconnectWebSocket()
 })
 </script>
 
