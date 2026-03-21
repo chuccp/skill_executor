@@ -10,6 +10,14 @@ export const api = {
     return result.success ? result.data : []
   },
 
+  async usePreset(name: string): Promise<boolean> {
+    const res = await fetch(`${API_BASE}/presets/${encodeURIComponent(name)}/use`, {
+      method: 'POST'
+    })
+    const result = await res.json()
+    return result.success
+  },
+
   async savePreset(preset: Preset): Promise<boolean> {
     const res = await fetch(`${API_BASE}/presets/save`, {
       method: 'POST',

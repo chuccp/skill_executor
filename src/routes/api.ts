@@ -242,7 +242,7 @@ export function createApiRouter(
 
   // 获取所有预设配置
   router.get('/presets', (req: Request, res: Response) => {
-    const presets = configLoader.getAllForDisplay();
+    const presets = configLoader.getAll();
     res.json({ success: true, data: presets });
   });
 

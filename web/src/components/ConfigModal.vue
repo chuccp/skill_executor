@@ -25,59 +25,174 @@ const selectedProvider = ref<Provider | null>(null)
 const editingOldName = ref('')  // Track original name when editing
 
 const templates: Record<string, {name: string; providers: Provider[]}> = {
+  // ===== 兼容层（支持 Claude 协议的中间层/平台）=====
   claude: {
     name: 'Claude Code',
     providers: [
-      { id: 'anthropic', name: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514'] },
-      { id: 'volcengine', name: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
-      { id: 'dashscope', name: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
-      { id: 'tencent', name: '腾讯云 Coding Plan', baseUrl: 'https://api.tencentcloud.com/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
-      { id: '302ai', name: '302.AI', baseUrl: 'https://api.302.ai', models: ['kimi-for-coding', 'glm-for-coding', 'minimax-for-coding'] },
-      { id: 'zhipu', name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4', 'glm-4-air', 'glm-4-flash'] },
-      { id: 'moonshot', name: '月之暗面 (Kimi)', baseUrl: 'https://api.moonshot.cn/v1', models: ['kimi-latest', 'kimi-plus', 'kimi-lite'] },
-      { id: 'minimax', name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', models: ['minimax-abab6.5', 'minimax-abab6'] },
-      { id: 'stepfun', name: '阶跃星辰', baseUrl: 'https://api.stepfun.com/v1', models: ['step-1v-32k', 'step-1v-8k'] },
-      { id: 'openclaw', name: 'OpenClaw', baseUrl: 'https://api.openclaw.cn/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-sonnet'] },
-      { id: 'linoapi', name: 'LinoAPI', baseUrl: 'https://linoapi.com/v1', models: ['claude-opus-4-5-20251101', 'claude-sonnet-4-20250514', 'claude-3-5-sonnet'] }
-    ]
-  },
-  openai: {
-    name: 'OpenAI',
-    providers: [
-      { id: 'openai', name: 'OpenAI 官方', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini'] }
-    ]
-  },
-  deepseek: {
-    name: 'DeepSeek',
-    providers: [
-      { id: 'deepseek', name: 'DeepSeek 官方', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-coder'] }
-    ]
-  },
-  qwen: {
-    name: '通义千问',
-    providers: [
-      { id: 'dashscope-qwen', name: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-turbo', 'qwen-plus', 'qwen-max', 'qwen-2-72b'] }
+      { id: 'tencent', name: '腾讯云 Coding Plan', baseUrl: 'https://api.tencentcloud.com/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022'] },
+      { id: 'volcengine', name: '火山引擎 Coding Plan', baseUrl: 'https://ark.cn-beijing.volces.com/api/coding', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022'] },
+      { id: 'dashscope', name: '阿里云百炼 Coding Plan', baseUrl: 'https://coding-intl.dashscope.aliyuncs.com/apps/anthropic', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'qwen3.5-plus', 'glm-5', 'MiniMax-M2.5', 'kimi-k2.5'] },
+      { id: 'zhipu', name: '智谱 GLM Coding Plan', baseUrl: 'https://open.bigmodel.cn/api/anthropic', models: ['glm-5', 'glm-4.7', 'glm-4.5', 'glm-4-air', 'glm-4-flash'] },
+      { id: 'moonshot', name: '月之暗面 Kimi Coding Plan', baseUrl: 'https://api.moonshot.ai/anthropic', models: ['kimi-k2.5', 'kimi-k2-turbo-preview', 'kimi-k2-thinking', 'moonshot-v1-128k', 'moonshot-v1-32k'] },
+      { id: 'minimax', name: 'MiniMax Coding Plan', baseUrl: 'https://api.minimaxi.com/anthropic', models: ['MiniMax-M2.5', 'abab6.5-chat', 'abab6.5s-chat'] },
+      { id: '302ai', name: '302.AI Coding Plan', baseUrl: 'https://api.302.ai/cc', models: ['kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-reasoner', 'qwen3-max'] },
+      { id: 'openclaw', name: 'OpenClaw', baseUrl: 'https://api.openclaw.cn/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'gpt-4.1', 'kimi-k2.5', 'glm-5', 'qwen3-max', 'deepseek-chat'] },
+      { id: 'linoapi', name: 'LinoAPI', baseUrl: 'https://linoapi.com/v1', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022'] },
+      { id: 'anthropic', name: 'Anthropic 官方', baseUrl: 'https://api.anthropic.com', models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022'] },
     ]
   },
   opencode: {
     name: 'OpenCode',
     providers: [
-      { 
-        id: 'opencode', 
-        name: 'OpenCode', 
-        baseUrl: 'https://api.opencode.ai/v1', 
-        models: [
-          'gpt-4o-mini',
-          'gpt-4o',
-          'claude-3-5-sonnet',
-          'claude-3-haiku',
-          'llama-3-70b',
-          'llama-3-8b',
-          'gemini-pro',
-          'mistral-large',
-          'qwen-2-72b'
-        ] 
-      }
+      {
+        id: 'opencode',
+        name: 'OpenCode 官方',
+        baseUrl: 'https://api.opencode.ai/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'gpt-4.1', 'gpt-4o', 'gemini-3.1-pro', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-chat', 'qwen3-max', 'llama-3-70b']
+      },
+      {
+        id: 'opencode-openclaw',
+        name: 'OpenClaw',
+        baseUrl: 'https://api.openclaw.cn/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'gpt-4.1', 'gpt-4o', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-chat', 'deepseek-reasoner', 'qwen3-max']
+      },
+      {
+        id: 'opencode-302ai',
+        name: '302.AI',
+        baseUrl: 'https://api.302.ai',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'gpt-4.1', 'gpt-4o', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-reasoner', 'qwen3-max', 'gemini-2.5-pro']
+      },
+      {
+        id: 'opencode-linoapi',
+        name: 'LinoAPI',
+        baseUrl: 'https://linoapi.com/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'gpt-4.1', 'gpt-4o', 'deepseek-chat', 'qwen3-max']
+      },
+      {
+        id: 'opencode-openrouter',
+        name: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        models: ['anthropic/claude-sonnet-4', 'anthropic/claude-opus-4', 'openai/gpt-4.1', 'google/gemini-2.5-pro', 'deepseek/deepseek-chat', 'meta-llama/llama-3.1-405b', 'qwen/qwen3-max']
+      },
+      {
+        id: 'opencode-dashscope',
+        name: '阿里云百炼（千问）',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        models: ['qwen3-max', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus', 'qwq-plus', 'qwen3-coder-plus']
+      },
+      {
+        id: 'opencode-volcengine',
+        name: '火山引擎（豆包）',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        models: ['doubao-pro-256k', 'doubao-pro-32k', 'doubao-lite-32k', 'deepseek-chat', 'deepseek-reasoner']
+      },
+      {
+        id: 'opencode-deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['deepseek-chat', 'deepseek-reasoner']
+      },
+    ]
+  },
+  openclaw: {
+    name: 'OpenClaw',
+    providers: [
+      {
+        id: 'openclaw',
+        name: 'OpenClaw 官方',
+        baseUrl: 'https://api.openclaw.cn/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'gpt-4.1', 'gpt-4o', 'gemini-2.0-flash', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-chat', 'deepseek-reasoner', 'qwen3-max', 'qwen3-coder-plus', 'doubao-pro-32k', 'llama-3-70b']
+      },
+      {
+        id: 'openclaw-302ai',
+        name: '302.AI',
+        baseUrl: 'https://api.302.ai',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'gpt-4.1', 'gpt-4o', 'gemini-2.5-pro', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5', 'deepseek-reasoner', 'qwen3-max']
+      },
+      {
+        id: 'openclaw-linoapi',
+        name: 'LinoAPI',
+        baseUrl: 'https://linoapi.com/v1',
+        models: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-7-sonnet-20250219', 'gpt-4.1', 'gpt-4o', 'deepseek-chat', 'qwen3-max']
+      },
+      {
+        id: 'openclaw-openrouter',
+        name: 'OpenRouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        models: ['anthropic/claude-sonnet-4', 'anthropic/claude-opus-4', 'openai/gpt-4.1', 'google/gemini-2.5-pro', 'deepseek/deepseek-chat', 'meta-llama/llama-3.1-405b', 'qwen/qwen3-max']
+      },
+      {
+        id: 'openclaw-dashscope',
+        name: '阿里云百炼（千问）',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        models: ['qwen3-max', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus', 'qwq-plus', 'qwen3-coder-plus']
+      },
+      {
+        id: 'openclaw-volcengine',
+        name: '火山引擎（豆包）',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        models: ['doubao-pro-256k', 'doubao-pro-32k', 'doubao-lite-32k', 'deepseek-chat', 'deepseek-reasoner']
+      },
+      {
+        id: 'openclaw-deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['deepseek-chat', 'deepseek-reasoner']
+      },
+    ]
+  },
+  // ===== 厂家直连 =====
+  vendor: {
+    name: '厂家直连',
+    providers: [
+      {
+        id: 'openai',
+        name: 'OpenAI',
+        baseUrl: 'https://api.openai.com/v1',
+        models: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-mini', 'o1', 'o1-mini']
+      },
+      {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        models: ['deepseek-chat', 'deepseek-reasoner']
+      },
+      {
+        id: 'dashscope-qwen',
+        name: '阿里云百炼（千问）',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        models: ['qwen3-max', 'qwen3.5-plus', 'qwen3.5-flash', 'qwen-plus', 'qwen-turbo', 'qwq-plus', 'qwen3-coder-plus', 'qwen3-coder-flash']
+      },
+      {
+        id: 'volcengine-ark',
+        name: '火山引擎（豆包）',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        models: ['doubao-pro-256k', 'doubao-pro-32k', 'doubao-pro-4k', 'doubao-lite-32k', 'doubao-lite-4k']
+      },
+      {
+        id: 'zhipu-glm',
+        name: '智谱 AI（GLM）',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        models: ['glm-5', 'glm-4.7', 'glm-4.5', 'glm-4-air', 'glm-4-flash', 'glm-4-long']
+      },
+      {
+        id: 'moonshot-kimi',
+        name: '月之暗面（Kimi）',
+        baseUrl: 'https://api.moonshot.cn/v1',
+        models: ['kimi-k2.5', 'kimi-k2-turbo-preview', 'kimi-k2-thinking', 'moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k', 'moonshot-v1-auto']
+      },
+      {
+        id: 'minimax-std',
+        name: 'MiniMax',
+        baseUrl: 'https://api.minimaxi.com/v1',
+        models: ['MiniMax-M2.5', 'abab6.5-chat', 'abab6.5s-chat', 'abab6-chat']
+      },
+      {
+        id: 'stepfun-std',
+        name: '阶跃星辰',
+        baseUrl: 'https://api.stepfun.com/v1',
+        models: ['step-3.5-flash', 'step-2-16k', 'step-1v-32k', 'step-1v-8k']
+      },
     ]
   },
   custom: {
@@ -160,9 +275,10 @@ const deletePreset = async (name: string) => {
   await actions.loadPresets()
 }
 
-const selectPreset = (name: string) => {
+const selectPreset = async (name: string) => {
   state.selectedModel = name
   localStorage.setItem('selectedModel', name)
+  await api.usePreset(name)
   closeModal()
 }
 
@@ -179,7 +295,7 @@ const editPreset = (preset: Preset) => {
 </script>
 
 <template>
-  <div class="modal-overlay" @click.self="closeModal">
+  <div class="modal-overlay">
     <div class="modal-content">
       <div class="modal-header">
         <h3>模型管理</h3>

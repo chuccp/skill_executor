@@ -1,392 +1,120 @@
-# skill_executor 项目上下文
+# AGENTS.md
 
-## 项目概述
+This file provides guidance to Qoder (qoder.com) when working with code in this repository.
 
-这是一个类似 iFlow/Claude Code 的网页版 AI 编程助手，支持 Skill 系统和多种大模型接入。
-
-**核心功能：**
-- 网页界面操作，实时流式响应
-- 支持 Anthropic Claude / OpenAI / 自定义 API（如阿里云百炼）
-- Skill 系统：通过 Markdown 文件定义自定义提示词和自动触发条件
-- 会话管理，支持多会话、压缩、清理等操作
-- WebSocket 实时双向通信
-- 丰富的内置工具：文件操作、命令执行、网络搜索、任务管理等
-- 工具调用（Function Calling）支持
-
-**技术栈：**
-- 后端：Node.js + Express + TypeScript + WebSocket
-- 前端：原生 HTML/CSS/JavaScript
-- 桌面端：支持 Electron 和 Tauri 两种打包方案
-- 运行环境：跨平台支持（Windows / macOS / Linux）
-- 开发工具：tsx (热重载)
-
-## 构建与运行
+## Build and Development Commands
 
 ```bash
-# 安装依赖
+# Install dependencies (root backend)
 npm install
 
-# 开发模式（热重载）
+# Development with hot reload (backend, port 38592)
 npm run dev
 
-# 构建生产版本
+# Build TypeScript to dist/ (also copies web/public to dist/public)
 npm run build
 
-# 生产模式运行
+# Start production server
 npm start
-# 或
-npm run dev:server
-```
 
-默认端口：38592
-访问地址：http://localhost:38592
-### 桌面应用
+# Vue frontend (separate dev server)
+cd web && npm install && npm run dev
 
-**Tauri（推荐）：**
-```bash
-# 开发模式
+# Build both backend + frontend
+npm run build && npm run build:web
+
+# Run both concurrently (kills ports first)
+npm run dev:all
+
+# Tauri desktop app (requires Rust + Tauri CLI)
 npm run tauri:dev
-
-# 构建生产版本
 npm run tauri:build
 ```
 
-**Electron：**
-需要单独配置 Electron 启动脚本。
+No test framework is configured in this project.
 
-## 目录结构
+## Architecture Overview
 
+Express + WebSocket backend serving as an AI coding assistant. The server exposes REST APIs and a WebSocket endpoint; the frontend communicates exclusively via WebSocket for chat (streaming) and REST for config/session management.
+
+### Two Frontend Options
+
+1. **`public/`** – Legacy vanilla JS/CSS/HTML frontend, served statically from `dist/public/` by the backend. Built by copying `web/public/` during `npm run build`.
+2. **`web/`** – Vue 3 + Vite frontend (pnpm workspace). Used by Tauri as the embedded webview. Run independently via `npm run dev:web`.
+
+### Core Backend Services (`src/services/`)
+
+| File | Role |
+|------|------|
+| `websocket.ts` | WebSocket handler; routes message types and runs the multi-turn tool-calling loop (max 20 iterations) |
+| `toolExecutor.ts` | **TOOLS array definition + `executeTool()`** – the single source of truth for all tool schemas and dispatch logic |
+| `tools.ts` | Implementations of file, search, web, todo, notebook, task, plan, worktree utilities |
+| `llm.ts` | LLM streaming via Anthropic-compatible API; dispatches by `provider` or `baseUrl` |
+| `systemPrompt.ts` | Builds the default system prompt (`buildSystemPrompt()`); platform-aware (Windows vs macOS/Linux) |
+| `conversation.ts` | Persistent conversation store with keyword-indexed memory chunks, auto-summarization, and debounced JSON writes |
+| `commandExecutor.ts` | Shell command runner with a dangerous-command blocklist requiring user confirmation |
+| `skillLoader.ts` | Parses `skills/*.md` files into `{ name, description, triggers, prompt }` |
+| `configLoader.ts` | Loads model presets from `setting/settings.json` |
+| `workingDir.ts` | Module-level singleton for the current working directory |
+
+### Multi-turn Tool Calling Loop (`websocket.ts:handleChat`)
+
+1. Streams LLM response; accumulates text and tool call events.
+2. If tool calls are present, executes each via `executeTool()` and appends results as a user message.
+3. Repeats until no tool calls remain or max 20 iterations reached.
+4. Auto-generates `todo_updated` progress events for every tool call.
+
+### Tool Architecture
+
+Tools are defined in `toolExecutor.ts` as the exported `TOOLS` array (Anthropic tool schema format). `executeTool(name, input, context)` dispatches to implementations in `tools.ts` or `commandExecutor.ts`.
+
+`ToolContext` carries `{ ws, conversationId, conversationManager, commandExecutor, skillLoader, pendingCommands, pendingQuestions }` — pass this when adding new tools that need WebSocket or session access.
+
+### LLM Provider Selection (`llm.ts`)
+
+- If `config.baseUrl` is set → `anthropicCompatibleChatStream()` (covers Alibaba DashScope and similar)
+- Otherwise dispatches by `config.provider`: `'anthropic'` | `'openai'` | `'custom'`
+- All streaming uses `content_block_start/delta/stop` SSE events
+
+### Conversation Memory (`conversation.ts`)
+
+- Messages are persisted to `data/conversations.json` with debounced writes
+- When a conversation exceeds `SUMMARIZE_THRESHOLD` (50 msgs), older messages are chunked into `MemoryChunk` objects stored in `memory_index.json`
+- `buildContextMessages()` does keyword retrieval to inject relevant memory chunks into the LLM context
+- Constants controlling memory behavior are at the top of the file (e.g., `CONTEXT_CHAR_BUDGET = 20000`, `WORKING_MEMORY_SIZE = 20`)
+
+### Skill System
+
+Skills in `skills/*.md` follow this format:
 ```
-skill_executor/
-├── src/
-│   ├── index.ts              # 入口文件，服务启动
-│   ├── types/index.ts        # TypeScript 类型定义
-│   ├── routes/api.ts         # REST API 路由
-│   ├── electron/             # Electron 桌面应用
-│   │   ├── main.ts           # Electron 主进程
-│   │   └── preload.ts        # Electron 预加载脚本
-│   └── services/
-│       ├── llm.ts            # LLM 服务（Anthropic/OpenAI/自定义）
-│       ├── skillLoader.ts    # Skill 加载与解析
-│       ├── websocket.ts      # WebSocket 通信与工具调用
-│       ├── streamChat.ts     # SSE 流式聊天处理
-│       ├── tools.ts          # 内置工具实现（glob/grep/web等）
-│       ├── commandExecutor.ts # Shell 命令执行
-│       ├── configLoader.ts   # 预设配置加载
-│       ├── conversation.ts   # 会话管理
-│       └── workingDir.ts     # 工作目录管理
-├── skills/                   # Skill 定义文件（.md）
-├── setting/settings.json     # 模型预设配置
-├── public/                   # 前端静态文件
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/app.js
-├── data/                     # 数据存储
-│   └── conversations.json    # 会话数据
-├── dist/                     # 编译输出目录
-└── src-tauri/                # Tauri 桌面应用
-    ├── src/                  # Rust 源码
-    ├── icons/                # 应用图标
-    ├── tauri.conf.json       # Tauri 配置
-    └── Cargo.toml            # Rust 依赖
-```
-
-## API 接口
-
-### 会话管理
-- `POST /api/conversations` - 创建新会话
-- `GET /api/conversations` - 获取所有会话（完整数据）
-- `GET /api/conversations/meta` - 获取会话元数据列表（用于列表显示）
-- `GET /api/conversations/:id` - 获取单个会话
-- `DELETE /api/conversations/:id` - 删除会话
-- `DELETE /api/conversations/:id/messages` - 清空会话消息（保留会话）
-- `POST /api/conversations/:id/compress` - 压缩会话
-- `GET /api/conversations/stats` - 获取会话统计
-- `POST /api/conversations/cleanup` - 清理旧会话（可指定保留数量）
-
-### 消息
-- `POST /api/conversations/:id/messages` - 发送消息（非流式）
-
-### Skills
-- `GET /api/skills` - 获取所有 Skills
-- `POST /api/skills/reload` - 重新加载 Skills
-- `POST /api/skills/check-trigger` - 检查触发的 Skills
-
-### 配置
-- `GET /api/llm/config` - 获取 LLM 配置
-- `POST /api/llm/config` - 更新 LLM 配置
-- `GET /api/presets` - 获取预设配置列表
-- `POST /api/presets/:name/use` - 使用指定预设
-
-## WebSocket 协议
-
-### 发送消息类型
-
-**聊天消息：**
-```json
-{
-  "type": "chat",
-  "conversationId": "会话ID",
-  "content": "用户消息",
-  "skillName": "可选，指定技能名称"
-}
-```
-
-**命令确认：**
-```json
-{
-  "type": "confirm_command",
-  "confirmId": "确认ID",
-  "approved": true/false
-}
-```
-
-**回答问题：**
-```json
-{
-  "type": "ask_response",
-  "askId": "问题ID",
-  "answer": "用户回答"
-}
-```
-
-### 接收消息类型
-
-**流式响应：**
-- `text` - 流式文本片段
-- `user_message` - 用户消息确认
-- `done` - 响应完成
-- `error` - 错误信息
-
-**工具调用：**
-- `tool_use` - 工具调用事件（包含 toolName, toolId, toolInput）
-- `tool_result` - 工具执行结果
-
-**命令相关：**
-- `command_confirm` - 危险命令确认请求
-- `command_start` - 命令开始执行
-- `command_result` - 命令执行结果
-- `command_cancelled` - 命令已取消
-
-**文件操作：**
-- `file_read` - 文件已读取
-- `file_written` - 文件已写入
-- `file_replaced` - 文件内容已替换
-
-**搜索相关：**
-- `glob_result` - 文件搜索结果
-- `grep_result` - 内容搜索结果
-- `directory_list` - 目录列表
-
-**网络相关：**
-- `search_start` / `search_result` - 网络搜索
-- `fetch_start` / `fetch_result` - 网页获取
-
-**任务管理：**
-- `todo_updated` / `todo_read` / `todo` - 任务列表更新（支持自动进度追踪）
-
-**其他：**
-- `ask_user` - 询问用户问题
-- `skill_created` - 技能已创建
-
-## Skill 系统
-
-Skill 是存放在 `skills/` 目录下的 Markdown 文件：
-
-```markdown
-# Skill 名称
-
-Skill 的描述说明。
+# Skill Name
+Description line
 
 TRIGGER
-- 触发关键词1
-- 触发关键词2
-- not when: 排除条件
+- keyword
+- not when: exclusion keyword
 
 PROMPT:
-你的系统提示词内容...
+System prompt content here...
 ```
+When a skill is active, its prompt is prepended to the base system prompt: `skill.prompt + "\n\n" + buildSystemPrompt()`.
 
-**字段说明：**
-- 标题（`# 名称`）：Skill 名称
-- 描述：标题后的第一行非空文本
-- TRIGGER：触发条件
-  - 普通行：匹配用户消息或代码中的关键词
-  - `not when:`：排除条件
-- PROMPT:：系统提示词
+## Configuration
 
-## 内置工具
-
-系统内置以下工具供 LLM 调用：
-
-### 文件系统工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `read_file` | 读取文件内容（支持文本、图片、PDF、DOCX、Excel） | `file_path`, `offset?`, `limit?` |
-| `write_file` | 创建/覆盖文件 | `file_path`, `content` |
-| `replace` | 精确替换文件内容（需唯一匹配） | `file_path`, `old_string`, `new_string` |
-| `list_directory` | 列出目录内容 | `path` |
-| `glob` | 文件模式搜索（支持 **, *, ?） | `pattern`, `path?` |
-| `grep` | 内容正则搜索 | `pattern`, `path?`, `include?` |
-
-### Shell 工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `bash` | 执行 shell 命令 | `command`, `description?` |
-
-### 网络工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `web_search` | 网络搜索（DuckDuckGo） | `query` |
-| `web_fetch` | 获取网页内容 | `url`, `prompt?` |
-
-### 任务管理工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `todo_write` | 写入任务列表 | `todos[]` |
-| `todo_read` | 读取任务列表 | - |
-
-### 高级编辑工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `edit` | 高级文件编辑（支持多个编辑操作） | `file_path`, `edits[]`, `create_if_not_exists?` |
-| `multi_edit` | 批量编辑多个文件 | `files[]` |
-
-### Notebook 编辑工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `notebook_read` | 读取 Jupyter Notebook 文件 | `file_path` |
-| `notebook_edit_cell` | 编辑 Notebook 单元格 | `file_path`, `cell_index`, `new_source`, `cell_type?` |
-| `notebook_add_cell` | 添加 Notebook 单元格 | `file_path`, `cell_type`, `source`, `position?` |
-| `notebook_delete_cell` | 删除 Notebook 单元格 | `file_path`, `cell_index` |
-
-### 异步任务工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `task_create` | 创建异步任务 | `task_id`, `name` |
-| `task_get` | 获取任务详情 | `task_id` |
-| `task_list` | 列出所有任务 | `status?` |
-| `task_update` | 更新任务状态 | `task_id`, `status?`, `progress?`, `result?`, `error?` |
-| `task_stop` | 停止任务 | `task_id` |
-
-### Plan 模式工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `plan_create` | 创建执行计划 | `plan_id`, `title`, `steps[]` |
-| `plan_get` | 获取计划详情 | `plan_id` |
-| `plan_update_step` | 更新计划步骤状态 | `plan_id`, `step_id`, `status` |
-
-### Git Worktree 工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `worktree_list` | 列出所有工作树 | `repo_path?` |
-| `worktree_create` | 创建新工作树 | `branch_name`, `worktree_path`, `repo_path?` |
-| `worktree_remove` | 删除工作树 | `worktree_path`, `repo_path?` |
-
-### Agent 工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `agent_spawn` | 创建子代理执行任务 | `agent_id`, `task`, `agent_type?` |
-
-### 文件操作工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `copy_file` | 复制文件 | `source`, `destination` |
-| `move_file` | 移动/重命名文件 | `source`, `destination` |
-| `delete_file` | 删除文件或目录 | `file_path` |
-| `create_directory` | 创建目录 | `path` |
-| `file_info` | 获取文件详细信息 | `file_path` |
-| `file_exists` | 检查文件是否存在 | `file_path` |
-
-### 其他工具
-
-| 工具 | 说明 | 参数 |
-|------|------|------|
-| `create_skill` | 创建技能文件 | `name`, `description`, `prompt`, `triggers?` |
-| `ask_user` | 询问用户 | `question`, `header?`, `options?` |
-
-**命令执行安全：** 危险命令（如删除、格式化等）需要用户确认后才执行。
-
-## 配置文件
-
-### 环境变量 (.env)
+**`.env`** (or environment variables):
 ```
-ANTHROPIC_API_KEY=your_api_key
+ANTHROPIC_AUTH_TOKEN=...
+ANTHROPIC_BASE_URL=https://custom-endpoint  # optional
 ANTHROPIC_MODEL=claude-sonnet-4-20250514
 PORT=38592
+API_TIMEOUT_MS=3000000
 ```
 
-### 预设配置 (setting/settings.json)
-```json
-[
-  {
-    "name": "预设名称",
-    "env": {
-      "ANTHROPIC_AUTH_TOKEN": "token",
-      "ANTHROPIC_BASE_URL": "自定义API地址",
-      "ANTHROPIC_MODEL": "模型名称",
-      "API_TIMEOUT_MS": "3000000"
-    }
-  }
-]
-```
+**`setting/settings.json`** – array of named model presets. The first preset is loaded as default on startup.
 
-## LLM 服务架构
+## Key Constraints
 
-支持多种 API 格式：
-
-1. **Anthropic 原生 API**：直接调用 Anthropic Claude API
-2. **OpenAI 兼容 API**：支持 OpenAI 格式的 API
-3. **自定义 API**：通过 `baseUrl` 配置，支持阿里云百炼等兼容 Anthropic 格式的 API
-
-**流式响应支持：**
-- SSE (Server-Sent Events) 格式
-- 支持工具调用（Function Calling）
-- 自动处理 content_block_start/delta/stop 事件
-
-## 桌面应用架构
-
-### Tauri（推荐）
-- 使用 Rust 构建原生应用
-- 体积小、性能高
-- 配置文件：`src-tauri/tauri.conf.json`
-- 构建产物包含：skills/、setting/、data/ 资源
-
-### Electron
-- 使用 Node.js + Chromium
-- 跨平台兼容性好
-- 主进程：`src/electron/main.ts`
-- 预加载脚本：`src/electron/preload.ts`
-- 自动启动后端服务器
-
-## 开发约定
-
-- TypeScript 5.5.3 严格模式
-- ES2020 目标
-- CommonJS 模块
-- 编译输出到 `dist/` 目录
-- 自动生成类型声明文件 (`declaration: true`)
-- 使用 tsx 进行开发模式热重载
-
-## 注意事项
-
-- 跨平台支持：Windows / macOS / Linux
-  - Windows: 使用 dir、type、findstr 命令
-  - macOS/Linux: 使用 ls、cat、grep 命令
-- 服务启动时会自动释放被占用的端口
-- WebSocket 流式响应支持工具调用（Function Calling）
-- 最大工具调用轮次：20 次
-- 文件读取自动截断超过 15000 字符的内容
-- 搜索结果限制最多 100 个匹配
-- 工具调用时自动进行进度追踪（todo_updated）
+- File reads are truncated at 15,000 characters; grep results capped at 100 matches
+- Dangerous shell commands (rm, del, format, etc.) in `commandExecutor.ts` require WebSocket `confirm_command` round-trip before execution
+- The server kills any process occupying `PORT` on startup (`src/index.ts:checkAndFreePort`)
+- TypeScript: strict mode, ES2020 target, CommonJS output to `dist/`

@@ -109,8 +109,15 @@ function randomStatusMessage() {
 export const actions = {
   async loadPresets() {
     state.presets = await api.getPresets()
-    if (state.presets.length > 0 && !state.selectedModel) {
+    const savedModel = localStorage.getItem('selectedModel')
+    if (savedModel && state.presets.find(p => p.name === savedModel)) {
+      // 恢复上次选择的模型并应用到后端
+      state.selectedModel = savedModel
+      await api.usePreset(savedModel)
+    } else if (state.presets.length > 0 && !state.selectedModel) {
+      // 默认选第一个
       state.selectedModel = state.presets[0].name
+      await api.usePreset(state.presets[0].name)
     }
   },
 
