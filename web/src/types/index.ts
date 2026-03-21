@@ -30,6 +30,7 @@ export interface Skill {
 
 export interface Preset {
   name: string
+  template?: string
   env: {
     ANTHROPIC_AUTH_TOKEN: string
     ANTHROPIC_BASE_URL?: string

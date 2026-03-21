@@ -229,7 +229,7 @@ const selectTemplate = (id: string) => {
 const selectProvider = (provider: Provider) => {
   selectedProvider.value = provider
   configBaseUrl.value = provider?.baseUrl || ''
-  configName.value = templates[selectedTemplate.value]?.name + ' - ' + provider?.name || ''
+  configName.value = provider?.name || ''
   formStep.value = 3
 }
 
@@ -245,6 +245,7 @@ const saveConfig = async () => {
 
   const preset: Preset = {
     name: configName.value.trim(),
+    template: selectedTemplate.value || '',
     env: {
       ANTHROPIC_AUTH_TOKEN: configApiKey.value.trim(),
       ANTHROPIC_BASE_URL: configBaseUrl.value.trim(),

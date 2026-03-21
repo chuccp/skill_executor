@@ -24,6 +24,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: preset.name,
+        template: preset.template || '',
         apiKey: preset.env.ANTHROPIC_AUTH_TOKEN,
         baseUrl: preset.env.ANTHROPIC_BASE_URL,
         model: preset.env.ANTHROPIC_MODEL
@@ -39,6 +40,7 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: preset.name,
+        template: preset.template || '',
         apiKey: preset.env.ANTHROPIC_AUTH_TOKEN,
         baseUrl: preset.env.ANTHROPIC_BASE_URL,
         model: preset.env.ANTHROPIC_MODEL

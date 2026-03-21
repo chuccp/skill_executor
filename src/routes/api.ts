@@ -248,14 +248,14 @@ export function createApiRouter(
 
   // 保存预设配置到文件
   router.post('/presets/save', (req: Request, res: Response) => {
-    const { name, apiKey, baseUrl, model } = req.body;
+    const { name, apiKey, baseUrl, model, template } = req.body;
 
     if (!name || !apiKey || !model) {
       res.json({ success: false, error: 'Missing required fields: name, apiKey, model' });
       return;
     }
 
-    const success = configLoader.save(name, { apiKey, baseUrl, model });
+    const success = configLoader.save(name, { apiKey, baseUrl, model, template });
     if (success) {
       res.json({ success: true });
     } else {
@@ -266,14 +266,14 @@ export function createApiRouter(
   // 更新预设配置
   router.put('/presets/:name', (req: Request, res: Response) => {
     const oldName = req.params.name;
-    const { name, apiKey, baseUrl, model } = req.body;
+    const { name, apiKey, baseUrl, model, template } = req.body;
 
     if (!name || !apiKey || !model) {
       res.json({ success: false, error: 'Missing required fields: name, apiKey, model' });
       return;
     }
 
-    const success = configLoader.update(oldName, { name, apiKey, baseUrl, model });
+    const success = configLoader.update(oldName, { name, apiKey, baseUrl, model, template });
     if (success) {
       res.json({ success: true });
     } else {

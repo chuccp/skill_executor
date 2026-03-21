@@ -65,6 +65,7 @@ export interface StreamEvent {
 // 预设模型配置
 export interface PresetConfig {
   name: string;
+  template?: string;
   env: {
     ANTHROPIC_AUTH_TOKEN?: string;
     ANTHROPIC_BASE_URL?: string;

@@ -47,10 +47,11 @@ export class ConfigLoader {
   }
 
   // 添加或更新预设配置
-  save(name: string, config: { apiKey: string; baseUrl?: string; model: string }): boolean {
+  save(name: string, config: { apiKey: string; baseUrl?: string; model: string; template?: string }): boolean {
     const existingIndex = this.presets.findIndex(p => p.name === name);
     const preset: PresetConfig = {
       name,
+      template: config.template || '',
       env: {
         ANTHROPIC_AUTH_TOKEN: config.apiKey,
         ANTHROPIC_BASE_URL: config.baseUrl,
@@ -84,7 +85,7 @@ export class ConfigLoader {
   }
 
   // 更新预设配置
-  update(oldName: string, config: { name: string; apiKey: string; baseUrl?: string; model: string }): boolean {
+  update(oldName: string, config: { name: string; apiKey: string; baseUrl?: string; model: string; template?: string }): boolean {
     const existingIndex = this.presets.findIndex(p => p.name === oldName);
     if (existingIndex < 0) {
       return false;
@@ -97,6 +98,7 @@ export class ConfigLoader {
 
     const preset: PresetConfig = {
       name: config.name,
+      template: config.template || '',
       env: {
         ANTHROPIC_AUTH_TOKEN: config.apiKey,
         ANTHROPIC_BASE_URL: config.baseUrl,
