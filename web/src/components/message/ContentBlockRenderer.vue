@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { ContentBlock } from '../../types'
 import MarkdownRenderer from '../MarkdownRenderer.vue'
 
@@ -8,121 +8,67 @@ const props = defineProps<{
   isStreaming: boolean
 }>()
 
-// Media item interface
-interface MediaItem {
-  type: 'video' | 'audio' | 'image'
-  url: string
-  name: string
-}
+// 代码块引用，用于自动滚动
+const codeRefs = ref<Map<string, HTMLElement | null>>(new Map())
 
-// Parse content and extract media patterns
-function parseMediaContent(content: string): { segments: Array<{ type: 'text' | 'media'; content?: string; media?: MediaItem }> } {
-  if (!content) return { segments: [] }
-
-  // Match patterns: ![video: name](url), ![audio: name](url), ![name](url)
-  const mediaRegex = /!\[(?:(video|audio):\s*)?([^\]]*)\]\(([^)]+)\)/g
-
-  const segments: Array<{ type: 'text' | 'media'; content?: string; media?: MediaItem }> = []
-  let lastIndex = 0
-  let match
-
-  while ((match = mediaRegex.exec(content)) !== null) {
-    // Add text before this match
-    if (match.index > lastIndex) {
-      const textContent = content.slice(lastIndex, match.index).trim()
-      if (textContent) {
-        segments.push({ type: 'text', content: textContent })
-      }
-    }
-
-    // Determine media type
-    const mediaType = (match[1] as 'video' | 'audio') || 'image'
-    const mediaName = match[2] || 'media'
-    const mediaUrl = match[3]
-
-    segments.push({
-      type: 'media',
-      media: {
-        type: mediaType,
-        url: mediaUrl,
-        name: mediaName
-      }
-    })
-
-    lastIndex = match.index + match[0].length
-  }
-
-  // Add remaining text
-  if (lastIndex < content.length) {
-    const remainingContent = content.slice(lastIndex).trim()
-    if (remainingContent) {
-      segments.push({ type: 'text', content: remainingContent })
-    }
-  }
-
-  return { segments }
-}
-
-// Filter blocks to show (只显示 text，thinking 由 MessageItem 单独处理)
+// 显示的块（text 和 code，thinking 由 MessageItem 单独处理）
 const visibleBlocks = computed(() => {
   return props.blocks.filter(block => {
     if (block.type === 'text') {
       return block.content && block.content.trim()
     }
+    if (block.type === 'code') {
+      return block.code && block.code.trim()
+    }
     return false
   })
 })
 
-// Parse each text block into segments
-const parsedBlocks = computed(() => {
-  return visibleBlocks.value.map(block => {
-    return {
-      block,
-      segments: parseMediaContent(block.content || '').segments
-    }
+// 流式输出时滚动代码块到底部
+watch(() => props.blocks, () => {
+  nextTick(() => {
+    props.blocks.forEach(block => {
+      if (block.type === 'code' && block.isStreaming) {
+        const el = codeRefs.value.get(block.id)
+        if (el) {
+          el.scrollTop = el.scrollHeight
+        }
+      }
+    })
   })
-})
+}, { deep: true })
+
+// 设置代码块引用
+const setCodeRef = (id: string, el: any) => {
+  if (el) {
+    codeRefs.value.set(id, el as HTMLElement)
+  } else {
+    codeRefs.value.delete(id)
+  }
+}
 </script>
 
 <template>
   <div class="content-blocks">
-    <template v-for="parsed in parsedBlocks" :key="parsed.block.id">
-      <!-- Text block with media support -->
-      <template v-for="(segment, idx) in parsed.segments" :key="idx">
-        <!-- Media segment -->
-        <div v-if="segment.type === 'media' && segment.media" class="media-container">
-          <!-- Video -->
-          <video
-            v-if="segment.media.type === 'video'"
-            controls
-            class="media-player video-player"
-            :src="segment.media.url"
-          >
-            您的浏览器不支持视频播放
-          </video>
-          <!-- Audio -->
-          <audio
-            v-else-if="segment.media.type === 'audio'"
-            controls
-            class="media-player audio-player"
-            :src="segment.media.url"
-          >
-            您的浏览器不支持音频播放
-          </audio>
-          <!-- Image -->
-          <MarkdownRenderer
-            v-else
-            class="text-content"
-            :content="`![${segment.media.name}](${segment.media.url})`"
-          />
+    <template v-for="block in visibleBlocks" :key="block.id">
+      <!-- 文本块 -->
+      <MarkdownRenderer
+        v-if="block.type === 'text'"
+        class="text-content"
+        :content="block.content || ''"
+      />
+
+      <!-- 代码块 -->
+      <div v-else-if="block.type === 'code'" class="code-block-wrapper">
+        <div class="code-header" v-if="block.language">
+          <span class="code-lang">{{ block.language }}</span>
         </div>
-        <!-- Text segment -->
-        <MarkdownRenderer
-          v-else-if="segment.type === 'text' && segment.content"
-          class="text-content"
-          :content="segment.content"
-        />
-      </template>
+        <pre
+          :ref="(el: any) => setCodeRef(block.id, el)"
+          class="code-content"
+          :class="[`language-${block.language || 'text'}`, { 'is-streaming': block.isStreaming }]"
+        ><code>{{ block.code }}</code></pre>
+      </div>
     </template>
   </div>
 </template>
@@ -135,30 +81,62 @@ const parsedBlocks = computed(() => {
   width: 100%;
 }
 
-.media-container {
-  width: 100%;
-  margin: 8px 0;
-}
-
-.media-player {
-  max-width: 100%;
-  border-radius: 8px;
-  background: #000;
-}
-
-.video-player {
-  width: 100%;
-  max-height: 400px;
-}
-
-.audio-player {
-  width: 100%;
-  height: 40px;
-}
-
 .text-content {
   display: block;
   line-height: 1.6;
   width: 100%;
+}
+
+.code-block-wrapper {
+  width: 100%;
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1e1e1e;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3d3d3d;
+}
+
+.code-lang {
+  font-size: 0.75rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.code-content {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  max-height: 400px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #f5f5f5;
+  background: #1e1e1e;
+}
+
+.code-content.is-streaming {
+  max-height: 300px;
+}
+
+.code-content.language-bash {
+  background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+  border-left: 3px solid #48bb78;
+}
+
+.code-content.language-bash code {
+  color: #68d391;
+}
+
+.code-content code {
+  display: block;
+  white-space: pre;
 }
 </style>

@@ -63,23 +63,15 @@ export interface StreamingBlock {
 // 统一的内容块 - 按流式生成顺序显示
 export interface ContentBlock {
   id: string
-  type: 'thinking' | 'text' | 'bash' | 'media' | 'tool_result'
+  type: 'thinking' | 'text' | 'code'
   // thinking 类型
   thinkingContent?: string
-  // text 类型
+  // text 类型 - 普通 markdown 内容
   content?: string
-  // bash 类型
-  command?: string
-  output?: string
+  // code 类型 - 代码块（流式输出时避免格式错乱）
+  code?: string
+  language?: string
   isStreaming?: boolean
-  success?: boolean
-  // media 类型
-  mediaType?: 'image' | 'audio' | 'video'
-  url?: string
-  name?: string
-  // tool_result 类型
-  toolType?: 'file' | 'files' | 'search' | 'write'
-  data?: any
 }
 
 export interface StreamingState {

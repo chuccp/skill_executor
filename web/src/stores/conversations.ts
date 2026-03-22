@@ -336,53 +336,80 @@ export const conversationsActions = {
     }
   },
 
-  // 开始命令执行 - 添加 markdown 格式的命令文本
+  // 开始代码块
+  startCodeBlock(language: string = '') {
+    const state = this.getCurrentState()
+    if (!state) return
+
+    const blocks = state.streaming.contentBlocks
+    blocks.push({
+      id: `code-${Date.now()}`,
+      type: 'code',
+      code: '',
+      language: language,
+      isStreaming: true
+    })
+  },
+
+  // 追加代码内容
+  appendCodeBlock(code: string) {
+    const state = this.getCurrentState()
+    if (!state) return
+
+    const blocks = state.streaming.contentBlocks
+    const lastBlock = blocks[blocks.length - 1]
+
+    if (lastBlock && lastBlock.type === 'code' && lastBlock.isStreaming) {
+      lastBlock.code = (lastBlock.code || '') + code
+    }
+  },
+
+  // 结束代码块
+  finishCodeBlock() {
+    const state = this.getCurrentState()
+    if (!state) return
+
+    const blocks = state.streaming.contentBlocks
+    const lastBlock = blocks[blocks.length - 1]
+
+    if (lastBlock && lastBlock.type === 'code') {
+      lastBlock.isStreaming = false
+    }
+  },
+
+  // 开始命令执行 - 使用代码块类型
   startCommand(command: string) {
     const state = this.getCurrentState()
     if (state) {
-      // 追加命令的 markdown 格式
-      const cmdMarkdown = `\n\`\`\`bash\n$ ${command}\n`
-      this.appendTextBlock(cmdMarkdown)
+      const blocks = state.streaming.contentBlocks
+      blocks.push({
+        id: `code-${Date.now()}`,
+        type: 'code',
+        code: `$ ${command}\n`,
+        language: 'bash',
+        isStreaming: true
+      })
     }
   },
 
   // 追加命令输出
   appendCommandOutput(_command: string, output: string) {
-    // 直接追加输出到文本块
-    this.appendTextBlock(output)
+    this.appendCodeBlock(output)
   },
 
   // 完成命令执行
   finishCommand(_command: string, success: boolean) {
-    // 添加完成标记
-    const endMarkdown = success ? '\n```\n' : '\n```\n❌ 命令执行失败\n'
-    this.appendTextBlock(endMarkdown)
-  },
-
-  // 添加媒体块
-  addMediaBlock(media: { type: 'image' | 'audio' | 'video'; url: string; name: string }) {
     const state = this.getCurrentState()
-    if (state) {
-      state.streaming.contentBlocks.push({
-        id: `media-${Date.now()}`,
-        type: 'media',
-        mediaType: media.type,
-        url: media.url,
-        name: media.name
-      })
-    }
-  },
+    if (!state) return
 
-  // 添加工具结果块
-  addToolResultBlock(toolType: 'file' | 'files' | 'search' | 'write', data: any) {
-    const state = this.getCurrentState()
-    if (state) {
-      state.streaming.contentBlocks.push({
-        id: `tool-${Date.now()}`,
-        type: 'tool_result',
-        toolType,
-        data
-      })
+    const blocks = state.streaming.contentBlocks
+    const lastBlock = blocks[blocks.length - 1]
+
+    if (lastBlock && lastBlock.type === 'code' && lastBlock.isStreaming) {
+      lastBlock.isStreaming = false
+      if (!success) {
+        lastBlock.code = (lastBlock.code || '') + '\n❌ 命令执行失败\n'
+      }
     }
   },
 
