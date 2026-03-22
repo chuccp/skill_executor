@@ -56,8 +56,8 @@ function handleCommandConfirm(data: WSServerMessage) {
 
 // 处理询问用户请求
 function handleAskUser(data: WSServerMessage) {
-  if (data.askId && data.question && data.options) {
-    configStore.actions.setAskUser(data.question, data.options, data.askId)
+  if (data.askId && data.question !== undefined) {
+    configStore.actions.setAskUser(data.question, data.options || [], data.askId)
   }
 }
 

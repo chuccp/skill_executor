@@ -96,14 +96,14 @@ export function buildSystemPrompt(): string {
 - 示例：play_media(file_path="media/audio/output.mp3")
 - 支持的格式：mp3, wav, ogg, m4a（音频）；mp4, webm, avi（视频）；jpg, png, gif, webp（图片）
 - play_media 会返回媒体文件的 URL 信息。获取 URL 后，**你需要在回复正文中使用 markdown 语法嵌入媒体**：
-  - 图片： !\[描述\](url)
-  - 音频： !\[audio: 描述\](url)
-  - 视频： !\[video: 描述\](url)
+  - 图片： ![描述](url)
+  - 音频： ![audio: 描述](url)
+  - 视频： ![video: 描述](url)
 
 **示例用法：**
-  - 图片："参考下图：\n\n!\[生成的图片\](媒体URL)"
-  - 音频："点击播放语音：\n\n!\[audio: 语音输出\](媒体URL)"
-  - 视频："请看演示视频：\n\n!\[video: 演示视频\](媒体URL)"
+  - 图片："参考下图：\n\n![生成的图片](媒体URL)"
+  - 音频："点击播放语音：\n\n![audio: 语音输出](媒体URL)"
+  - 视频："请看演示视频：\n\n![video: 演示视频](媒体URL)"
 
 **使用流程：**
 1. 先用 get_files 查找可用的媒体文件

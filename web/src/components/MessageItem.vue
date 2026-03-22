@@ -164,6 +164,27 @@ function formatContent(content: string): string {
       return `<div class="media-inline"><img src="${url}" alt="${alt}" class="media-thumb" style="width:100%;max-width:100%;height:auto;border-radius:8px" /></div>`
     }
   })
+  // Handle headings
+  result = result.replace(/^###### (.*)$/gm, '<h6>$1</h6>')
+  result = result.replace(/^##### (.*)$/gm, '<h5>$1</h5>')
+  result = result.replace(/^#### (.*)$/gm, '<h4>$1</h4>')
+  result = result.replace(/^### (.*)$/gm, '<h3>$1</h3>')
+  result = result.replace(/^## (.*)$/gm, '<h2>$1</h2>')
+  result = result.replace(/^# (.*)$/gm, '<h1>$1</h1>')
+  // Handle bold **text**
+  result = result.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  // Handle italic *text*
+  result = result.replace(/\*(.*?)\*/g, '<em>$1</em>')
+  // Handle unordered lists - bullets
+  result = result.replace(/^- (.*)$/gm, '<ul><li>$1</li></ul>')
+  result = result.replace(/^\* (.*)$/gm, '<ul><li>$1</li></ul>')
+  // Merge adjacent ul elements
+  result = result.replace(/<\/ul>\s*<ul>/g, '')
+  // Handle ordered lists
+  result = result.replace(/^\d+\. (.*)$/gm, '<ol><li>$1</li></ol>')
+  result = result.replace(/<\/ol>\s*<ol>/g, '')
+  // Handle horizontal rules
+  result = result.replace(/^---$/gm, '<hr>')
   // Handle regular links [text](url)
   result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
   result = result.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
@@ -820,6 +841,68 @@ async function exportMedia(url: string, filename: string) {
 
 .todo-checkbox {
   font-size: 0.8rem;
+}
+
+/* Markdown basic styles */
+.text-content h1 {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 16px 0 8px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.text-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 14px 0 7px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 3px;
+}
+.text-content h3 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 12px 0 6px 0;
+}
+.text-content h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 10px 0 5px 0;
+}
+.text-content h5 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 8px 0 4px 0;
+}
+.text-content h6 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 8px 0 4px 0;
+  color: var(--muted);
+}
+.text-content ul, .text-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.text-content li {
+  margin: 4px 0;
+}
+.text-content hr {
+  border: none;
+  border-top: 2px solid var(--border);
+  margin: 16px 0;
+}
+.text-content strong {
+  font-weight: 600;
+}
+.text-content em {
+  font-style: italic;
+}
+.text-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.text-content a:hover {
+  text-decoration: underline;
 }
 
 @keyframes fadeIn {
