@@ -1,90 +1,65 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { Message, ToolResultDisplay } from '../types'
-import MarkdownRender from 'markstream-vue'
-import { ThinkingPanel, TodoPanel, MediaRenderer, ToolResultPanel } from './message'
+import { computed } from 'vue'
+import type { Message, ContentBlock } from '../types'
+import MarkdownRenderer from './MarkdownRenderer.vue'
+import { ThinkingPanel, TodoPanel, ContentBlockRenderer } from './message'
+import { useConversationsStore } from '../stores/conversations'
+
+const conversationsStore = useConversationsStore()
 
 const props = defineProps<{
   message: Message
   isStreaming: boolean
   streamStatus: string
   streamingThinking?: string
-  streamingToolResults?: ToolResultDisplay[]
   streamingTodos?: any[]
-  streamingProgress?: string
-  streamingBlocks?: Array<{ type: 'thinking' | 'text'; content: string }>
+  contentBlocks?: ContentBlock[]
 }>()
 
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isSystem = computed(() => props.message.role === 'system')
 const isUser = computed(() => props.message.role === 'user')
 
+// Token 使用量 - 优先显示消息中保存的，否则显示流式中的
+const tokenUsage = computed(() => {
+  if (props.message.usage && (props.message.usage.inputTokens > 0 || props.message.usage.outputTokens > 0)) {
+    return props.message.usage
+  }
+  if (props.isStreaming) {
+    return conversationsStore.currentUsage
+  }
+  return null
+})
+
+// 格式化 token 数量
+const formatTokens = (num: number): string => {
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
+
 // Thinking content
 const thinkingContent = computed(() => {
   return props.message.thinking || props.streamingThinking || ''
 })
 
-// Media and non-media tool results
-const mediaResultsRef = ref<any[]>([])
-const nonMediaToolResultsRef = ref<any[]>([])
-
-watch(
-  () => [props.message.toolResults, props.streamingToolResults],
-  () => {
-    const msgResults = props.message.toolResults || []
-    const streamResults = props.streamingToolResults || []
-
-    const merged = [...msgResults]
-    for (const streamResult of streamResults) {
-      if (streamResult.type === 'media') {
-        const exists = merged.some(
-          (r) => r.type === streamResult.type && r.data?.url === streamResult.data?.url
-        )
-        if (!exists) merged.push(streamResult)
-      } else {
-        merged.push(streamResult)
-      }
-    }
-
-    const media = merged.filter((r) => r.type === 'media')
-    const nonMedia = merged.filter((r) => r.type !== 'media')
-
-    const oldIds = mediaResultsRef.value.map((r) => r._stableId)
-    const newIds = media.map((r, idx) => r.data?.path || r.data?.url || `media-${idx}`)
-
-    const hasChanged =
-      oldIds.length !== newIds.length || oldIds.some((id, i) => id !== newIds[i])
-
-    if (hasChanged) {
-      mediaResultsRef.value = media.map((r, idx) => ({
-        ...r,
-        _stableId: r.data?.path || r.data?.url || `media-${idx}`
-      }))
-    }
-
-    nonMediaToolResultsRef.value = nonMedia
-  },
-  { immediate: true }
-)
-
-// Todos
+// Todos - 只在流式过程中显示
 const todos = computed(() => {
-  if (props.message.todos && props.message.todos.length > 0) {
-    return props.message.todos
+  if (props.isStreaming && props.streamingTodos && props.streamingTodos.length > 0) {
+    return props.streamingTodos
   }
-  return props.streamingTodos || []
+  return []
 })
 
-// Media placeholders check
-const hasMediaPlaceholders = computed(() => {
-  if (!props.message.content) return false
-  return /\[media:\d+\]/.test(props.message.content)
-})
-
-// Markdown content (remove media placeholders)
+// Markdown content - 直接渲染
 const markdownContent = computed(() => {
-  const content = props.message.content || ''
-  return content.replace(/\[media:\d+\]/g, '')
+  return props.message.content || ''
+})
+
+// 是否使用内容块渲染（流式时使用）
+const useContentBlocks = computed(() => {
+  return props.isStreaming && props.contentBlocks && props.contentBlocks.length > 0
 })
 
 // Role label
@@ -96,36 +71,38 @@ const roleLabel = computed(() => {
 
 <template>
   <div class="message" :class="{ assistant: isAssistant, user: isUser, system: isSystem }">
-    <div class="role">{{ roleLabel }}</div>
-
-    <!-- Thinking Panel -->
-    <ThinkingPanel v-if="isAssistant" :content="thinkingContent" />
-
-    <!-- Todos - 显示在正文之前 -->
-    <TodoPanel v-if="isAssistant" :todos="todos" />
-
-    <!-- Content -->
-    <div v-if="props.message.content" class="content">
-      <MarkdownRender class="text-content" :content="markdownContent" />
-
-      <!-- Media with placeholders -->
-      <MediaRenderer
-        v-if="mediaResultsRef.length > 0 && hasMediaPlaceholders"
-        :results="mediaResultsRef"
-      />
+    <div class="role-row">
+      <div class="role">{{ roleLabel }}</div>
     </div>
 
-    <!-- Media without placeholders -->
-    <MediaRenderer
-      v-if="isAssistant && mediaResultsRef.length && !hasMediaPlaceholders"
-      :results="mediaResultsRef"
+    <!-- Todos - 始终显示在正文之前 -->
+    <TodoPanel v-if="isAssistant" :todos="todos" />
+
+    <!-- 流式内容：使用内容块渲染器 -->
+    <ContentBlockRenderer
+      v-if="isAssistant && useContentBlocks"
+      :blocks="contentBlocks || []"
+      :is-streaming="isStreaming"
     />
 
-    <!-- Tool results (non-media) -->
-    <ToolResultPanel v-if="isAssistant" :results="nonMediaToolResultsRef" />
+    <!-- 非流式内容 -->
+    <template v-else>
+      <!-- Thinking Panel -->
+      <ThinkingPanel v-if="isAssistant" :content="thinkingContent" />
 
-    <!-- Stream status -->
-    <span v-if="isStreaming" class="stream-status">{{ streamStatus }}</span>
+      <!-- Content - markdown 渲染所有内容 -->
+      <div v-if="props.message.content" class="content">
+        <MarkdownRenderer class="text-content" :content="markdownContent" />
+      </div>
+    </template>
+
+    <!-- Stream status and token usage -->
+    <div v-if="isStreaming || (isAssistant && tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0))" class="status-row">
+      <span v-if="isStreaming" class="stream-status">{{ streamStatus }}</span>
+      <span v-if="isAssistant && tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0)" class="token-usage">
+        {{ formatTokens(tokenUsage.inputTokens) }}/{{ formatTokens(tokenUsage.outputTokens) }}
+      </span>
+    </div>
   </div>
 </template>
 
@@ -137,8 +114,6 @@ const roleLabel = computed(() => {
   padding: 14px 18px;
   box-shadow: 0 8px 20px rgba(18, 18, 18, 0.06);
   animation: fadeIn 0.15s ease;
-  display: flex;
-  flex-direction: column;
   width: 100%;
   max-width: 760px;
 }
@@ -174,17 +149,25 @@ const roleLabel = computed(() => {
 .role {
   font-size: 0.7rem;
   color: var(--muted);
-  margin-bottom: 6px;
   font-weight: 600;
   letter-spacing: 0.4px;
   text-transform: uppercase;
-  order: 1;
+}
+
+.role-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.role-row .role {
+  margin-bottom: 0;
 }
 
 .content {
   line-height: 1.6;
   font-size: 0.95rem;
-  order: 3;
   width: 100%;
   max-width: 100%;
   overflow-wrap: break-word;
@@ -272,14 +255,24 @@ const roleLabel = computed(() => {
   text-decoration: underline;
 }
 
-.stream-status {
-  color: var(--accent);
-  font-size: 0.85rem;
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed var(--border);
+}
+
+.stream-status {
+  color: var(--accent);
+  font-size: 0.85rem;
   animation: pulse 1.5s infinite;
-  order: 99;
+}
+
+.token-usage {
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 @keyframes fadeIn {

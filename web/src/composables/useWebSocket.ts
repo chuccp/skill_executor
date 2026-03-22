@@ -51,6 +51,13 @@ export function useWebSocketHandler() {
       }
     },
 
+    // Token 使用量更新
+    usage: (data: WSServerMessage) => {
+      if (data.usage) {
+        conversationsStore.actions.setUsage(data.usage)
+      }
+    },
+
     // 命令开始
     command_start: (data: WSServerMessage) => {
       if (data.command) {

@@ -1,7 +1,7 @@
 // 会话状态管理 - 每个会话独立管理自己的消息和流式状态
 
 import { ref } from 'vue'
-import type { Message, ConversationState, StreamingState, ToolResultDisplay, TodoItem, StreamingBlock } from '../types'
+import type { Message, ConversationState, StreamingState, ToolResultDisplay, TodoItem, ContentBlock } from '../types'
 import { api } from '../services/api'
 import { getRandomStatusMessage } from '../constants/messages'
 
@@ -11,6 +11,7 @@ function createEmptyStreamingState(): StreamingState {
     isStreaming: false,
     thinkingContent: '',
     streamingBlocks: [],
+    contentBlocks: [],
     toolResults: [],
     todos: [],
     progressText: '',
@@ -18,16 +19,14 @@ function createEmptyStreamingState(): StreamingState {
   }
 }
 
-// 命令执行状态
-interface CommandState {
-  command: string
-  output: string
-  isStreaming: boolean
-  success?: boolean
+// Token 使用状态
+interface UsageState {
+  inputTokens: number
+  outputTokens: number
 }
 
-// 当前活跃的命令
-const activeCommands = ref<Map<string, CommandState>>(new Map())
+// 当前 token 使用量
+const currentUsage = ref<UsageState>({ inputTokens: 0, outputTokens: 0 })
 
 // 会话状态存储 - 使用 Map 实现会话级隔离 (wrapped in ref for reactivity)
 const conversationStates = ref<Map<string, ConversationState>>(new Map())
@@ -147,10 +146,14 @@ export const conversationsActions = {
     const id = conversationId || currentConversationId.value
     if (!id) return
 
+    // 清空 token 使用量
+    currentUsage.value = { inputTokens: 0, outputTokens: 0 }
+
     const state = getOrCreateState(id)
     state.streaming.isStreaming = true
     state.streaming.thinkingContent = ''
     state.streaming.streamingBlocks = []
+    state.streaming.contentBlocks = []  // 初始化内容块
     state.streaming.toolResults = []
     state.streaming.todos = []
     state.streaming.progressText = ''
@@ -199,12 +202,17 @@ export const conversationsActions = {
       if (streaming.toolResults.length) {
         lastMsg.toolResults = streaming.toolResults
       }
+      // 保存 token 使用量
+      if (currentUsage.value.inputTokens > 0 || currentUsage.value.outputTokens > 0) {
+        lastMsg.usage = { ...currentUsage.value }
+      }
 
       // 保存到后端
-      if (streaming.thinkingContent || streaming.toolResults.length) {
+      if (streaming.thinkingContent || streaming.toolResults.length || lastMsg.usage) {
         api.updateMessage(id, state.messages.length - 1, {
           thinking: streaming.thinkingContent || undefined,
-          toolResults: streaming.toolResults.length ? streaming.toolResults : undefined
+          toolResults: streaming.toolResults.length ? streaming.toolResults : undefined,
+          usage: lastMsg.usage
         }).catch(err => console.error('Failed to save message extras:', err))
       }
     }
@@ -217,6 +225,7 @@ export const conversationsActions = {
     }
     streaming.progressText = ''
     streaming.streamingBlocks = []
+    streaming.contentBlocks = []
   },
 
   // 追加流式文本
@@ -237,6 +246,9 @@ export const conversationsActions = {
     } else if (text.trim()) {
       streaming.streamingBlocks.push({ type: 'text', content: text })
     }
+
+    // 追加到内容块（统一显示）
+    this.appendTextBlock(text)
   },
 
   // 追加 thinking
@@ -254,13 +266,28 @@ export const conversationsActions = {
     } else if (text.trim()) {
       streaming.streamingBlocks.push({ type: 'thinking', content: text })
     }
+
+    // 追加到内容块（统一显示）
+    const blocks = streaming.contentBlocks
+    const lastContentBlock = blocks[blocks.length - 1]
+    if (lastContentBlock && lastContentBlock.type === 'thinking') {
+      lastContentBlock.thinkingContent = (lastContentBlock.thinkingContent || '') + text
+    } else {
+      blocks.push({
+        id: `thinking-${Date.now()}`,
+        type: 'thinking',
+        thinkingContent: text
+      })
+    }
   },
 
   // 添加工具结果
   addToolResult(result: ToolResultDisplay) {
     const state = this.getCurrentState()
     if (state) {
+      // 只保存到 toolResults 数组，用于持久化
       state.streaming.toolResults.push(result)
+      // 不再添加到 contentBlocks，让 AI 的回复通过 markdown 渲染
     }
   },
 
@@ -280,53 +307,105 @@ export const conversationsActions = {
     }
   },
 
-  // 获取流式块
-  getStreamingBlocks(): StreamingBlock[] {
+  // ========== 内容块管理（统一流式显示） ==========
+
+  // 获取内容块列表
+  getContentBlocks(): ContentBlock[] {
     const state = this.getCurrentState()
-    return state?.streaming.streamingBlocks || []
+    return state?.streaming.contentBlocks || []
   },
 
-  // ========== 命令执行状态管理 ==========
+  // 添加文本块
+  appendTextBlock(text: string) {
+    const state = this.getCurrentState()
+    if (!state) return
 
-  // 开始命令执行
+    const blocks = state.streaming.contentBlocks
+    const lastBlock = blocks[blocks.length - 1]
+
+    // 如果最后一个块是文本块，追加内容
+    if (lastBlock && lastBlock.type === 'text') {
+      lastBlock.content = (lastBlock.content || '') + text
+    } else {
+      // 否则创建新的文本块
+      blocks.push({
+        id: `text-${Date.now()}`,
+        type: 'text',
+        content: text
+      })
+    }
+  },
+
+  // 开始命令执行 - 添加 markdown 格式的命令文本
   startCommand(command: string) {
-    activeCommands.value.set(command, {
-      command,
-      output: '',
-      isStreaming: true
-    })
+    const state = this.getCurrentState()
+    if (state) {
+      // 追加命令的 markdown 格式
+      const cmdMarkdown = `\n\`\`\`bash\n$ ${command}\n`
+      this.appendTextBlock(cmdMarkdown)
+    }
   },
 
   // 追加命令输出
-  appendCommandOutput(command: string, output: string) {
-    const cmd = activeCommands.value.get(command)
-    if (cmd) {
-      cmd.output += output
-    }
+  appendCommandOutput(_command: string, output: string) {
+    // 直接追加输出到文本块
+    this.appendTextBlock(output)
   },
 
   // 完成命令执行
-  finishCommand(command: string, success: boolean) {
-    const cmd = activeCommands.value.get(command)
-    if (cmd) {
-      cmd.isStreaming = false
-      cmd.success = success
+  finishCommand(_command: string, success: boolean) {
+    // 添加完成标记
+    const endMarkdown = success ? '\n```\n' : '\n```\n❌ 命令执行失败\n'
+    this.appendTextBlock(endMarkdown)
+  },
+
+  // 添加媒体块
+  addMediaBlock(media: { type: 'image' | 'audio' | 'video'; url: string; name: string }) {
+    const state = this.getCurrentState()
+    if (state) {
+      state.streaming.contentBlocks.push({
+        id: `media-${Date.now()}`,
+        type: 'media',
+        mediaType: media.type,
+        url: media.url,
+        name: media.name
+      })
     }
   },
 
-  // 获取命令状态
-  getCommandState(command: string): CommandState | undefined {
-    return activeCommands.value.get(command)
+  // 添加工具结果块
+  addToolResultBlock(toolType: 'file' | 'files' | 'search' | 'write', data: any) {
+    const state = this.getCurrentState()
+    if (state) {
+      state.streaming.contentBlocks.push({
+        id: `tool-${Date.now()}`,
+        type: 'tool_result',
+        toolType,
+        data
+      })
+    }
   },
 
-  // 获取所有活跃命令
-  getActiveCommands(): Map<string, CommandState> {
-    return activeCommands.value
-  },
-
-  // 清理命令状态
+  // 清理命令状态（保留用于向后兼容）
   clearCommands() {
-    activeCommands.value.clear()
+    // 不再需要，保留空方法
+  },
+
+  // ========== Token 使用量管理 ==========
+
+  // 设置 token 使用量
+  setUsage(usage: { inputTokens: number; outputTokens: number }) {
+    currentUsage.value = usage
+  },
+
+  // 获取 token 使用量
+  getUsage(): UsageState {
+    return currentUsage.value
+  },
+
+  // 清空 token 使用量
+  clearUsage() {
+    currentUsage.value = { inputTokens: 0, outputTokens: 0 }
   },
 
   // 清理会话状态（删除会话时调用）
@@ -360,8 +439,11 @@ export function useConversationsStore() {
     get currentStreaming() {
       return conversationsActions.getCurrentStreaming()
     },
-    get activeCommands() {
-      return activeCommands.value
+    get currentUsage() {
+      return currentUsage.value
+    },
+    get contentBlocks() {
+      return conversationsActions.getContentBlocks()
     },
     actions: conversationsActions
   }

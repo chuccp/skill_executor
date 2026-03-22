@@ -1,37 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import type { ToolResultDisplay } from '../../types'
-import { useConversationsStore } from '../../stores/conversations'
 import BashResult from './BashResult.vue'
 
 const props = defineProps<{
   results: ToolResultDisplay[]
+  isStreaming?: boolean
 }>()
-
-const conversationsStore = useConversationsStore()
-
-// 检查是否有正在执行的命令
-const activeBashCommands = computed(() => {
-  const commands: Map<string, { command: string; output: string; isStreaming: boolean; success?: boolean }> = new Map()
-  conversationsStore.activeCommands.forEach((cmd, key) => {
-    commands.set(key, cmd)
-  })
-  return commands
-})
 </script>
 
 <template>
-  <div v-if="results.length || activeBashCommands.size" class="tool-results">
-    <!-- 显示活跃的命令（实时输出） -->
-    <BashResult
-      v-for="[cmd, state] in activeBashCommands"
-      :key="cmd"
-      :command="state.command"
-      :output="state.output"
-      :is-streaming="state.isStreaming"
-      :success="state.success"
-    />
-
+  <div v-if="results.length" class="tool-results">
     <!-- 显示已完成的工具结果 -->
     <div v-for="(result, idx) in results" :key="idx">
       <!-- File content -->
@@ -85,7 +63,6 @@ const activeBashCommands = computed(() => {
 
 <style scoped>
 .tool-results {
-  order: 40;
   margin-top: 10px;
   margin-bottom: 0;
   display: flex;

@@ -18,12 +18,20 @@ export class WebSocketService {
     if (url) {
       this.url = url
     } else if (typeof window !== 'undefined') {
-      // 开发环境：连接到后端服务器 (38592)
+      // 开发环境：前端在 38593，通过 Vite 代理连接后端
       // 生产环境：使用当前域名
-      const isDev = window.location.port === '5173' || window.location.hostname === 'localhost'
-      const port = isDev ? '38592' : window.location.port
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      this.url = `${protocol}//${window.location.hostname}:${port}/ws`
+      const isDev = window.location.port === '5173' || window.location.port === '38593'
+
+      if (isDev) {
+        // 开发环境：使用相对路径，Vite 会代理到后端
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        this.url = `${protocol}//${window.location.host}/ws`
+      } else {
+        // 生产环境：使用当前域名
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+        this.url = `${protocol}//${window.location.host}/ws`
+      }
+      console.log('[WebSocket] 连接地址:', this.url)
     } else {
       this.url = 'ws://localhost:38592/ws'
     }
@@ -33,18 +41,20 @@ export class WebSocketService {
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
+        const startTime = Date.now()
+        console.log('[WebSocket] 开始连接:', this.url)
         this.ws = new WebSocket(this.url)
 
-        // 设置连接超时
+        // 设置连接超时 (10秒)
         const connectTimeout = setTimeout(() => {
-          console.error('[WebSocket] 连接超时')
+          console.error('[WebSocket] 连接超时, 已等待', Date.now() - startTime, 'ms')
           this.ws?.close()
           reject(new Error('WebSocket 连接超时'))
-        }, 5000)
+        }, 10000)
 
         this.ws.onopen = () => {
           clearTimeout(connectTimeout)
-          console.log('[WebSocket] 已连接')
+          console.log('[WebSocket] 已连接, 耗时', Date.now() - startTime, 'ms')
           this.reconnectAttempts = 0
           this.startPing()
           resolve()
@@ -61,7 +71,7 @@ export class WebSocketService {
 
         this.ws.onerror = (error) => {
           clearTimeout(connectTimeout)
-          console.error('[WebSocket] 错误:', error)
+          console.error('[WebSocket] 错误:', error, '耗时', Date.now() - startTime, 'ms')
           reject(error)
         }
 

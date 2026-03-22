@@ -14,6 +14,10 @@ export default defineConfig({
       '/media': {
         target: 'http://localhost:38592',
         changeOrigin: true
+      },
+      '/ws': {
+        target: 'ws://localhost:38592',
+        ws: true
       }
     }
   }

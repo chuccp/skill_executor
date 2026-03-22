@@ -479,6 +479,9 @@ export class LLMService {
     let currentToolCall: { id: string; name: string; inputJson: string, yielded: boolean } | null = null;
     // 追踪当前是否在 thinking 块中
     let isThinkingBlock: boolean = false;
+    // 累积的 token 使用量
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -493,12 +496,30 @@ export class LLMService {
         if (line.startsWith('data:')) {
           const data = line.slice(5).trim();
           if (data === '[DONE]') {
+            // 发送最终的 usage 信息
+            if (totalInputTokens > 0 || totalOutputTokens > 0) {
+              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+            }
             yield { type: 'done' };
             return;
           }
 
           try {
             const parsed = JSON.parse(data);
+
+            // 处理 message_start 事件（包含初始 usage）
+            if (parsed.type === 'message_start' && parsed.message?.usage) {
+              totalInputTokens = parsed.message.usage.input_tokens || 0;
+              if (totalInputTokens > 0) {
+                yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: 0 } };
+              }
+            }
+
+            // 处理 message_delta 事件（包含最终 usage）
+            if (parsed.type === 'message_delta' && parsed.usage) {
+              totalOutputTokens = parsed.usage.output_tokens || 0;
+              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+            }
 
             // 处理 content_block_start 事件
             if (parsed.type === 'content_block_start' && parsed.content_block) {
@@ -563,6 +584,10 @@ export class LLMService {
       }
     }
 
+    // 发送最终的 usage 信息
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+    }
     yield { type: 'done' };
   }
 }

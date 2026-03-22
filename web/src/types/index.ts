@@ -16,6 +16,10 @@ export interface Message {
   toolResults?: ToolResultDisplay[]
   toolResult?: ToolResultDisplay
   todos?: TodoItem[]
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+  }
 }
 
 export interface Skill {
@@ -56,10 +60,33 @@ export interface StreamingBlock {
   content: string
 }
 
+// 统一的内容块 - 按流式生成顺序显示
+export interface ContentBlock {
+  id: string
+  type: 'thinking' | 'text' | 'bash' | 'media' | 'tool_result'
+  // thinking 类型
+  thinkingContent?: string
+  // text 类型
+  content?: string
+  // bash 类型
+  command?: string
+  output?: string
+  isStreaming?: boolean
+  success?: boolean
+  // media 类型
+  mediaType?: 'image' | 'audio' | 'video'
+  url?: string
+  name?: string
+  // tool_result 类型
+  toolType?: 'file' | 'files' | 'search' | 'write'
+  data?: any
+}
+
 export interface StreamingState {
   isStreaming: boolean
   thinkingContent: string
   streamingBlocks: StreamingBlock[]
+  contentBlocks: ContentBlock[]  // 新增：统一内容块
   toolResults: ToolResultDisplay[]
   todos: TodoItem[]
   progressText: string
@@ -109,6 +136,7 @@ export type WSServerMessageType =
   | 'todo'
   | 'ask_user'
   | 'pause_stream'
+  | 'usage'
   | 'skill_created'
   | 'pong'
   | 'config_updated'
@@ -145,6 +173,10 @@ export interface WSServerMessage {
   options?: any[]
   confirmId?: string
   config?: any
+  usage?: {
+    inputTokens: number
+    outputTokens: number
+  }
 }
 
 export type WSEventHandler = (event: WSServerMessage) => void

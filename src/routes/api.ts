@@ -144,10 +144,10 @@ export function createApiRouter(
 
   // 更新消息（保存 thinking 和 toolResults）
   router.patch('/conversations/:id/messages/:index', async (req: Request, res: Response) => {
-    const { thinking, toolResults } = req.body;
+    const { thinking, toolResults, usage } = req.body;
     const { id, index } = req.params;
 
-    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults });
+    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults, usage });
     res.json({ success });
   });
 
@@ -411,28 +411,41 @@ export function createApiRouter(
     });
   });
 
-  // 文件代理 API - 用于访问非 media 目录的文件
-  router.get('/file', (req: Request, res: Response) => {
-    const filePath = req.query.path as string;
+  // 媒体文件访问 API - 只允许访问 media 目录内的文件
+  router.get('/media/*', (req: Request, res: Response) => {
+    // 获取请求的相对路径
+    const relativePath = req.params[0]; // * 匹配的部分
 
-    if (!filePath) {
-      res.status(400).send('Missing path parameter');
+    if (!relativePath) {
+      res.status(400).send('Missing file path');
       return;
     }
 
-    // 解码 URL 编码的路径
-    const decodedPath = decodeURIComponent(filePath);
+    // 安全检查：禁止路径遍历攻击
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) {
+      res.status(403).send('Access denied: invalid path');
+      return;
+    }
 
-    // 解析路径
-    const absolutePath = path.isAbsolute(decodedPath) ? decodedPath : path.join(getWorkingDir(), decodedPath);
+    // 构建完整路径：只允许访问 media 目录
+    const mediaDir = path.join(getWorkingDir(), 'media');
+    const absolutePath = path.join(mediaDir, relativePath);
 
-    // 安全检查
+    // 再次检查：确保解析后的路径仍在 media 目录内
+    const resolvedPath = path.resolve(absolutePath);
+    if (!resolvedPath.startsWith(path.resolve(mediaDir))) {
+      res.status(403).send('Access denied: path outside media directory');
+      return;
+    }
+
+    // 检查文件是否存在
     if (!fs.existsSync(absolutePath)) {
       res.status(404).send('File not found');
       return;
     }
 
-    if (!fs.statSync(absolutePath).isFile()) {
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) {
       res.status(400).send('Path is not a file');
       return;
     }
@@ -461,15 +474,160 @@ export function createApiRouter(
     };
 
     const mimeType = mimeTypes[ext] || 'application/octet-stream';
-    res.setHeader('Content-Type', mimeType);
+    const fileSize = stat.size;
 
-    // 流式传输文件
-    const fileStream = fs.createReadStream(absolutePath);
-    fileStream.pipe(res);
+    // 支持 Range 请求（Safari 需要这个来播放视频）
+    const range = req.headers.range;
 
-    fileStream.on('error', () => {
-      res.status(500).send('Failed to read file');
-    });
+    if (range) {
+      // 解析 Range 头
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      // 验证范围
+      if (start >= fileSize || end >= fileSize) {
+        res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+
+      const chunkSize = end - start + 1;
+
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Length', chunkSize);
+      res.setHeader('Content-Type', mimeType);
+
+      const fileStream = fs.createReadStream(absolutePath, { start, end });
+      fileStream.pipe(res);
+
+      fileStream.on('error', () => {
+        res.status(500).send('Failed to read file');
+      });
+    } else {
+      // 没有 Range 请求，发送整个文件
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Length', fileSize);
+      res.setHeader('Accept-Ranges', 'bytes');
+
+      const fileStream = fs.createReadStream(absolutePath);
+      fileStream.pipe(res);
+
+      fileStream.on('error', () => {
+        res.status(500).send('Failed to read file');
+      });
+    }
+  });
+
+  // 文件代理 API - 已弃用，保留向后兼容，但限制在 media 目录
+  router.get('/file', (req: Request, res: Response) => {
+    const filePath = req.query.path as string;
+
+    if (!filePath) {
+      res.status(400).send('Missing path parameter');
+      return;
+    }
+
+    // 解码 URL 编码的路径
+    const decodedPath = decodeURIComponent(filePath);
+
+    // 安全检查：只允许访问 media 目录
+    const mediaDir = path.join(getWorkingDir(), 'media');
+    let absolutePath: string;
+
+    if (path.isAbsolute(decodedPath)) {
+      absolutePath = decodedPath;
+    } else {
+      absolutePath = path.join(getWorkingDir(), decodedPath);
+    }
+
+    // 检查路径是否在 media 目录内
+    const resolvedPath = path.resolve(absolutePath);
+    if (!resolvedPath.startsWith(path.resolve(mediaDir))) {
+      res.status(403).send('Access denied: only media directory is allowed');
+      return;
+    }
+
+    // 安全检查
+    if (!fs.existsSync(absolutePath)) {
+      res.status(404).send('File not found');
+      return;
+    }
+
+    const stat = fs.statSync(absolutePath);
+    if (!stat.isFile()) {
+      res.status(400).send('Path is not a file');
+      return;
+    }
+
+    // 获取文件扩展名并设置 MIME 类型
+    const ext = path.extname(absolutePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.m4a': 'audio/mp4',
+      '.aac': 'audio/aac',
+      '.flac': 'audio/flac',
+      '.mp4': 'video/mp4',
+      '.webm': 'video/webm',
+      '.avi': 'video/x-msvideo',
+      '.mov': 'video/quicktime',
+      '.mkv': 'video/x-matroska',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml',
+      '.bmp': 'image/bmp'
+    };
+
+    const mimeType = mimeTypes[ext] || 'application/octet-stream';
+    const fileSize = stat.size;
+
+    // 支持 Range 请求（Safari 需要这个来播放视频）
+    const range = req.headers.range;
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (start >= fileSize || end >= fileSize) {
+        res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+        res.end();
+        return;
+      }
+
+      const chunkSize = end - start + 1;
+
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Content-Length', chunkSize);
+      res.setHeader('Content-Type', mimeType);
+
+      const fileStream = fs.createReadStream(absolutePath, { start, end });
+      fileStream.pipe(res);
+
+      fileStream.on('error', () => {
+        res.status(500).send('Failed to read file');
+      });
+    } else {
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Length', fileSize);
+      res.setHeader('Accept-Ranges', 'bytes');
+
+      const fileStream = fs.createReadStream(absolutePath);
+      fileStream.pipe(res);
+
+      fileStream.on('error', () => {
+        res.status(500).send('Failed to read file');
+      });
+    }
   });
 
   return router;

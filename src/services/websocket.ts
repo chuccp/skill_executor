@@ -215,12 +215,16 @@ async function handleChat(
             name: event.toolName,
             input: event.toolInput
           });
+        } else if (event.type === 'usage' && event.usage) {
+          ws.send(JSON.stringify({ type: 'usage', usage: event.usage }));
         } else if (event.type === 'error') {
           console.error('[WS] 流式错误:', event.content);
           ws.send(JSON.stringify({ type: 'error', content: event.content }));
           return;
         }
       }
+
+      console.log('[WS] AI完整响应:', fullResponse);
 
       console.log('[WS] 响应长度:', fullResponse.length, '工具调用:', toolCalls.length);
 
@@ -312,12 +316,38 @@ async function handleChat(
           // 发送 tool_result 事件给前端
           const toolCall = group.find(t => t.id === toolId);
           if (toolCall) {
-            console.log('[WS] Sending tool_result:', toolCall.name, result.substring(0, 100))
-            ws.send(JSON.stringify({
+            console.log('[WS] Tool result for', toolCall.name, ':', result)
+
+            // 解析 play_media 结果，提取媒体信息
+            let display: any = undefined;
+            if (toolCall.name === 'play_media') {
+              // 结果格式: "![type: name](url)" 或 "![type](url)"
+              const match = result.match(/!\[(image|audio|video)(?::\s*([^\]]+))?\]\(([^)]+)\)/);
+              console.log('[WS] play_media regex match:', match);
+              if (match) {
+                const mediaType = match[1];
+                const mediaName = match[2] || 'media';
+                const mediaUrl = match[3];
+                display = {
+                  type: 'media',
+                  data: {
+                    type: mediaType,
+                    url: mediaUrl,
+                    name: mediaName
+                  }
+                };
+                console.log('[WS] Parsed media display:', JSON.stringify(display));
+              }
+            }
+
+            const wsMsg = {
               type: 'tool_result',
               name: toolCall.name,
-              result: result
-            }));
+              result: result,
+              data: display ? { display } : undefined
+            };
+            console.log('[WS] Sending to frontend:', JSON.stringify(wsMsg));
+            ws.send(JSON.stringify(wsMsg));
           }
 
           // 将工具结果作为用户消息添加到对话

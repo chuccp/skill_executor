@@ -35,7 +35,6 @@ const showThinking = ref(true)
   font-size: 0.75rem;
   color: #8b6914;
   overflow: hidden;
-  order: 2;
 }
 
 .thinking-panel.collapsed {

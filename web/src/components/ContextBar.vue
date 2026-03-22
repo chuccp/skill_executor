@@ -34,7 +34,6 @@ onMounted(() => {
     </div>
     <div class="context-right">
       <div class="context-item">
-        <span class="context-label">连接</span>
         <span class="context-value" :class="wsConnected ? 'connected' : 'disconnected'">
           <span class="status-dot" :class="wsConnected ? 'on' : 'off'"></span>
           {{ wsConnected ? '已连接' : '未连接' }}

@@ -58,7 +58,6 @@ const progress = computed(() => {
 
 <style scoped>
 .todo-panel {
-  order: 2;
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
   border: 1px solid #bae6fd;
   border-radius: 8px;

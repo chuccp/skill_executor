@@ -9,31 +9,17 @@ const props = defineProps<{
   isStreaming?: boolean
 }>()
 
-// Accumulated output
-const fullOutput = ref(props.output || '')
 const outputRef = ref<HTMLElement | null>(null)
 
-// Watch for new output
+// Auto-scroll when output changes
 watch(
   () => props.output,
-  (newOutput) => {
-    if (newOutput && props.isStreaming) {
-      fullOutput.value += newOutput
-      // Auto-scroll to bottom
-      nextTick(() => {
-        if (outputRef.value) {
-          outputRef.value.scrollTop = outputRef.value.scrollHeight
-        }
-      })
-    }
-  }
-)
-
-// Reset when command changes
-watch(
-  () => props.command,
   () => {
-    fullOutput.value = props.output || ''
+    nextTick(() => {
+      if (outputRef.value) {
+        outputRef.value.scrollTop = outputRef.value.scrollHeight
+      }
+    })
   }
 )
 </script>
@@ -45,7 +31,7 @@ watch(
       <code class="bash-cmd">{{ command }}</code>
       <span v-if="isStreaming" class="bash-status">执行中...</span>
     </div>
-    <pre ref="outputRef" class="bash-output">{{ fullOutput || '(等待输出...)' }}</pre>
+    <pre ref="outputRef" class="bash-output">{{ output || '(等待输出...)' }}</pre>
   </div>
 </template>
 

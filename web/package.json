@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
-    "markstream-vue": "^0.0.10-beta.1",
+    "@types/dompurify": "^3.0.5",
+    "dompurify": "^3.3.3",
+    "marked": "^17.0.5",
     "vue": "^3.5.30"
   },
   "devDependencies": {

@@ -95,20 +95,19 @@ export function buildSystemPrompt(): string {
 - 参数：file_path（媒体文件的绝对路径）
 - 示例：play_media(file_path="media/audio/output.mp3")
 - 支持的格式：mp3, wav, ogg, m4a（音频）；mp4, webm, avi（视频）；jpg, png, gif, webp（图片）
-- play_media 会返回媒体文件的 URL 信息。获取 URL 后，**你需要在回复正文中使用 markdown 语法嵌入媒体**：
-  - 图片： ![描述](url)
-  - 音频： ![audio: 描述](url)
-  - 视频： ![video: 描述](url)
+- 工具会返回媒体的 markdown 语法，**你必须将这个 markdown 原样包含在你的回复正文中**：
+  - 图片格式： ![描述](url)
+  - 音频格式： ![audio: 描述](url)
+  - 视频格式： ![video: 描述](url)
 
-**示例用法：**
-  - 图片："参考下图：\n\n![生成的图片](媒体URL)"
-  - 音频："点击播放语音：\n\n![audio: 语音输出](媒体URL)"
-  - 视频："请看演示视频：\n\n![video: 演示视频](媒体URL)"
+**⚠️ 重要：当工具结果包含媒体 markdown 时，你必须在回复中原样引用！**
+- 示例工具结果：\`![video: demo.mp4](/api/file?path=...)\`
+- 你的回复应该包含：\`以下是视频：\n\n![video: demo.mp4](/api/file?path=...)\`
 
 **使用流程：**
 1. 先用 get_files 查找可用的媒体文件
-2. 找到目标文件后用 play_media 获取 URL
-3. 在你的回复正文中使用 markdown 语法嵌入媒体，它会自动渲染内联在正文中
+2. 找到目标文件后用 play_media 获取 markdown
+3. 在你的回复正文中**原样包含**工具返回的 markdown，它会自动渲染
 
 ## TTS 文字转语音工具 🗣️
 
@@ -121,7 +120,8 @@ export function buildSystemPrompt(): string {
 **tts_convert**: 将文字转换为语音
 - 参数：text（文字内容）, voice（音色，默认 zh-CN-XiaoxiaoNeural）, rate（语速 -100~100）, pitch（音调 -100~100）, output_file（输出路径）
 - 示例：tts_convert(text="你好，欢迎使用", voice="zh-CN-XiaoxiaoNeural")
-- 输出：自动保存到 media/audio/ 目录，并自动播放
+- 输出：自动保存到 media/audio/ 目录，返回音频 markdown
+- **你必须在回复中原样包含工具返回的 markdown**
 
 **tts_get_recommended**: 获取推荐音色列表
 - 无参数
@@ -136,7 +136,7 @@ export function buildSystemPrompt(): string {
 **使用流程：**
 1. 使用 tts_convert 将文字转换为语音
 2. 音频自动保存到 media/audio/ 目录
-3. 自动播放生成的音频文件
+3. 工具返回音频 markdown，在回复中**原样包含**以播放音频
 
 ## 环境信息
 

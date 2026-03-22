@@ -28,6 +28,10 @@ export interface ChatMessage {
   timestamp: Date;
   thinking?: string;
   toolResults?: ToolResultDisplay[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
 }
 
 // 会话
@@ -55,11 +59,15 @@ export interface ApiResponse<T> {
 
 // 流式响应事件
 export interface StreamEvent {
-  type: 'text' | 'thinking' | 'tool_use' | 'error' | 'done';
+  type: 'text' | 'thinking' | 'tool_use' | 'error' | 'done' | 'usage';
   content?: string;
   toolName?: string;
   toolId?: string;
   toolInput?: any;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+  };
 }
 
 // 预设模型配置

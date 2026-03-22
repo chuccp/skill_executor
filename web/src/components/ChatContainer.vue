@@ -28,6 +28,7 @@ watch(() => streaming.value?.thinkingContent, scrollToBottom)
 watch(() => streaming.value?.toolResults, scrollToBottom, { deep: true })
 watch(() => streaming.value?.progressText, scrollToBottom)
 watch(() => streaming.value?.todos, scrollToBottom, { deep: true })
+watch(() => streaming.value?.contentBlocks, scrollToBottom, { deep: true })
 watch(() => configStore.state.askQuestion, scrollToBottom)
 watch(() => streaming.value?.isStreaming, scrollToBottom)
 
@@ -61,10 +62,8 @@ const sendAskResponse = async (value: any) => {
           :isStreaming="!!(streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1)"
           :streamStatus="streaming?.progressText || ''"
           :streamingThinking="streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1 ? streaming.thinkingContent : ''"
-          :streamingToolResults="streaming?.toolResults || []"
           :streamingTodos="streaming?.todos || []"
-          :streamingProgress="streaming?.progressText || ''"
-          :streamingBlocks="streaming?.streamingBlocks || []"
+          :contentBlocks="streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1 ? streaming.contentBlocks : []"
         />
 
         <!-- Ask Dialog - 显示在 AI 对话框下方 -->

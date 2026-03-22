@@ -1267,21 +1267,30 @@ export async function executeTool(
         }
 
         const fileName = path.basename(filePath);
-        const stat = fs.statSync(filePath);
-        const fileSize = formatBytes(stat.size);
 
-        // 生成媒体文件 URL（通过后端 API 代理访问）
-        const mediaUrl = `/api/file?path=${encodeURIComponent(filePath)}`;
+        // 计算相对于 media 目录的相对路径
+        const mediaDir = path.join(getWorkingDir(), 'media');
+        let relativePath: string;
 
-        // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
-        if (mediaType === 'image') {
-          return `媒体信息已获取，请在回复正文中用 ![${fileName}](${mediaUrl}) 嵌入显示图片。`;
-        } else if (mediaType === 'audio') {
-          return `媒体信息已获取，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
-        } else if (mediaType === 'video') {
-          return `媒体信息已获取，请在回复正文中用 ![video: ${fileName}](${mediaUrl}) 嵌入视频播放器。`;
+        if (filePath.startsWith(mediaDir)) {
+          // 文件在 media 目录内，计算相对路径
+          relativePath = path.relative(mediaDir, filePath).replace(/\\/g, '/');
+        } else {
+          return `错误：媒体文件必须在 media 目录内: ${filePath}`;
         }
-        return `媒体信息已获取: ${mediaUrl}`;
+
+        // 使用安全的相对路径 URL
+        const mediaUrl = `/api/media/${relativePath}`;
+
+        // 直接返回 markdown 格式，前端会自动渲染
+        if (mediaType === 'image') {
+          return `![${fileName}](${mediaUrl})`;
+        } else if (mediaType === 'audio') {
+          return `![audio: ${fileName}](${mediaUrl})`;
+        } else if (mediaType === 'video') {
+          return `![video: ${fileName}](${mediaUrl})`;
+        }
+        return `${mediaUrl}`;
       } catch (e: any) {
         return `播放媒体失败: ${e.message}`;
       }
@@ -2098,7 +2107,7 @@ ${result}`;
         const fs = require('fs');
 
         // 确保输出目录存在
-        const audioDir = path.join(process.cwd(), 'media', 'audio');
+        const audioDir = path.join(getWorkingDir(), 'media', 'audio');
         if (!fs.existsSync(audioDir)) {
           fs.mkdirSync(audioDir, { recursive: true });
         }
@@ -2108,11 +2117,16 @@ ${result}`;
         if (!outputPath) {
           const timestamp = Date.now();
           outputPath = path.join(audioDir, `tts_${timestamp}.mp3`);
+        } else {
+          // 如果是相对路径，转为绝对路径
+          if (!path.isAbsolute(outputPath)) {
+            outputPath = path.join(getWorkingDir(), outputPath);
+          }
         }
 
         // 构建 edge-tts 命令（Python 版本）
         let cmd = `edge-tts --text ${JSON.stringify(text)} --voice ${voice}`;
-        
+
         if (rate !== undefined) {
           const rateStr = rate > 0 ? `+${rate}%` : `${rate}%`;
           cmd += ` --rate ${rateStr}`;
@@ -2121,20 +2135,22 @@ ${result}`;
           const pitchStr = pitch > 0 ? `+${pitch}%` : `${pitch}%`;
           cmd += ` --pitch ${pitchStr}`;
         }
-        
+
         cmd += ` --write-media ${outputPath}`;
 
-        const result = execSync(cmd, {
+        execSync(cmd, {
           encoding: 'utf-8',
           cwd: process.cwd()
         });
 
-        // 生成媒体文件 URL（通过后端 API 代理访问）
-        const mediaUrl = `/api/file?path=${encodeURIComponent(outputPath)}`;
+        // 计算相对路径
+        const mediaDir = path.join(getWorkingDir(), 'media');
+        const relativePath = path.relative(mediaDir, outputPath).replace(/\\/g, '/');
+        const mediaUrl = `/api/media/${relativePath}`;
         const fileName = path.basename(outputPath);
 
-        // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
-        return `语音已生成，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
+        // 直接返回 markdown 格式，前端会自动渲染
+        return `![audio: ${fileName}](${mediaUrl})`;
       } catch (e: any) {
         // Python 版本失败时尝试 Node.js 版本
         try {
@@ -2156,12 +2172,16 @@ ${result}`;
           const pathMatch = result.match(/OUTPUT_PATH=(.+)/);
           const outPath = pathMatch ? pathMatch[1].trim() : null;
 
-          // 生成媒体文件 URL（通过后端 API 代理访问）
-          const mediaUrl = outPath ? `/api/file?path=${encodeURIComponent(outPath)}` : '';
-          const fileName = outPath ? path.basename(outPath) : 'output.mp3';
+          if (outPath) {
+            // 计算相对路径
+            const mediaDir = path.join(getWorkingDir(), 'media');
+            const relativePath = path.relative(mediaDir, outPath).replace(/\\/g, '/');
+            const mediaUrl = `/api/media/${relativePath}`;
+            const fileName = path.basename(outPath);
 
-          // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
-          return `语音已生成，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
+            return `![audio: ${fileName}](${mediaUrl})`;
+          }
+          return '文字转语音失败：无法获取输出路径';
         } catch (e2: any) {
           return '文字转语音失败：' + e2.message + '\n请确保已安装 edge-tts: pip install edge-tts';
         }

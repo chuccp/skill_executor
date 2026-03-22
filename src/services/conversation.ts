@@ -308,7 +308,7 @@ export class ConversationManager {
   }
 
   // 更新消息（用于追加 thinking 和 toolResults）
-  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[] }): boolean {
+  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[]; usage?: { inputTokens: number; outputTokens: number } }): boolean {
     const data = this.conversations.get(conversationId);
     if (!data || messageIndex < 0 || messageIndex >= data.messages.length) return false;
 
@@ -326,6 +326,7 @@ export class ConversationManager {
     if (msg.role !== 'assistant') return false;
     if (extra.thinking) msg.thinking = extra.thinking;
     if (extra.toolResults) msg.toolResults = extra.toolResults;
+    if (extra.usage) msg.usage = extra.usage;
 
     this.save();
     return true;
