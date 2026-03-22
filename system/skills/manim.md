@@ -33,12 +33,37 @@ PROMPT:
 - 音频合成
 - 最终输出
 
-## 工作流程
+## 核心工作流程（音频优先原则）⚠️
 
-### 第一步：需求分析
+**核心原则：先生成音频，根据音频时长设计视频时长，确保完美同步！**
+
+### 流程图
+```
+需求分析 → 项目结构 → 编写脚本大纲 → 生成音频 → 获取音频时长 → 
+根据时长编写 Manim 脚本 → 渲染视频 → 合成输出
+```
+
+### 为什么音频优先？
+
+❌ **错误流程（视频优先）**：
+```
+编写脚本 → 渲染视频 → 生成音频 → 合并
+问题：视频和音频时长不匹配，需要反复调整
+```
+
+✅ **正确流程（音频优先）**：
+```
+编写脚本大纲 → 生成音频 → 获取精确时长 → 根据时长设计动画 → 渲染
+优势：一次成功，完美同步
+```
+
+## 详细工作流程
+
+### 第一步：需求分析与脚本大纲
 1. 确定动画主题和目标受众
 2. 列出关键概念和知识点
 3. 设计动画结构和分镜
+4. 编写旁白文本大纲（不需要精确时长）
 
 ### 第二步：创建项目结构
 
@@ -79,66 +104,210 @@ class MainScene(Scene):
 - **时间控制**：每个部分预留 5-10 秒等待时间，用于语音旁白
 - **颜色方案**：使用内置颜色常量（RED, BLUE, GREEN, YELLOW 等）
 
-### 第四步：生成语音旁白
+### 第四步：生成音频并获取精确时长（关键步骤）⚠️
 
-#### 使用 generate_narration.py
+**这是音频优先工作流的核心！先生成音频，获取精确时长，再编写动画！**
+
+#### 1. 编写语音生成脚本（generate_narration.py）
 
 ```python
 import asyncio
 import edge_tts
 import os
+import json
 
 async def generate_audio(text, output_file, voice="zh-CN-XiaoxiaoNeural"):
     """生成语音文件"""
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_file)
 
+async def get_audio_duration(audio_file):
+    """获取音频时长（秒）"""
+    import subprocess
+    result = subprocess.run(
+        ['ffprobe', '-v', 'quiet', '-show_entries', 
+         'format=duration', '-of', 'json', audio_file],
+        capture_output=True, text=True
+    )
+    duration = json.loads(result.stdout)['format']['duration']
+    return float(duration)
+
 async def main():
-    # 1. 为每个部分生成语音
+    # 1. 定义每个部分的旁白文本
     segments = [
-        ("欢迎学习动能公式课程", "media/audio/title.mp3"),
-        ("动能的概念是...", "media/audio/concept.mp3"),
-        ("动能公式推导...", "media/audio/formula.mp3"),
-        ("让我们看一个例题", "media/audio/example.mp3"),
-        ("课堂总结", "media/audio/summary.mp3"),
+        ("欢迎学习动能公式课程。今天我们将学习动能的概念和计算方法。", "media/audio/title.mp3"),
+        ("什么是动能？动能是物体由于运动而具有的能量。动能与运动有关，与质量有关，与速度有关。", "media/audio/concept.mp3"),
+        ("动能的计算公式是 E k 等于二分之一 m v 平方。", "media/audio/formula.mp3"),
     ]
     
+    # 2. 生成音频文件
+    print("🎵 正在生成音频...")
     for text, output in segments:
         await generate_audio(text, output)
         print(f"✓ 已生成: {output}")
     
-    # 2. 合并音频文件
-    audio_files = [seg[1] for seg in segments]
-    # 使用 FFmpeg 合并
-    # ...
+    # 3. 获取每个音频的精确时长
+    print("\n📏 获取音频时长...")
+    durations = {}
+    total_duration = 0
+    for text, output in segments:
+        duration = await get_audio_duration(output)
+        name = os.path.basename(output).replace('.mp3', '')
+        durations[name] = duration
+        total_duration += duration
+        print(f"✓ {name}: {duration:.2f} 秒")
+    
+    print(f"\n⏱️ 总时长: {total_duration:.2f} 秒")
+    
+    # 4. 保存时长信息到 JSON 文件，供 Manim 脚本使用
+    with open('media/audio/durations.json', 'w', encoding='utf-8') as f:
+        json.dump(durations, f, indent=2, ensure_ascii=False)
+    
+    print("✓ 时长信息已保存到 media/audio/durations.json")
+    
+    # 5. 合并所有音频文件
+    print("\n🔄 合并音频文件...")
+    audio_list = "file '" + "'\nfile '".join([seg[1] for seg in segments]) + "'"
+    with open('media/audio/list.txt', 'w') as f:
+        f.write(audio_list)
+    
+    import subprocess
+    subprocess.run([
+        'ffmpeg', '-f', 'concat', '-safe', '0', 
+        '-i', 'media/audio/list.txt',
+        '-c', 'copy', 'media/audio/full_narration.mp3'
+    ], check=True)
+    print("✓ 已合并为: media/audio/full_narration.mp3")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-#### 推荐音色
-- **中文女声**：zh-CN-XiaoxiaoNeural（温暖亲切）
-- **中文男声**：zh-CN-YunxiNeural（沉稳专业）
-- **中文新闻**：zh-CN-YunyangNeural（新闻播报）
-- **中文活泼**：zh-CN-XiaoyiNeural（活泼年轻）
+#### 2. 运行脚本生成音频
 
-### 第五步：渲染视频
+```bash
+python generate_narration.py
+```
+
+**输出示例：**
+```
+🎵 正在生成音频...
+✓ 已生成: media/audio/title.mp3
+✓ 已生成: media/audio/concept.mp3
+✓ 已生成: media/audio/formula.mp3
+
+📏 获取音频时长...
+✓ title: 5.32 秒
+✓ concept: 8.45 秒
+✓ formula: 4.28 秒
+
+⏱️ 总时长: 18.05 秒
+✓ 时长信息已保存到 media/audio/durations.json
+
+🔄 合并音频文件...
+✓ 已合并为: media/audio/full_narration.mp3
+```
+
+#### 3. 查看生成的时长文件（durations.json）
+
+```json
+{
+  "title": 5.32,
+  "concept": 8.45,
+  "formula": 4.28
+}
+```
+
+### 第五步：根据音频时长编写 Manim 脚本（核心步骤）⚠️
+
+**根据 durations.json 中的精确时长，编写动画脚本！**
+
+```python
+from manim import *
+import json
+
+class KineticEnergyScene(Scene):
+    def construct(self):
+        # 加载音频时长数据
+        with open('media/audio/durations.json', 'r') as f:
+            durations = json.load(f)
+        
+        # 第一部分：标题（根据音频时长 5.32 秒）
+        self.show_title(durations['title'])
+        
+        # 第二部分：概念（根据音频时长 8.45 秒）
+        self.show_concept(durations['concept'])
+        
+        # 第三部分：公式（根据音频时长 4.28 秒）
+        self.show_formula(durations['formula'])
+    
+    def show_title(self, duration):
+        """标题动画 - 时长精确匹配音频"""
+        title = Text("动能公式", font_size=72, color=YELLOW)
+        
+        # 动画入场（1秒）
+        self.play(Write(title), run_time=1)
+        
+        # 等待时间 = 音频时长 - 入场时间 - 退场时间
+        wait_time = duration - 1 - 0.5
+        self.wait(wait_time)
+        
+        # 动画退场（0.5秒）
+        self.play(FadeOut(title), run_time=0.5)
+    
+    def show_concept(self, duration):
+        """概念动画 - 时长精确匹配音频"""
+        # 创建概念文本
+        concept_text = Text(
+            "动能：物体由于运动而具有的能量",
+            font_size=48, color=BLUE
+        )
+        
+        # 动画入场（1.5秒）
+        self.play(FadeIn(concept_text), run_time=1.5)
+        
+        # 等待时间 = 音频时长 - 入场时间 - 退场时间
+        wait_time = duration - 1.5 - 1
+        self.wait(wait_time)
+        
+        # 动画退场（1秒）
+        self.play(FadeOut(concept_text), run_time=1)
+    
+    def show_formula(self, duration):
+        """公式动画 - 时长精确匹配音频"""
+        # 创建公式文本
+        formula = Text("Ek = ½mv²", font_size=72, color=GREEN)
+        
+        # 动画入场（1秒）
+        self.play(Write(formula), run_time=1)
+        
+        # 等待时间 = 音频时长 - 入场时间
+        wait_time = duration - 1
+        self.wait(wait_time)
+        
+        # 退场（可选，根据需要）
+```
+
+**关键技巧：**
+- **动画时长 = 入场时间 + 等待时间 + 退场时间**
+- **等待时间 = 音频时长 - 入场时间 - 退场时间**
+- 使用 `json.load()` 加载音频时长数据
+- 每个方法接收 `duration` 参数，精确控制动画
+
+### 第六步：渲染视频
 
 ```bash
 # 预览模式（快速）
-manim -pql main.py MainScene
+manim -pql main.py KineticEnergyScene
 
 # 中等质量（720p 30fps）
-manim -qm main.py MainScene
+manim -qm main.py KineticEnergyScene
 
 # 高质量（1080p 60fps）
-manim -qh main.py MainScene
-
-# 4K 质量
-manim -qk main.py MainScene
+manim -qh main.py KineticEnergyScene
 ```
 
-### 第六步：合成音频
+### 第七步：合并音频和视频
 
 ```python
 import subprocess
@@ -155,13 +324,13 @@ def merge_audio_video(video_path, audio_path, output_path):
 
 # 使用示例
 merge_audio_video(
-    "media/videos/MainScene/480p15/MainScene.mp4",
+    "media/videos/KineticEnergyScene/480p15/KineticEnergyScene.mp4",
     "media/audio/full_narration.mp3",
-    "media/videos/MainScene/480p15/MainScene_with_audio.mp4"
+    "media/video/kinetic_energy_final.mp4"
 )
 ```
 
-### 第七步：输出到标准位置
+### 第八步：输出到标准位置
 
 ```bash
 # 复制到项目根目录的 media/video/
