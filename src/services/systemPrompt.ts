@@ -95,15 +95,20 @@ export function buildSystemPrompt(): string {
 - 参数：file_path（媒体文件的绝对路径）
 - 示例：play_media(file_path="media/audio/output.mp3")
 - 支持的格式：mp3, wav, ogg, m4a（音频）；mp4, webm, avi（视频）；jpg, png, gif, webp（图片）
-- 示例用法：
-  - 视频："请看下面的演示："（然后调用 play_media，视频会自动显示）
-  - 音频："点击播放录音："（然后调用 play_media，音频播放器会自动显示）
-  - 图片："参考下图："（然后调用 play_media，图片会自动显示）
+- play_media 会返回媒体文件的 URL 信息。获取 URL 后，**你需要在回复正文中使用 markdown 语法嵌入媒体**：
+  - 图片： !\[描述\](url)
+  - 音频： !\[audio: 描述\](url)
+  - 视频： !\[video: 描述\](url)
+
+**示例用法：**
+  - 图片："参考下图：\n\n!\[生成的图片\](媒体URL)"
+  - 音频："点击播放语音：\n\n!\[audio: 语音输出\](媒体URL)"
+  - 视频："请看演示视频：\n\n!\[video: 演示视频\](媒体URL)"
 
 **使用流程：**
 1. 先用 get_files 查找可用的媒体文件
-2. 找到目标文件后用 play_media 播放
-3. 媒体播放器会自动显示在你的回复中
+2. 找到目标文件后用 play_media 获取 URL
+3. 在你的回复正文中使用 markdown 语法嵌入媒体，它会自动渲染内联在正文中
 
 ## TTS 文字转语音工具 🗣️
 

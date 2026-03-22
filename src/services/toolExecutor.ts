@@ -1247,13 +1247,15 @@ export async function executeTool(
         // 生成媒体文件 URL（通过后端 API 代理访问）
         const mediaUrl = `/api/file?path=${encodeURIComponent(filePath)}`;
 
-        return `MEDIA_INFO:${JSON.stringify({
-          type: mediaType,
-          path: filePath,
-          name: fileName,
-          size: fileSize,
-          url: mediaUrl
-        })}`;
+        // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
+        if (mediaType === 'image') {
+          return `媒体信息已获取，请在回复正文中用 ![${fileName}](${mediaUrl}) 嵌入显示图片。`;
+        } else if (mediaType === 'audio') {
+          return `媒体信息已获取，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
+        } else if (mediaType === 'video') {
+          return `媒体信息已获取，请在回复正文中用 ![video: ${fileName}](${mediaUrl}) 嵌入视频播放器。`;
+        }
+        return `媒体信息已获取: ${mediaUrl}`;
       } catch (e: any) {
         return `播放媒体失败: ${e.message}`;
       }
@@ -2103,13 +2105,10 @@ ${result}`;
 
         // 生成媒体文件 URL（通过后端 API 代理访问）
         const mediaUrl = `/api/file?path=${encodeURIComponent(outputPath)}`;
+        const fileName = path.basename(outputPath);
 
-        return `MEDIA_INFO:${JSON.stringify({
-          type: 'audio',
-          path: outputPath,
-          name: path.basename(outputPath),
-          url: mediaUrl
-        })}`;
+        // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
+        return `语音已生成，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
       } catch (e: any) {
         // Python 版本失败时尝试 Node.js 版本
         try {
@@ -2133,13 +2132,10 @@ ${result}`;
 
           // 生成媒体文件 URL（通过后端 API 代理访问）
           const mediaUrl = outPath ? `/api/file?path=${encodeURIComponent(outPath)}` : '';
+          const fileName = outPath ? path.basename(outPath) : 'output.mp3';
 
-          return `MEDIA_INFO:${JSON.stringify({
-            type: 'audio',
-            path: outPath || '',
-            name: outPath ? path.basename(outPath) : '',
-            url: mediaUrl
-          })}`;
+          // 返回 markdown 格式，AI 会将其直接包含在回复正文中渲染
+          return `语音已生成，请在回复正文中用 ![audio: ${fileName}](${mediaUrl}) 嵌入音频播放器。`;
         } catch (e2: any) {
           return '文字转语音失败：' + e2.message + '\n请确保已安装 edge-tts: pip install edge-tts';
         }

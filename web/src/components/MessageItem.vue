@@ -140,6 +140,32 @@ function formatContent(content: string): string {
   if (!content) return ''
 
   let result = escapeHtml(content)
+  // Handle markdown images: ![alt](url)
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
+    // Check for special types: ![audio: alt](url) or ![video: alt](url)
+    if (alt.startsWith('audio:')) {
+      const audioAlt = alt.slice(6).trim()
+      return `<div class="media-inline">
+  <div class="media-header">
+    <span class="media-label">🎵 ${audioAlt || '音频'}</span>
+  </div>
+  <audio controls src="${url}" style="width:100%;max-width:100%"></audio>
+</div>`
+    } else if (alt.startsWith('video:')) {
+      const videoAlt = alt.slice(6).trim()
+      return `<div class="media-inline">
+  <div class="media-header">
+    <span class="media-label">🎬 ${videoAlt || '视频'}</span>
+  </div>
+  <video controls playsinline webkit-playsinline src="${url}" style="width:100%;max-width:100%;max-height:400px;border-radius:8px;background:#000"></video>
+</div>`
+    } else {
+      // Default is image
+      return `<div class="media-inline"><img src="${url}" alt="${alt}" class="media-thumb" style="width:100%;max-width:100%;height:auto;border-radius:8px" /></div>`
+    }
+  })
+  // Handle regular links [text](url)
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
   result = result.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>')
   result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
   result = result.replace(/\n/g, '<br>')
@@ -245,11 +271,6 @@ async function exportMedia(url: string, filename: string) {
           <video controls playsinline webkit-playsinline :src="result.data.url" @click.stop.prevent class="media-video" :key="`video-${result._stableId}`" style="width:100%;max-width:100%;max-height:400px"></video>
         </div>
       </div>
-    </div>
-
-    <!-- Progress -->
-    <div v-if="isAssistant && progressText && isStreaming" class="progress-panel">
-      <span class="progress-text">⏳ {{ progressText }}</span>
     </div>
 
     <!-- Todos -->
