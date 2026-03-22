@@ -60,16 +60,22 @@ const nonMediaToolResultsRef = ref<any[]>([])
 watch(() => [props.message.toolResults, props.streamingToolResults], () => {
   const msgResults = props.message.toolResults || []
   const streamResults = props.streamingToolResults || []
-  
+
   // Merge results
   const merged = [...msgResults]
   for (const streamResult of streamResults) {
-    const exists = merged.some(r => r.type === streamResult.type && r.data?.url === streamResult.data?.url)
-    if (!exists) {
+    // Only deduplicate media results
+    if (streamResult.type === 'media') {
+      const exists = merged.some(r => r.type === streamResult.type && r.data?.url === streamResult.data?.url)
+      if (!exists) {
+        merged.push(streamResult)
+      }
+    } else {
+      // Non-media results always get added - no need to deduplicate
       merged.push(streamResult)
     }
   }
-  
+
   const media = merged.filter(r => r.type === 'media')
   const nonMedia = merged.filter(r => r.type !== 'media')
 
