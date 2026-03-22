@@ -116,9 +116,8 @@ const todos = computed(() => {
   }
   return props.streamingTodos || []
 })
-const progressText = computed(() => props.streamingProgress || '')
 
-// Check if content has media placeholders
+// Check if content has media placeholders (legacy format)
 const hasMediaPlaceholders = computed(() => {
   if (!props.message.content) return false
   return /\[media:\d+\]/.test(props.message.content)
@@ -493,41 +492,7 @@ async function exportMedia(url: string, filename: string) {
   max-width: 100%;
 }
 
-.media-slot-container {
-  width: 100%;
-}
-
-.media-slot-container .media-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.media-slot-container .media-label {
-  font-size: 0.85rem;
-  word-break: break-word;
-}
-
-.media-slot-container .media-thumb {
-  max-width: 100%;
-  max-height: 200px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.media-slot-container .media-video {
-  width: 100%;
-  max-width: 100%;
-  max-height: 400px;
-  border-radius: 8px;
-  background: #000;
-  outline: none;
-}
-
-/* Placeholder slot marker in content */
+/* Placeholder slot marker in content (legacy) */
 .media-slot {
   display: inline-block;
   width: 100%;
@@ -726,12 +691,6 @@ async function exportMedia(url: string, filename: string) {
   max-height: 100px;
   overflow-y: auto;
   font-family: var(--mono);
-}
-
-.media-result {
-  background: #f8f6f2;
-  border-radius: var(--radius-sm);
-  padding: 10px;
 }
 
 .media-header {
