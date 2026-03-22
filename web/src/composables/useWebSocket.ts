@@ -35,11 +35,15 @@ export function useWebSocketHandler() {
     },
 
     pause_stream: () => {
-      conversationsStore.actions.finishStream()
+      // 暂停流式但不结束 - 保存当前数据，保持 isStreaming 状态
+      // 只有 done 事件才真正结束流式
+      conversationsStore.actions.setProgress('等待用户回复...')
     },
 
     ask_user: (data: WSServerMessage) => {
       if (data.askId && data.question !== undefined) {
+        // 清除进度文本，显示问题
+        conversationsStore.actions.setProgress('')
         configStore.actions.setAskUser(data.question, data.options || [], data.askId)
       }
     },

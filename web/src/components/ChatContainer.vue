@@ -36,13 +36,10 @@ watch(() => streaming.value?.isStreaming, scrollToBottom)
 const sendAskResponse = async (value: any) => {
   const option = configStore.state.askOptions.find(o => o.value === value)
   const answerText = option ? option.label : String(value)
-  conversationsStore.actions.addMessage('user', `[选择] ${answerText}`)
-  conversationsStore.actions.addMessage('assistant', '')
-  conversationsStore.actions.startStream()
+  conversationsStore.actions.addMessage('user', '[选择] ' + answerText)
 
-  // 通过 WebSocket 发送用户选择
+  // 通过 WebSocket 发送用户选择 - 不需要创建新的流式，后端会继续
   const { wsService } = await import('../services/websocket')
-  wsService.sendChat(conversationsStore.currentConversationId!, `[用户选择] ${value}`, configStore.state.selectedSkill || undefined)
   wsService.sendAskResponse(configStore.state.askId, { value, label: answerText })
 
   // 清空询问状态
