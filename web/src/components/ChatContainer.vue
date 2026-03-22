@@ -21,16 +21,23 @@ const scrollToBottom = () => {
 // 获取当前流式状态 - computed to get reactive updates
 const streaming = computed(() => conversationsStore.currentStreaming)
 
+// 只在流式输出时滚动到底部
+const scrollToBottomIfStreaming = () => {
+  if (streaming.value?.isStreaming) {
+    scrollToBottom()
+  }
+}
+
 // Watch for various changes that should trigger scroll
-watch(() => conversationsStore.currentMessages.length, scrollToBottom)
-watch(() => conversationsStore.currentMessages[conversationsStore.currentMessages.length - 1]?.content, scrollToBottom, { deep: true })
-watch(() => streaming.value?.thinkingContent, scrollToBottom)
-watch(() => streaming.value?.toolResults, scrollToBottom, { deep: true })
-watch(() => streaming.value?.progressText, scrollToBottom)
-watch(() => streaming.value?.todos, scrollToBottom, { deep: true })
-watch(() => streaming.value?.contentBlocks, scrollToBottom, { deep: true })
-watch(() => configStore.state.askQuestion, scrollToBottom)
-watch(() => streaming.value?.isStreaming, scrollToBottom)
+watch(() => conversationsStore.currentMessages.length, scrollToBottomIfStreaming)
+watch(() => conversationsStore.currentMessages[conversationsStore.currentMessages.length - 1]?.content, scrollToBottomIfStreaming, { deep: true })
+watch(() => streaming.value?.thinkingContent, scrollToBottomIfStreaming)
+watch(() => streaming.value?.toolResults, scrollToBottomIfStreaming, { deep: true })
+watch(() => streaming.value?.contentBlocks, scrollToBottomIfStreaming, { deep: true })
+// askQuestion 显示时始终滚动（用于显示问题）
+watch(() => configStore.state.askQuestion, (newVal) => {
+  if (newVal) scrollToBottom()
+})
 
 // Send ask response
 const sendAskResponse = async (value: any) => {

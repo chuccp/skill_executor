@@ -10,41 +10,42 @@ const configStore = useConfigStore()
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 
-// 获取当前流式状态
-const streaming = conversationsStore.currentStreaming
+// 获取当前流式状态 - 使用 computed 保持响应式
+const streaming = computed(() => conversationsStore.currentStreaming)
+
+const isStreaming = computed(() => streaming.value?.isStreaming && !configStore.state.askQuestion)
 
 const canSend = computed(() => {
   // When waiting for answer to a question, allow sending even if streaming is active
   if (configStore.state.askQuestion && configStore.state.askId) {
     return configStore.state.selectedModel && inputText.value.trim()
   }
-  return configStore.state.selectedModel && (!streaming?.isStreaming || inputText.value.trim())
-})
-
-// Stop button should always be enabled when streaming
-const canStop = computed(() => {
-  return configStore.state.selectedModel && streaming?.isStreaming && !configStore.state.askQuestion
+  return configStore.state.selectedModel && inputText.value.trim()
 })
 
 const sendMessage = async () => {
-  if (!canSend.value) return
+  const convId = conversationsStore.currentConversationId
 
-  if (streaming?.isStreaming) {
+  // 如果正在流式输出，点击按钮停止
+  if (isStreaming.value) {
     conversationsStore.actions.stopStream()
+    // 通知后端停止
+    if (convId) {
+      wsService.send({ type: 'stop', conversationId: convId })
+    }
     return
   }
 
+  if (!canSend.value) return
+
   const content = inputText.value.trim()
-  const convId = conversationsStore.currentConversationId
   if (!content || !convId) return
 
   // 如果正在等待用户提问回答，将输入作为回答发送
   if (configStore.state.askQuestion && configStore.state.askId) {
     const askId = configStore.state.askId
     const answerText = content
-    conversationsStore.actions.addMessage('user', `[回答] ${answerText}`)
-    conversationsStore.actions.addMessage('assistant', '')
-    conversationsStore.actions.startStream()
+    conversationsStore.actions.addMessage('user', '[回答] ' + answerText)
     wsService.sendAskResponse(askId, { value: content, label: answerText })
     // 清空询问状态
     configStore.actions.clearAskUser()
@@ -95,10 +96,9 @@ const adjustHeight = () => {
           class="input-textarea"
         ></textarea>
         <button
-          v-if="streaming?.isStreaming && !configStore.state.askQuestion"
+          v-if="isStreaming"
           class="btn btn-stop"
           @click="sendMessage"
-          :disabled="!canStop"
         >
           停止
         </button>

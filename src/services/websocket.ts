@@ -77,7 +77,7 @@ function groupToolsForParallelExecution(toolCalls: any[]): any[][] {
 }
 
 interface WSMessage {
-  type: 'chat' | 'config' | 'ping' | 'confirm_command' | 'ask_response';
+  type: 'chat' | 'config' | 'ping' | 'confirm_command' | 'ask_response' | 'stop';
   conversationId?: string;
   content?: string;
   skillName?: string;
@@ -112,6 +112,9 @@ export function setupWebSocket(
     resolve: (answer: any) => void;
   }> = new Map();
 
+  // 存储被停止的会话
+  const stoppedConversations: Set<string> = new Set();
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     console.log('WebSocket client connected');
 
@@ -121,7 +124,7 @@ export function setupWebSocket(
 
         switch (message.type) {
           case 'chat':
-            await handleChat(ws, message, conversationManager, skillLoader, llmService, commandExecutor, skillsDir, pendingCommands, pendingQuestions, agentOrchestrator);
+            await handleChat(ws, message, conversationManager, skillLoader, llmService, commandExecutor, skillsDir, pendingCommands, pendingQuestions, agentOrchestrator, stoppedConversations);
             break;
           case 'confirm_command':
             await handleConfirmCommand(ws, message, commandExecutor, pendingCommands);
@@ -134,6 +137,12 @@ export function setupWebSocket(
             break;
           case 'ping':
             ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+          case 'stop':
+            if (message.conversationId) {
+              stoppedConversations.add(message.conversationId);
+              ws.send(JSON.stringify({ type: 'done' }));
+            }
             break;
         }
       } catch (error: any) {
@@ -157,10 +166,19 @@ async function handleChat(
   skillsDir: string,
   pendingCommands: Map<string, any>,
   pendingQuestions: Map<string, any>,
-  agentOrchestrator?: AgentOrchestrator
+  agentOrchestrator?: AgentOrchestrator,
+  stoppedConversations?: Set<string>
 ) {
   const { conversationId, content, skillName } = message;
   console.log('[WS] 收到聊天消息:', { conversationId, content: content?.substring(0, 50), skillName });
+
+  if (!conversationId || !content) {
+    ws.send(JSON.stringify({ type: 'error', content: 'Missing conversationId or content' }));
+    return;
+  }
+
+  // 清除停止标记
+  stoppedConversations?.delete(conversationId);
 
   if (!conversationId || !content) {
     ws.send(JSON.stringify({ type: 'error', content: 'Missing conversationId or content' }));
