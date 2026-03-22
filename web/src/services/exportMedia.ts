@@ -21,12 +21,12 @@ export async function exportMedia(sourceUrl: string, defaultName: string): Promi
   try {
     // 动态导入 Tauri API
     const { save } = await import('@tauri-apps/plugin-dialog')
-    const { readFile, writeFile, exists, mkdir } = await import('@tauri-apps/plugin-fs')
-    const { convertFileSrc } = await import('@tauri-apps/api/core')
+    const { readFile, writeFile } = await import('@tauri-apps/plugin-fs')
 
-    // 打开保存对话框
+    // 打开保存对话框 - 设置默认文件名
     const savePath = await save({
-      defaultPath: defaultName,
+      title: '保存媒体文件',
+      defaultPath: `~/${defaultName}`,
       filters: [
         {
           name: 'Media',
@@ -35,18 +35,19 @@ export async function exportMedia(sourceUrl: string, defaultName: string): Promi
       ]
     })
 
+    console.log('[Export] Save path returned:', savePath)
+
     if (!savePath) {
       return { success: false, error: '用户取消' }
     }
 
     // 从 URL 获取文件内容
-    // URL 格式: /api/media/xxx 或 /api/file?path=xxx
     let filePath: string
 
     if (sourceUrl.startsWith('/api/media/')) {
       // 相对路径: /api/media/video/xxx.mp4
       const relativePath = sourceUrl.replace('/api/media/', '')
-      // 需要从后端获取实际路径，这里假设 media 在工作目录下
+      // 需要从后端获取实际路径
       const response = await fetch(`/api/media-path?relative=${encodeURIComponent(relativePath)}`)
       const data = await response.json()
       filePath = data.data?.absolutePath || ''
@@ -59,18 +60,15 @@ export async function exportMedia(sourceUrl: string, defaultName: string): Promi
       filePath = sourceUrl
     }
 
+    console.log('[Export] Source file path:', filePath)
+
     if (!filePath) {
       return { success: false, error: '无法获取文件路径' }
     }
 
     // 读取源文件
     const fileData = await readFile(filePath)
-
-    // 确保目标目录存在
-    const dir = savePath.substring(0, savePath.lastIndexOf('/'))
-    if (!await exists(dir)) {
-      await mkdir(dir, { recursive: true })
-    }
+    console.log('[Export] File data read, size:', fileData.length)
 
     // 写入目标文件
     await writeFile(savePath, fileData)
