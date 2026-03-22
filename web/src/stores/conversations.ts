@@ -3,6 +3,7 @@
 import { ref } from 'vue'
 import type { Message, ConversationState, StreamingState, ToolResultDisplay, TodoItem, StreamingBlock } from '../types'
 import { api } from '../services/api'
+import { getRandomStatusMessage } from '../constants/messages'
 
 // 创建空的流式状态
 function createEmptyStreamingState(): StreamingState {
@@ -17,38 +18,30 @@ function createEmptyStreamingState(): StreamingState {
   }
 }
 
+// 命令执行状态
+interface CommandState {
+  command: string
+  output: string
+  isStreaming: boolean
+  success?: boolean
+}
+
+// 当前活跃的命令
+const activeCommands = ref<Map<string, CommandState>>(new Map())
+
 // 会话状态存储 - 使用 Map 实现会话级隔离 (wrapped in ref for reactivity)
 const conversationStates = ref<Map<string, ConversationState>>(new Map())
 
 // 当前选中的会话 ID (wrapped in ref for reactivity)
 const currentConversationId = ref<string | null>(null)
 
-// 状态消息
-const statusMessages = [
-  '思考中...',
-  '让子弹飞一会儿...',
-  '脑细胞正在努力...',
-  '正在召唤 AI 之力...',
-  '码字中...',
-  '正在搬运知识...',
-  '灵感加载中...',
-  '正在施展魔法...',
-  '冥想中...',
-  '正在调取记忆...',
-  '大脑飞速运转...',
-  '正在编织答案...'
-]
-
 let statusTimer: number | null = null
-let lastStatusIndex = -1
+let lastStatusMessage = ''
 
-function randomStatusMessage(streaming: StreamingState) {
-  let index
-  do {
-    index = Math.floor(Math.random() * statusMessages.length)
-  } while (index === lastStatusIndex && statusMessages.length > 1)
-  lastStatusIndex = index
-  streaming.progressText = statusMessages[index]
+function updateStatusMessage(streaming: StreamingState) {
+  const newMessage = getRandomStatusMessage(lastStatusMessage)
+  lastStatusMessage = newMessage
+  streaming.progressText = newMessage
 }
 
 // 清理消息（移除工具结果、记忆等内部标记）
@@ -162,11 +155,11 @@ export const conversationsActions = {
     state.streaming.todos = []
     state.streaming.progressText = ''
     state.streaming.abortController = new AbortController()
-    randomStatusMessage(state.streaming)
+    updateStatusMessage(state.streaming)
 
     // 定时更新状态消息
     statusTimer = window.setInterval(() => {
-      randomStatusMessage(state.streaming)
+      updateStatusMessage(state.streaming)
     }, 2000)
   },
 
@@ -293,6 +286,49 @@ export const conversationsActions = {
     return state?.streaming.streamingBlocks || []
   },
 
+  // ========== 命令执行状态管理 ==========
+
+  // 开始命令执行
+  startCommand(command: string) {
+    activeCommands.value.set(command, {
+      command,
+      output: '',
+      isStreaming: true
+    })
+  },
+
+  // 追加命令输出
+  appendCommandOutput(command: string, output: string) {
+    const cmd = activeCommands.value.get(command)
+    if (cmd) {
+      cmd.output += output
+    }
+  },
+
+  // 完成命令执行
+  finishCommand(command: string, success: boolean) {
+    const cmd = activeCommands.value.get(command)
+    if (cmd) {
+      cmd.isStreaming = false
+      cmd.success = success
+    }
+  },
+
+  // 获取命令状态
+  getCommandState(command: string): CommandState | undefined {
+    return activeCommands.value.get(command)
+  },
+
+  // 获取所有活跃命令
+  getActiveCommands(): Map<string, CommandState> {
+    return activeCommands.value
+  },
+
+  // 清理命令状态
+  clearCommands() {
+    activeCommands.value.clear()
+  },
+
   // 清理会话状态（删除会话时调用）
   removeState(conversationId: string) {
     conversationStates.value.delete(conversationId)
@@ -323,6 +359,9 @@ export function useConversationsStore() {
     },
     get currentStreaming() {
       return conversationsActions.getCurrentStreaming()
+    },
+    get activeCommands() {
+      return activeCommands.value
     },
     actions: conversationsActions
   }

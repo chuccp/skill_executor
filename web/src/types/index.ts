@@ -91,6 +91,7 @@ export type WSServerMessageType =
   | 'tool_result'
   | 'command_confirm'
   | 'command_start'
+  | 'command_output'
   | 'command_result'
   | 'command_cancelled'
   | 'file_read'
@@ -107,6 +108,7 @@ export type WSServerMessageType =
   | 'todo_read'
   | 'todo'
   | 'ask_user'
+  | 'pause_stream'
   | 'skill_created'
   | 'pong'
   | 'config_updated'
@@ -133,6 +135,8 @@ export interface WSServerMessage {
   success?: boolean
   stdout?: string
   stderr?: string
+  output?: string
+  stream?: 'stdout' | 'stderr'
   todos?: TodoItem[]
   data?: any
   askId?: string

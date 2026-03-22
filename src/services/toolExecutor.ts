@@ -991,7 +991,31 @@ export async function executeTool(
       }
 
       if (ws) ws.send(JSON.stringify({ type: 'command_start', command: cmd }));
-      const result = await commandExecutor.execute(cmd);
+
+      // 流式执行命令，实时发送输出
+      const result = await commandExecutor.execute(cmd, 60000, {
+        onStdout: (data) => {
+          if (ws) {
+            ws.send(JSON.stringify({
+              type: 'command_output',
+              command: cmd,
+              output: data,
+              stream: 'stdout'
+            }));
+          }
+        },
+        onStderr: (data) => {
+          if (ws) {
+            ws.send(JSON.stringify({
+              type: 'command_output',
+              command: cmd,
+              output: data,
+              stream: 'stderr'
+            }));
+          }
+        }
+      });
+
       if (ws) {
         ws.send(JSON.stringify({
           type: 'command_result',
@@ -1144,6 +1168,8 @@ export async function executeTool(
       return new Promise((resolve) => {
         const askId = `${conversationId}-${Date.now()}`;
         pendingQuestions.set(askId, { resolve });
+        // 发送 pause_stream 事件，让前端保存当前的 thinking 和 toolResults
+        ws.send(JSON.stringify({ type: 'pause_stream' }));
         ws.send(JSON.stringify({ type: 'ask_user', askId, question, header, options: options || null }));
       });
     }

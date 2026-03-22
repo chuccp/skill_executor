@@ -10,12 +10,14 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
+    "markstream-vue": "^0.0.10-beta.1",
     "vue": "^3.5.30"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",
     "@vitejs/plugin-vue": "^6.0.5",
     "@vue/tsconfig": "^0.9.0",
+    "concurrently": "^9.2.1",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
     "vue-tsc": "^3.2.5"
