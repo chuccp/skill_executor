@@ -1,11 +1,21 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 
 const props = defineProps<{
   content: string
 }>()
 
 const showThinking = ref(true)
+const contentRef = ref<HTMLElement | null>(null)
+
+// 内容变化时滚动到底部
+watch(() => props.content, () => {
+  nextTick(() => {
+    if (contentRef.value && showThinking.value) {
+      contentRef.value.scrollTop = contentRef.value.scrollHeight
+    }
+  })
+})
 </script>
 
 <template>
@@ -19,7 +29,7 @@ const showThinking = ref(true)
       <span class="thinking-title">思考过程</span>
       <button class="thinking-toggle">{{ !showThinking ? '▶' : '▼' }}</button>
     </div>
-    <div v-show="showThinking" class="thinking-content">{{ props.content }}</div>
+    <div v-show="showThinking" ref="contentRef" class="thinking-content">{{ props.content }}</div>
   </div>
 </template>
 

@@ -75,8 +75,8 @@ const roleLabel = computed(() => {
       <div class="role">{{ roleLabel }}</div>
     </div>
 
-    <!-- Todos - 始终显示在正文之前 -->
-    <TodoPanel v-if="isAssistant" :todos="todos" />
+    <!-- Thinking Panel - 放在角色标签下面 -->
+    <ThinkingPanel v-if="isAssistant && thinkingContent" :content="thinkingContent" />
 
     <!-- 流式内容：使用内容块渲染器 -->
     <ContentBlockRenderer
@@ -87,14 +87,14 @@ const roleLabel = computed(() => {
 
     <!-- 非流式内容 -->
     <template v-else>
-      <!-- Thinking Panel -->
-      <ThinkingPanel v-if="isAssistant" :content="thinkingContent" />
-
       <!-- Content - markdown 渲染所有内容 -->
       <div v-if="props.message.content" class="content">
         <MarkdownRenderer class="text-content" :content="markdownContent" />
       </div>
     </template>
+
+    <!-- Todos - 放在正文下面 -->
+    <TodoPanel v-if="isAssistant" :todos="todos" />
 
     <!-- Stream status and token usage -->
     <div v-if="isStreaming || (isAssistant && tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0))" class="status-row">
