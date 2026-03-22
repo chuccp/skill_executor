@@ -107,6 +107,7 @@ export type WSMessageType =
   | 'ping'
   | 'confirm_command'
   | 'ask_response'
+  | 'stop'
 
 export type WSServerMessageType =
   | 'text'

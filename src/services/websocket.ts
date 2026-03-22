@@ -213,6 +213,12 @@ async function handleChat(
     let iteration = 0;
 
     while (iteration < MAX_ITERATIONS) {
+      // 检查是否被停止
+      if (stoppedConversations?.has(conversationId)) {
+        console.log('[WS] 会话被停止:', conversationId);
+        return;
+      }
+
       iteration++;
       console.log(`[WS] 第 ${iteration} 轮调用...`);
 
@@ -222,6 +228,12 @@ async function handleChat(
       // 流式响应
       const contextMessages = conversationManager.buildContextMessages(conversationId, content);
       for await (const event of llmService.chatStream(contextMessages, systemPrompt, TOOLS)) {
+        // 检查是否被停止
+        if (stoppedConversations?.has(conversationId)) {
+          console.log('[WS] 会话被停止:', conversationId);
+          return;
+        }
+
         if (event.type === 'text' && event.content) {
           fullResponse += event.content;
           ws.send(JSON.stringify({ type: 'text', content: event.content }));
