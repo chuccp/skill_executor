@@ -1,22 +1,21 @@
+// app.ts - 兼容性封装，推荐使用新的模块化 store
+// 新代码请使用：
+//   import { useConversationsStore } from './conversations'
+//   import { useConfigStore } from './config'
+
 import { reactive, computed } from 'vue'
 import type { Conversation, Message, Skill, Preset } from '../types'
 import { api } from '../services/api'
 import { wsService } from '../services/websocket'
 
-// Tool result type
-interface ToolResultDisplay {
-  type: 'file' | 'files' | 'search' | 'bash' | 'media' | 'write'
-  data: any
-}
+// 导入新的模块化 store
+import { useConversationsStore } from './conversations'
+import { useConfigStore } from './config'
 
-// Todo item type
-interface TodoItem {
-  id?: string
-  task: string
-  status: 'pending' | 'in_progress' | 'completed' | 'failed'
-  priority?: 'high' | 'medium' | 'low'
-}
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
 
+// 兼容性：旧的状态对象（逐步迁移到新 store）
 const state = reactive({
   currentConversationId: null as string | null,
   conversations: [] as Conversation[],
@@ -29,117 +28,67 @@ const state = reactive({
   streamStatus: '',
   abortController: null as AbortController | null,
 
-  // Current streaming state (cleared after each message)
+  // 流式状态（已迁移到 conversationsStore）
   thinkingContent: '',
-  currentToolResults: [] as ToolResultDisplay[],
-  todos: [] as TodoItem[],
+  currentToolResults: [] as any[],
+  todos: [] as any[],
   progressText: '',
-
-  // Streaming content blocks - preserve order of thinking/text alternation
   streamingBlocks: [] as Array<{type: 'thinking' | 'text', content: string}>,
 
-  // Ask user state
+  // Ask user 状态（已迁移到 configStore）
   askQuestion: '',
   askOptions: [] as any[],
   askId: '',
 
-  // Modal states
+  // Modal states（已迁移到 configStore）
   showConfigModal: false,
   showSkillModal: false,
   showConversationModal: false,
   selectedSkillDetail: null as Skill | null
 })
 
-// Status messages for streaming
-const statusMessages = [
-  '思考中...',
-  '让子弹飞一会儿...',
-  '脑细胞正在努力...',
-  '正在召唤AI之力...',
-  '码字中...',
-  '正在搬运知识...',
-  '灵感加载中...',
-  '正在施展魔法...',
-  '冥想中...',
-  '正在调取记忆...',
-  '大脑飞速运转...',
-  '正在编织答案...'
-]
+// 同步新 store 的状态到旧 state（兼容性）
+function syncState() {
+  state.currentConversationId = conversationsStore.currentConversationId
+  state.messages = conversationsStore.currentMessages
+  state.skills = configStore.state.skills
+  state.presets = configStore.state.presets
+  state.selectedModel = configStore.state.selectedModel
+  state.selectedSkill = configStore.state.selectedSkill
+  state.showConfigModal = configStore.state.showConfigModal
+  state.showSkillModal = configStore.state.showSkillModal
+  state.showConversationModal = configStore.state.showConversationModal
+  state.selectedSkillDetail = configStore.state.selectedSkillDetail
+  state.askQuestion = configStore.state.askQuestion
+  state.askOptions = configStore.state.askOptions
+  state.askId = configStore.state.askId
 
-let statusTimer: number | null = null
-let lastStatusIndex = -1
-
-function sanitizeMessages(messages: Message[]): Message[] {
-  let hasSummary = false
-  const output: Message[] = []
-
-  for (const msg of messages) {
-    const content = typeof msg.content === 'string' ? msg.content : ''
-
-    if (content.startsWith('[工具结果]')) continue
-    if (content.startsWith('[相关记忆]')) continue
-
-    if (content.startsWith('[历史对话摘要]')) {
-      if (!hasSummary) {
-        hasSummary = true
-        output.push({ role: 'system', content: '已加载之前的对话记录' })
-      }
-      continue
-    }
-
-    output.push(msg)
+  const streaming = conversationsStore.currentStreaming
+  if (streaming) {
+    state.isStreaming = streaming.isStreaming
+    state.thinkingContent = streaming.thinkingContent
+    state.streamingBlocks = streaming.streamingBlocks
+    state.currentToolResults = streaming.toolResults
+    state.todos = streaming.todos
+    state.progressText = streaming.progressText
   }
-
-  return output
 }
 
-async function confirmDialog(message: string, title: string): Promise<boolean> {
-  const tauriDialog = (window as any).__TAURI__?.dialog
-  if (tauriDialog?.confirm) {
-    try {
-      return await tauriDialog.confirm(message, title)
-    } catch (e) {
-      // fallback below
-    }
-  }
-  return window.confirm(message)
-}
-
-function randomStatusMessage() {
-  let index
-  do {
-    index = Math.floor(Math.random() * statusMessages.length)
-  } while (index === lastStatusIndex && statusMessages.length > 1)
-  lastStatusIndex = index
-  state.streamStatus = statusMessages[index]
-}
-
-// Actions
+// Actions - 包装新 store 的方法
 export const actions = {
   async initWebSocket() {
-    // 初始化 WebSocket 连接（不阻塞，失败也不影响其他功能）
-    wsService.connect()
+    await wsService.connect()
       .then(() => console.log('[Store] WebSocket 已连接'))
       .catch((error) => console.error('[Store] WebSocket 连接失败:', error))
   },
 
   async disconnectWebSocket() {
     wsService.disconnect()
-    console.log('[Store] WebSocket 已断开')
   },
 
   async loadPresets() {
-    state.presets = await api.getPresets()
-    const savedModel = localStorage.getItem('selectedModel')
-    if (savedModel && state.presets.find(p => p.name === savedModel)) {
-      // 恢复上次选择的模型并应用到后端
-      state.selectedModel = savedModel
-      await api.usePreset(savedModel)
-    } else if (state.presets.length > 0 && !state.selectedModel) {
-      // 默认选第一个
-      state.selectedModel = state.presets[0].name
-      await api.usePreset(state.presets[0].name)
-    }
+    await configStore.actions.loadPresets()
+    syncState()
   },
 
   async loadConversations() {
@@ -147,7 +96,8 @@ export const actions = {
   },
 
   async loadSkills() {
-    state.skills = await api.getSkills()
+    await configStore.actions.loadSkills()
+    syncState()
   },
 
   async createConversation() {
@@ -159,26 +109,15 @@ export const actions = {
   },
 
   async selectConversation(id: string, moveToTop: boolean = false) {
-    // Stop any ongoing streaming before switching conversation
+    // 停止当前流式
     if (state.isStreaming) {
       this.stopStream()
     }
-    // Clear all streaming state
-    state.thinkingContent = ''
-    state.currentToolResults = []
-    state.todos = []
-    state.progressText = ''
-    state.streamingBlocks = []
-    state.askQuestion = ''
-    state.askOptions = []
-    state.askId = ''
 
-    state.currentConversationId = id
-    localStorage.setItem('lastConversationId', id)
-    const messages = await api.getConversation(id)
-    state.messages = sanitizeMessages(messages)
+    // 使用新 store 的方法
+    await conversationsStore.actions.setCurrentConversation(id)
 
-    // Move conversation to top of the list (for modal selection)
+    // 移动会话到列表顶部
     if (moveToTop) {
       const index = state.conversations.findIndex(c => c.id === id)
       if (index > 0) {
@@ -186,14 +125,19 @@ export const actions = {
         state.conversations.unshift(conv)
       }
     }
+
+    syncState()
   },
 
   async deleteConversation(id: string) {
-    const confirmed = await confirmDialog('确定要删除这个会话吗？', '确认删除')
+    const confirmed = await window.confirm('确定要删除这个会话吗？')
     if (!confirmed) return
+
     const success = await api.deleteConversation(id)
     if (success) {
       state.conversations = state.conversations.filter(c => c.id !== id)
+      conversationsStore.actions.removeState(id)
+
       if (state.currentConversationId === id) {
         if (state.conversations.length > 0) {
           await this.selectConversation(state.conversations[0].id)
@@ -205,118 +149,58 @@ export const actions = {
   },
 
   async reloadSkills() {
-    await api.reloadSkills()
-    await this.loadSkills()
+    await configStore.actions.reloadSkills()
     ;(window as any).showInfo?.('已刷新技能')
+    syncState()
   },
 
   startStream() {
-    state.isStreaming = true
-    state.thinkingContent = ''
-    state.currentToolResults = []
-    state.todos = []
-    state.progressText = ''
-    state.streamingBlocks = []
-    state.abortController = new AbortController()
-    randomStatusMessage()
-    statusTimer = window.setInterval(randomStatusMessage, 2000)
+    conversationsStore.actions.startStream()
+    syncState()
   },
 
   stopStream() {
-    if (state.abortController) {
-      state.abortController.abort()
-      state.abortController = null
-    }
-    state.isStreaming = false
-    if (statusTimer) {
-      clearInterval(statusTimer)
-      statusTimer = null
-    }
+    conversationsStore.actions.stopStream()
+    syncState()
   },
 
   finishStream() {
-    // Save thinking and tool results to the last message
-    const lastMsg = state.messages[state.messages.length - 1]
-    const msgIndex = state.messages.length - 1
-    if (lastMsg && lastMsg.role === 'assistant') {
-      if (state.thinkingContent) {
-        lastMsg.thinking = state.thinkingContent
-      }
-      if (state.currentToolResults.length) {
-        lastMsg.toolResults = state.currentToolResults
-      }
-
-      // Save to backend
-      if (state.currentConversationId && (state.thinkingContent || state.currentToolResults.length)) {
-        api.updateMessage(state.currentConversationId, msgIndex, {
-          thinking: state.thinkingContent || undefined,
-          toolResults: state.currentToolResults.length ? state.currentToolResults : undefined
-        }).catch(err => console.error('Failed to save message extras:', err))
-      }
-    }
-
-    state.isStreaming = false
-    state.abortController = null
-    if (statusTimer) {
-      clearInterval(statusTimer)
-      statusTimer = null
-    }
-    state.progressText = ''
-    state.streamingBlocks = []
+    conversationsStore.actions.finishStream()
+    syncState()
   },
 
   addMessage(role: 'user' | 'assistant', content: string) {
-    state.messages.push({ role, content })
+    conversationsStore.actions.addMessage(role, content)
+    syncState()
   },
 
   appendStreamText(text: string) {
-    const lastMsg = state.messages[state.messages.length - 1]
-    if (lastMsg && lastMsg.role === 'assistant') {
-      lastMsg.content += text
-    }
-    // 追加到流式块，保持输出顺序
-    const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1]
-    if (lastBlock && lastBlock.type === 'text') {
-      // 连续text追加到同一块
-      lastBlock.content += text
-    } else if (text.trim()) {
-      // 新的text块
-      state.streamingBlocks.push({ type: 'text', content: text })
-    }
+    conversationsStore.actions.appendStreamText(text)
+    syncState()
   },
 
   appendThinking(text: string) {
-    // 累计到全局状态（兼容历史保存）
-    state.thinkingContent += text
-    // 追加到流式块，保持输出顺序
-    const lastBlock = state.streamingBlocks[state.streamingBlocks.length - 1]
-    if (lastBlock && lastBlock.type === 'thinking') {
-      // 连续thinking追加到同一块
-      lastBlock.content += text
-    } else if (text.trim()) {
-      // 新的thinking块
-      state.streamingBlocks.push({ type: 'thinking', content: text })
-    }
+    conversationsStore.actions.appendThinking(text)
+    syncState()
   },
 
   setStreamStatus(status: string) {
     state.streamStatus = status
   },
 
-  // Tool results
-  addToolResult(result: ToolResultDisplay) {
-    // 累计到全局流式状态，显示在当前AI消息中
-    state.currentToolResults.push(result)
+  addToolResult(result: any) {
+    conversationsStore.actions.addToolResult(result)
+    syncState()
   },
 
-  // Todo
-  setTodos(todos: TodoItem[]) {
-    state.todos = todos
+  setTodos(todos: any[]) {
+    conversationsStore.actions.setTodos(todos)
+    syncState()
   },
 
-  // Progress
   setProgress(text: string) {
-    state.progressText = text
+    conversationsStore.actions.setProgress(text)
+    syncState()
   }
 }
 
@@ -326,7 +210,7 @@ export const currentConversation = computed(() =>
 )
 
 export const currentPreset = computed(() =>
-  state.presets.find(p => p.name === state.selectedModel)
+  configStore.currentPreset
 )
 
 export { state }

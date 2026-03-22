@@ -15,9 +15,6 @@ const props = defineProps<{
   streamingBlocks?: Array<{type: 'thinking' | 'text', content: string}>
 }>()
 
-import { useStore } from '../stores/app'
-const { state } = useStore()
-
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isSystem = computed(() => props.message.role === 'system')
 const isUser = computed(() => props.message.role === 'user')
@@ -31,7 +28,7 @@ const thinkingContent = computed(() => {
 
 // Streaming blocks - ordered as they were generated
 const streamingBlocks = computed(() => {
-  return props.isStreaming ? state.streamingBlocks : []
+  return props.isStreaming ? (props.streamingBlocks || []) : []
 })
 
 // Auto-scroll thinking content to bottom when streaming
@@ -46,7 +43,7 @@ watch(() => streamingBlocks.value.length, () => {
 })
 
 // Auto-scroll thinking panel to bottom when streaming new thinking
-watch(() => state.thinkingContent, () => {
+watch(() => thinkingContent.value, () => {
   if (props.isStreaming && thinkingRef.value) {
     nextTick(() => {
       thinkingRef.value!.scrollTop = thinkingRef.value!.scrollHeight

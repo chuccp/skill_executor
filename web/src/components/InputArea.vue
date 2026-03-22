@@ -1,331 +1,65 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
-import { useStore } from '../stores/app'
+import { ref, nextTick, computed } from 'vue'
+import { useConversationsStore } from '../stores/conversations'
+import { useConfigStore } from '../stores/config'
 import { wsService } from '../services/websocket'
-import { api } from '../services/api'
 
-const { state, actions } = useStore()
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
+
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 
-// WebSocket 事件处理器
-const handleText = (data: any) => {
-  actions.appendStreamText(data.content)
-}
-
-const handleThinking = (data: any) => {
-  actions.appendThinking(data.content)
-}
-
-const handleToolResult = (data: any) => {
-  console.log('[InputArea] handleToolResult event received:', data)
-  handleToolResultData(data)
-}
-
-const handleTodo = (data: any) => {
-  actions.setTodos(data.todos || data)
-}
-
-const handleProgress = (data: any) => {
-  actions.setProgress(data.content || data)
-}
-
-const focusInput = () => {
-  nextTick(() => {
-    if (inputRef.value) {
-      inputRef.value.focus()
-    }
-  })
-}
-
-const handleAskUser = (data: any) => {
-  // 当AI暂停等待用户回答时，先把当前已有的思考、工具结果、任务列表保存到消息对象，防止后续清空后丢失
-  const lastMsg = state.messages[state.messages.length - 1]
-  if (lastMsg && lastMsg.role === 'assistant') {
-    if (state.thinkingContent) {
-      lastMsg.thinking = state.thinkingContent
-    }
-    if (state.currentToolResults.length) {
-      lastMsg.toolResults = state.currentToolResults
-    }
-    if (state.todos.length) {
-      lastMsg.todos = state.todos
-    }
-    // Save to backend
-    if (state.currentConversationId) {
-      const msgIndex = state.messages.length - 1
-      api.updateMessage(state.currentConversationId, msgIndex, {
-        thinking: state.thinkingContent || undefined,
-        toolResults: state.currentToolResults.length ? state.currentToolResults : undefined,
-        todos: state.todos.length ? state.todos : undefined
-      }).catch(err => console.error('Failed to save message extras:', err))
-    }
-  }
-  // Finish the current stream - AI is paused waiting for user answer
-  actions.finishStream()
-  state.askId = data.askId
-  state.askQuestion = data.question
-  state.askOptions = data.options || []
-  // When AI asks a question without options, auto-focus input
-  if (!data.options || data.options.length === 0) {
-    focusInput()
-  }
-}
-
-const handleDone = () => {
-  actions.setProgress('')
-  state.askQuestion = ''
-  state.askOptions = []
-  state.askId = ''
-  actions.finishStream()
-  actions.loadConversations()
-}
-
-const handleError = (data: any) => {
-  console.error('Stream error:', data.content)
-  actions.finishStream()
-}
-
-// 注册 WebSocket 事件处理器
-onMounted(() => {
-  wsService.on('text', handleText)
-  wsService.on('thinking', handleThinking)
-  wsService.on('tool_result', handleToolResult)
-  wsService.on('todo_updated', handleTodo)
-  wsService.on('todo', handleTodo)
-  wsService.on('progress', handleProgress)
-  wsService.on('ask_user', handleAskUser)
-  wsService.on('done', handleDone)
-  wsService.on('error', handleError)
-})
-
-// 清理事件处理器
-onUnmounted(() => {
-  wsService.off('text', handleText)
-  wsService.off('thinking', handleThinking)
-  wsService.off('tool_result', handleToolResult)
-  wsService.off('todo_updated', handleTodo)
-  wsService.off('todo', handleTodo)
-  wsService.off('progress', handleProgress)
-  wsService.off('ask_user', handleAskUser)
-  wsService.off('done', handleDone)
-  wsService.off('error', handleError)
-})
+// 获取当前流式状态
+const streaming = conversationsStore.currentStreaming
 
 const canSend = computed(() => {
   // When waiting for answer to a question, allow sending even if streaming is active
-  if (state.askQuestion && state.askId) {
-    return state.selectedModel && inputText.value.trim()
+  if (configStore.state.askQuestion && configStore.state.askId) {
+    return configStore.state.selectedModel && inputText.value.trim()
   }
-  return state.selectedModel && (!state.isStreaming || inputText.value.trim())
+  return configStore.state.selectedModel && (!streaming?.isStreaming || inputText.value.trim())
 })
 
 // Stop button should always be enabled when streaming
 const canStop = computed(() => {
-  return state.selectedModel && state.isStreaming && !state.askQuestion
+  return configStore.state.selectedModel && streaming?.isStreaming && !configStore.state.askQuestion
 })
 
 const sendMessage = async () => {
   if (!canSend.value) return
 
-  if (state.isStreaming) {
-    actions.stopStream()
+  if (streaming?.isStreaming) {
+    conversationsStore.actions.stopStream()
     return
   }
 
   const content = inputText.value.trim()
-  if (!content || !state.currentConversationId) return
+  const convId = conversationsStore.currentConversationId
+  if (!content || !convId) return
 
   // 如果正在等待用户提问回答，将输入作为回答发送
-  if (state.askQuestion && state.askId) {
-    const askId = state.askId
+  if (configStore.state.askQuestion && configStore.state.askId) {
+    const askId = configStore.state.askId
     const answerText = content
-    actions.addMessage('user', `[回答] ${answerText}`)
-    actions.addMessage('assistant', '')
-    actions.startStream()
+    conversationsStore.actions.addMessage('user', `[回答] ${answerText}`)
+    conversationsStore.actions.addMessage('assistant', '')
+    conversationsStore.actions.startStream()
     wsService.sendAskResponse(askId, { value: content, label: answerText })
     // 清空询问状态
-    state.askQuestion = ''
-    state.askOptions = []
-    state.askId = ''
+    configStore.actions.clearAskUser()
     inputText.value = ''
     return
   }
 
   // 正常发送聊天消息
   inputText.value = ''
-  actions.addMessage('user', content)
-  actions.addMessage('assistant', '')
-  actions.startStream()
+  conversationsStore.actions.addMessage('user', content)
+  conversationsStore.actions.addMessage('assistant', '')
+  conversationsStore.actions.startStream()
 
   // 通过 WebSocket 发送聊天消息
-  wsService.sendChat(state.currentConversationId, content, state.selectedSkill || undefined)
-}
-
-// Build media URL from file path - always use API proxy for better compatibility
-const buildMediaUrl = (filePath: string): string => {
-  if (!filePath) return ''
-  // Always use API proxy to read files
-  return '/api/file?path=' + encodeURIComponent(filePath)
-}
-
-// Handle tool results
-const handleToolResultData = (data: { name: string; result: string }) => {
-  const { name, result } = data
-  console.log('[InputArea] handleToolResultData called:', name, result.substring(0, 100))
-
-  // Check for MEDIA_INFO format
-  if (result.startsWith('MEDIA_INFO:')) {
-    console.log('[InputArea] Processing MEDIA_INFO')
-    try {
-      const mediaInfo = JSON.parse(result.substring(11))
-      console.log('[InputArea] Parsed mediaInfo:', mediaInfo)
-      // Build URL from path
-      const url = buildMediaUrl(mediaInfo.path)
-      console.log('[InputArea] Built URL:', url)
-      
-      // Check if this media file is already added to avoid duplicates
-      const isMediaAlreadyAdded = state.currentToolResults.some(
-        r => r.type === 'media' && r.data?.path === mediaInfo.path
-      );
-      console.log('[InputArea] Is already added:', isMediaAlreadyAdded, 'currentToolResults:', state.currentToolResults.length)
-      
-      if (!isMediaAlreadyAdded) {
-        actions.addToolResult({
-          type: 'media',
-          data: {
-            type: mediaInfo.type,
-            name: mediaInfo.name,
-            path: mediaInfo.path,
-            url: url,
-            size: mediaInfo.size
-          }
-        })
-        console.log('[InputArea] Added media result, now currentToolResults:', state.currentToolResults.length)
-      }
-    } catch (e) {
-      console.error('[InputArea] Failed to parse MEDIA_INFO:', e)
-    }
-    return
-  }
-
-  if (name === 'read_file') {
-    const match = result.match(/文件内容 \((.+?)\):/)
-    const filePath = match ? match[1] : ''
-    const contentMatch = result.match(/```\n?([\s\S]*?)\n?```/)
-    const content = contentMatch ? contentMatch[1] : result
-    if (filePath && content) {
-      actions.addToolResult({ type: 'file', data: { filePath, content } })
-    }
-  } else if (name === 'get_files' || name === 'list_directory') {
-    const match = result.match(/中的文件 \((\d+) 个\):\n([\s\S]*)/)
-    if (match) {
-      const files = match[2].trim().split('\n')
-      actions.addToolResult({ type: 'files', data: { files, total: parseInt(match[1]) } })
-    }
-  } else if (name === 'glob') {
-    const match = result.match(/找到 (\d+) 个文件匹配 "([^"]+)":\n([\s\S]+)/)
-    if (match) {
-      const files = match[3].trim().split('\n')
-      actions.addToolResult({ type: 'search', data: { query: match[2], files, total: parseInt(match[1]) } })
-    }
-  } else if (name === 'grep') {
-    const match = result.match(/找到 (\d+) 个匹配:\n([\s\S]+)/)
-    if (match) {
-      const lines = match[2].trim().split('\n')
-      actions.addToolResult({ type: 'search', data: { query: '内容搜索', files: lines, total: parseInt(match[1]) } })
-    }
-  } else if (name === 'write_file') {
-    let filePath = ''
-    let content = result
-
-    // Format 1: 写入文件成功：file/path.ext
-    const match = result.match(/写入文件成功：(.+)/)
-    if (match) {
-      filePath = match[1]
-      // Extract content after the first line
-      const firstLineEnd = result.indexOf('\n')
-      if (firstLineEnd !== -1) {
-        content = result.substring(firstLineEnd + 1)
-      } else {
-        content = ''
-      }
-    } else {
-      // Format 2: Extract media file path from markdown output like "**输出路径**: media/video/file.mp4"
-      const lines = result.split('\n')
-      const mediaExts = ['mp4', 'mp3', 'webm', 'avi', 'mov', 'mkv', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']
-      for (const line of lines) {
-        // Match patterns like "path: filename.ext" or "**output**:\nfilename.ext"
-        for (const _ext of mediaExts) {
-          const extracted = line.match(/(?:.*:|.*：)?\s*([^\s]+\.${_ext})\b/i)
-          if (extracted) {
-            filePath = extracted[1]
-            break
-          }
-        }
-        if (filePath) break
-      }
-    }
-
-    const ext = filePath ? filePath.split('.').pop()?.toLowerCase() || '' : ''
-
-    // Check if it's a media file
-    const imageExts = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp']
-    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac']
-    const videoExts = ['mp4', 'webm', 'avi', 'mov', 'mkv']
-    // Text/code extensions that should show preview
-
-    // Check if this media file is already added to avoid duplicates
-    const isMediaAlreadyAdded = state.currentToolResults.some(
-      r => r.type === 'media' && r.data?.path === filePath
-    );
-
-    if (isMediaAlreadyAdded) {
-      // Already exists, don't add again
-    } else if (filePath && imageExts.includes(ext)) {
-      actions.addToolResult({
-        type: 'media',
-        data: {
-          type: 'image',
-          name: filePath.split(/[\\/]/).pop(),
-          path: filePath,
-          url: buildMediaUrl(filePath)
-        }
-      })
-    } else if (filePath && audioExts.includes(ext)) {
-      actions.addToolResult({
-        type: 'media',
-        data: {
-          type: 'audio',
-          name: filePath.split(/[\\/]/).pop(),
-          path: filePath,
-          url: buildMediaUrl(filePath)
-        }
-      })
-    } else if (filePath && videoExts.includes(ext)) {
-      actions.addToolResult({
-        type: 'media',
-        data: {
-          type: 'video',
-          name: filePath.split(/[\\/]/).pop(),
-          path: filePath,
-          url: buildMediaUrl(filePath)
-        }
-      })
-    } else if (filePath && content && content.trim()) {
-      // Show content preview for text/code files
-      actions.addToolResult({ type: 'file', data: { filePath, content: content.trim() } })
-      // Also keep the write confirmation
-      actions.addToolResult({ type: 'write', data: { path: filePath } })
-    } else if (filePath) {
-      actions.addToolResult({ type: 'write', data: { path: filePath } })
-    }
-  } else if (name === 'bash') {
-    const match = result.match(/命令：(.+)\n([\s\S]*)/)
-    if (match) {
-      actions.addToolResult({ type: 'bash', data: { command: match[1], output: match[2].trim() } })
-    }
-  }
+  wsService.sendChat(convId, content, configStore.state.selectedSkill || undefined)
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -357,11 +91,11 @@ const adjustHeight = () => {
           rows="2"
           @keydown="handleKeydown"
           @input="adjustHeight"
-          :disabled="!state.selectedModel"
+          :disabled="!configStore.state.selectedModel"
           class="input-textarea"
         ></textarea>
         <button
-          v-if="state.isStreaming && !state.askQuestion"
+          v-if="streaming?.isStreaming && !configStore.state.askQuestion"
           class="btn btn-stop"
           @click="sendMessage"
           :disabled="!canStop"

@@ -1,3 +1,5 @@
+// API 服务
+
 import type { Conversation, Message, Skill, Preset } from '../types'
 
 const API_BASE = '/api'

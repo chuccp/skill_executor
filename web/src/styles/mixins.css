@@ -1,0 +1,118 @@
+/* Common CSS Mixins & Animations */
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Base Button Styles */
+.btn {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btn:hover {
+  background: #f5f2ec;
+  border-color: #d4cfc5;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: var(--accent-strong);
+}
+
+.btn-icon {
+  padding: 6px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 0.75rem;
+}
+
+/* Form Elements */
+select, input, textarea {
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.full-select {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+/* Code Blocks */
+.code-block {
+  background: #11120f;
+  color: #f5f1ea;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 0.85rem;
+  font-family: var(--mono);
+}
+
+.code-block code {
+  font-family: inherit;
+}
+
+.inline-code {
+  background: rgba(0,0,0,0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+/* Notify */
+.notify {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  z-index: 2000;
+  animation: slideIn 0.2s ease;
+}
+
+.notify-info {
+  background: var(--accent-weak);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.notify-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}

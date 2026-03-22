@@ -1,20 +1,41 @@
 <script setup lang="ts">
-import { useStore } from '../stores/app'
+import { ref, onMounted } from 'vue'
+import type { Conversation } from '../types'
+import { useConversationsStore } from '../stores/conversations'
+import { useConfigStore } from '../stores/config'
+import { api } from '../services/api'
 import { formatTime } from '../utils'
 
-const { state, actions } = useStore()
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
 
-const getPreview = (conv: typeof state.conversations[0]) => {
+const allConversations = ref<Conversation[]>([])
+
+const loadConversations = async () => {
+  allConversations.value = await api.getConversations()
+}
+
+onMounted(() => {
+  loadConversations()
+})
+
+const getPreview = (conv: Conversation) => {
   return conv.firstUserMessage || conv.summary || '新会话'
 }
 
 const closeModal = () => {
-  state.showConversationModal = false
+  configStore.actions.hideConversations()
 }
 
-const selectAndClose = (id: string) => {
-  actions.selectConversation(id, true)
+const selectAndClose = async (id: string) => {
+  await conversationsStore.actions.setCurrentConversation(id)
   closeModal()
+}
+
+const deleteConversation = async (id: string) => {
+  await api.deleteConversation(id)
+  conversationsStore.actions.removeState(id)
+  await loadConversations()
 }
 </script>
 
@@ -28,7 +49,7 @@ const selectAndClose = (id: string) => {
       <div class="modal-body">
         <div class="conv-modal-list">
           <div
-            v-for="c in state.conversations"
+            v-for="c in allConversations"
             :key="c.id"
             class="conv-modal-item"
             @click="selectAndClose(c.id)"
@@ -37,7 +58,7 @@ const selectAndClose = (id: string) => {
               <span class="conv-modal-time">{{ formatTime(new Date(c.updatedAt || c.createdAt)) }}</span>
               <span class="conv-modal-preview">{{ getPreview(c).substring(0, 50) }}</span>
             </div>
-            <button class="conv-modal-delete" @click.stop="actions.deleteConversation(c.id)" title="删除">×</button>
+            <button class="conv-modal-delete" @click.stop="deleteConversation(c.id)" title="删除">×</button>
           </div>
         </div>
       </div>

@@ -1,0 +1,18 @@
+/* CSS Variables - Theme */
+
+:root {
+  --bg: #f6f3ee;
+  --panel: #ffffff;
+  --text: #161616;
+  --muted: #6f6a63;
+  --border: #e6e0d6;
+  --accent: #0f766e;
+  --accent-strong: #0b5f59;
+  --accent-weak: #e6f4f1;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 12px 28px rgba(19, 24, 28, 0.08);
+  --mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}

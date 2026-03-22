@@ -1,75 +1,8 @@
-// WebSocket 服务类型定义
+// WebSocket 服务
 
-export type WSMessageType = 
-  | 'chat'
-  | 'config'
-  | 'ping'
-  | 'confirm_command'
-  | 'ask_response'
+import type { WSMessage, WSServerMessage, WSEventHandler, WSServerMessageType } from '../types'
 
-export type WSServerMessageType =
-  | 'text'
-  | 'thinking'
-  | 'user_message'
-  | 'done'
-  | 'error'
-  | 'tool_use'
-  | 'tool_result'
-  | 'command_confirm'
-  | 'command_start'
-  | 'command_result'
-  | 'command_cancelled'
-  | 'file_read'
-  | 'file_written'
-  | 'file_replaced'
-  | 'glob_result'
-  | 'grep_result'
-  | 'directory_list'
-  | 'search_start'
-  | 'search_result'
-  | 'fetch_start'
-  | 'fetch_result'
-  | 'todo_updated'
-  | 'todo_read'
-  | 'todo'
-  | 'ask_user'
-  | 'skill_created'
-  | 'pong'
-  | 'config_updated'
-  | 'progress'
-  | 'play_media'
-
-export interface WSMessage {
-  type: WSMessageType
-  conversationId?: string
-  content?: string
-  skillName?: string
-  config?: any
-  command?: string
-  approved?: boolean
-  confirmId?: string
-  askId?: string
-  answer?: any
-}
-
-export interface WSServerMessage {
-  type: WSServerMessageType
-  content?: string
-  command?: string
-  success?: boolean
-  stdout?: string
-  stderr?: string
-  todos?: any[]
-  data?: any
-  askId?: string
-  question?: string
-  header?: string
-  options?: any[]
-  confirmId?: string
-  config?: any
-}
-
-export type WSEventHandler = (event: WSServerMessage) => void
+export type { WSMessage, WSServerMessage, WSEventHandler, WSServerMessageType }
 
 export class WebSocketService {
   private ws: WebSocket | null = null
@@ -220,6 +153,13 @@ export class WebSocketService {
     this.eventHandlers.clear()
   }
 
+  // 清除特定会话的事件处理器
+  clearConversationHandlers(_conversationId: string): void {
+    // 移除所有与该会话相关的事件处理器
+    // 注意：这需要事件处理器在注册时带上会话 ID 标识
+    // 目前通过 clearHandlers() 全部清除，重新连接时重新注册
+  }
+
   // 检查是否已连接
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN
@@ -252,9 +192,9 @@ export class WebSocketService {
 
     this.reconnectAttempts++
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1)
-    
+
     console.log(`[WebSocket] 尝试重连 (${this.reconnectAttempts}/${this.maxReconnectAttempts}), 延迟 ${delay}ms`)
-    
+
     setTimeout(() => {
       this.connect().catch(console.error)
     }, delay)

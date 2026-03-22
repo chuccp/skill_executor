@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
-import { useStore } from '../stores/app'
+import { ref, watch, nextTick, computed } from 'vue'
+import { useConversationsStore } from '../stores/conversations'
+import { useConfigStore } from '../stores/config'
 import ContextBar from './ContextBar.vue'
 import MessageItem from './MessageItem.vue'
 
-const { state, actions } = useStore()
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
+
 const containerRef = ref<HTMLDivElement | null>(null)
 
 const scrollToBottom = () => {
@@ -15,35 +18,34 @@ const scrollToBottom = () => {
   })
 }
 
-// Watch for various changes that should trigger scroll
-watch(() => state.messages.length, scrollToBottom)
-watch(() => state.messages[state.messages.length - 1]?.content, scrollToBottom)
-watch(() => state.thinkingContent, scrollToBottom, { deep: true })
-watch(() => state.currentToolResults, scrollToBottom, { deep: true })
-watch(() => state.progressText, scrollToBottom)
-watch(() => state.todos, scrollToBottom, { deep: true })
-watch(() => state.askQuestion, scrollToBottom)
+// 获取当前流式状态 - computed to get reactive updates
+const streaming = computed(() => conversationsStore.currentStreaming)
 
-// Also scroll on streaming status changes
-watch(() => state.isStreaming, scrollToBottom)
+// Watch for various changes that should trigger scroll
+watch(() => conversationsStore.currentMessages.length, scrollToBottom)
+watch(() => conversationsStore.currentMessages[conversationsStore.currentMessages.length - 1]?.content, scrollToBottom, { deep: true })
+watch(() => streaming.value?.thinkingContent, scrollToBottom)
+watch(() => streaming.value?.toolResults, scrollToBottom, { deep: true })
+watch(() => streaming.value?.progressText, scrollToBottom)
+watch(() => streaming.value?.todos, scrollToBottom, { deep: true })
+watch(() => configStore.state.askQuestion, scrollToBottom)
+watch(() => streaming.value?.isStreaming, scrollToBottom)
 
 // Send ask response
 const sendAskResponse = async (value: any) => {
-  const option = state.askOptions.find(o => o.value === value)
+  const option = configStore.state.askOptions.find(o => o.value === value)
   const answerText = option ? option.label : String(value)
-  actions.addMessage('user', `[选择] ${answerText}`)
-  actions.addMessage('assistant', '')
-  actions.startStream()
+  conversationsStore.actions.addMessage('user', `[选择] ${answerText}`)
+  conversationsStore.actions.addMessage('assistant', '')
+  conversationsStore.actions.startStream()
 
   // 通过 WebSocket 发送用户选择
   const { wsService } = await import('../services/websocket')
-  wsService.sendChat(state.currentConversationId!, `[用户选择] ${value}`, state.selectedSkill || undefined)
-  wsService.sendAskResponse(state.askId, { value, label: answerText })
+  wsService.sendChat(conversationsStore.currentConversationId!, `[用户选择] ${value}`, configStore.state.selectedSkill || undefined)
+  wsService.sendAskResponse(configStore.state.askId, { value, label: answerText })
 
   // 清空询问状态
-  state.askQuestion = ''
-  state.askOptions = []
-  state.askId = ''
+  configStore.actions.clearAskUser()
 }
 </script>
 
@@ -53,27 +55,27 @@ const sendAskResponse = async (value: any) => {
     <div class="chat-container" ref="containerRef">
       <div class="messages">
         <MessageItem
-          v-for="(msg, idx) in state.messages"
+          v-for="(msg, idx) in conversationsStore.currentMessages"
           :key="idx"
           :message="msg"
-          :isStreaming="state.isStreaming && idx === state.messages.length - 1"
-          :streamStatus="state.streamStatus"
-          :streamingThinking="state.isStreaming && idx === state.messages.length - 1 ? state.thinkingContent : ''"
-          :streamingToolResults="state.currentToolResults"
-          :streamingTodos="state.isStreaming && idx === state.messages.length - 1 ? state.todos : []"
-          :streamingProgress="state.isStreaming && idx === state.messages.length - 1 ? state.progressText : ''"
-          :streamingBlocks="state.isStreaming && idx === state.messages.length - 1 ? state.streamingBlocks : []"
+          :isStreaming="!!(streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1)"
+          :streamStatus="streaming?.progressText || ''"
+          :streamingThinking="streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1 ? streaming.thinkingContent : ''"
+          :streamingToolResults="streaming?.toolResults || []"
+          :streamingTodos="streaming?.todos || []"
+          :streamingProgress="streaming?.progressText || ''"
+          :streamingBlocks="streaming?.streamingBlocks || []"
         />
-        
+
         <!-- Ask Dialog - 显示在 AI 对话框下方 -->
-        <div v-if="state.askQuestion" class="ask-message">
+        <div v-if="configStore.state.askQuestion" class="ask-message">
           <div class="ask-bubble">
             <div class="ask-icon">❓</div>
             <div class="ask-content">
-              <div class="ask-question">{{ state.askQuestion }}</div>
-              <div v-if="state.askOptions.length > 0" class="ask-options">
+              <div class="ask-question">{{ configStore.state.askQuestion }}</div>
+              <div v-if="configStore.state.askOptions.length > 0" class="ask-options">
                 <button
-                  v-for="(option, index) in state.askOptions"
+                  v-for="(option, index) in configStore.state.askOptions"
                   :key="index"
                   class="ask-option-btn"
                   @click="sendAskResponse(option.value)"

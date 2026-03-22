@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useStore } from '../stores/app'
+import { useConfigStore } from '../stores/config'
 import { wsService } from '../services/websocket'
 
-const { state } = useStore()
+const configStore = useConfigStore()
 
-const modelName = computed(() => state.selectedModel || '未选择')
-const skillName = computed(() => state.selectedSkill || '无')
+const modelName = computed(() => configStore.state.selectedModel || '未选择')
+const skillName = computed(() => configStore.state.selectedSkill || '无')
 const wsConnected = ref(wsService.isConnected())
 
 // WebSocket 连接状态监听

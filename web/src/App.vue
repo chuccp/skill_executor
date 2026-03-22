@@ -1,34 +1,128 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
+import type { WSServerMessage } from './types'
 import Sidebar from './components/Sidebar.vue'
 import ChatContainer from './components/ChatContainer.vue'
 import InputArea from './components/InputArea.vue'
 import ConfigModal from './components/ConfigModal.vue'
 import SkillModal from './components/SkillModal.vue'
 import NotifyContainer from './components/NotifyContainer.vue'
-import { useStore } from './stores/app'
+import { useConversationsStore } from './stores/conversations'
+import { useConfigStore } from './stores/config'
+import { wsService } from './services/websocket'
+import { api } from './services/api'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
-const { state, actions } = useStore()
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
 let unlistenFileDrop: UnlistenFn | null = null
 
-onMounted(async () => {
-  // 初始化 WebSocket（不阻塞其他加载）
-  actions.initWebSocket().catch(console.error)
+// === WebSocket 事件处理集中在 App.vue ===
 
+// 处理文本增量（流式输出）
+function handleText(data: WSServerMessage) {
+  conversationsStore.actions.appendStreamText(data.content || '')
+}
+
+// 处理 thinking 增量
+function handleThinking(data: WSServerMessage) {
+  if (data.content) {
+    conversationsStore.actions.appendThinking(data.content)
+  }
+}
+
+// 处理工具调用开始
+function handleToolUse(data: WSServerMessage) {
+  if (data.content) {
+    conversationsStore.actions.setProgress(data.content)
+  }
+}
+
+// 处理工具结果
+function handleToolResult(msg: WSServerMessage) {
+  if (msg.data && msg.data.display) {
+    conversationsStore.actions.addToolResult(msg.data.display)
+  }
+}
+
+// 处理命令确认请求
+function handleCommandConfirm(data: WSServerMessage) {
+  // 这个事件保持现状，由 UI 处理
+  if (data.confirmId && data.command) {
+    // Store the confirm request somewhere if needed
+    // For now, just let the existing UI handle it through events
+  }
+}
+
+// 处理询问用户请求
+function handleAskUser(data: WSServerMessage) {
+  if (data.askId && data.question && data.options) {
+    configStore.actions.setAskUser(data.question, data.options, data.askId)
+  }
+}
+
+// 处理完成事件
+function handleDone(_data: WSServerMessage) {
+  conversationsStore.actions.finishStream()
+}
+
+// 处理错误
+function handleError(data: WSServerMessage) {
+  console.error('[WebSocket] Server error:', data.content)
+  conversationsStore.actions.stopStream()
+}
+
+// 注册所有 WebSocket 事件处理器
+function registerEventHandlers() {
+  wsService.on('text', handleText)
+  wsService.on('thinking', handleThinking)
+  wsService.on('tool_use', handleToolUse)
+  wsService.on('tool_result', handleToolResult)
+  wsService.on('command_confirm', handleCommandConfirm)
+  wsService.on('ask_user', handleAskUser)
+  wsService.on('done', handleDone)
+  wsService.on('error', handleError)
+}
+
+// 移除所有 WebSocket 事件处理器
+function unregisterEventHandlers() {
+  wsService.off('text', handleText)
+  wsService.off('thinking', handleThinking)
+  wsService.off('tool_use', handleToolUse)
+  wsService.off('tool_result', handleToolResult)
+  wsService.off('command_confirm', handleCommandConfirm)
+  wsService.off('ask_user', handleAskUser)
+  wsService.off('done', handleDone)
+  wsService.off('error', handleError)
+}
+
+onMounted(async () => {
+  // 连接 WebSocket
+  try {
+    await wsService.connect()
+    registerEventHandlers()
+  } catch (error) {
+    console.error('[App] Failed to connect WebSocket:', error)
+  }
+
+  // 加载数据
   await Promise.all([
-    actions.loadPresets(),
-    actions.loadConversations(),
-    actions.loadSkills()
+    configStore.actions.loadPresets(),
+    configStore.actions.loadSkills()
   ])
 
+  const convs = await api.getConversations()
+
   const lastId = localStorage.getItem('lastConversationId')
-  if (lastId && state.conversations.find(c => c.id === lastId)) {
-    await actions.selectConversation(lastId)
-  } else if (state.conversations.length > 0) {
-    await actions.selectConversation(state.conversations[0].id)
-  } else {
-    await actions.createConversation()
+  if (lastId) {
+    const convExists = await api.getConversation(lastId).catch(() => null)
+    if (convExists) {
+      await conversationsStore.actions.setCurrentConversation(lastId)
+    } else if (convs.length > 0) {
+      await conversationsStore.actions.setCurrentConversation(convs[0].id)
+    }
+  } else if (convs.length > 0) {
+    await conversationsStore.actions.setCurrentConversation(convs[0].id)
   }
 
   // 监听 Tauri 文件拖放事件
@@ -79,8 +173,8 @@ onUnmounted(() => {
   if (unlistenFileDrop) {
     unlistenFileDrop()
   }
-  // 断开 WebSocket 连接
-  actions.disconnectWebSocket()
+  unregisterEventHandlers()
+  wsService.disconnect()
 })
 </script>
 
@@ -91,36 +185,21 @@ onUnmounted(() => {
       <ChatContainer />
       <InputArea />
     </main>
-    <ConfigModal v-if="state.showConfigModal" />
-    <SkillModal v-if="state.showSkillModal" />
+    <ConfigModal v-if="configStore.state.showConfigModal" />
+    <SkillModal v-if="configStore.state.showSkillModal" />
     <NotifyContainer />
   </div>
 </template>
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import './styles/variables.css';
+@import './styles/mixins.css';
 
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-}
-
-:root {
-  --bg: #f6f3ee;
-  --panel: #ffffff;
-  --text: #161616;
-  --muted: #6f6a63;
-  --border: #e6e0d6;
-  --accent: #0f766e;
-  --accent-strong: #0b5f59;
-  --accent-weak: #e6f4f1;
-  --radius-lg: 16px;
-  --radius-md: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 12px 28px rgba(19, 24, 28, 0.08);
-  --mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
-  --sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 body {
@@ -144,122 +223,5 @@ body {
   flex-direction: column;
   min-width: 0;
   position: relative;
-}
-
-/* Buttons */
-.btn {
-  padding: 8px 14px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--text);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-family: inherit;
-}
-
-.btn:hover {
-  background: #f5f2ec;
-  border-color: #d4cfc5;
-}
-
-.btn-primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
-
-.btn-primary:hover {
-  background: var(--accent-strong);
-}
-
-.btn-icon {
-  padding: 6px 10px;
-  background: transparent;
-  border: 1px solid var(--border);
-}
-
-.btn-small {
-  padding: 4px 8px;
-  font-size: 0.75rem;
-}
-
-/* Form elements */
-select, input, textarea {
-  font-family: inherit;
-  font-size: 0.9rem;
-}
-
-.full-select {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--panel);
-}
-
-/* Animations */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(-10px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* Code block */
-.code-block {
-  background: #11120f;
-  color: #f5f1ea;
-  padding: 12px 16px;
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-  margin: 8px 0;
-  font-size: 0.85rem;
-  font-family: var(--mono);
-}
-
-.code-block code {
-  font-family: inherit;
-}
-
-.inline-code {
-  background: rgba(0,0,0,0.06);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: var(--mono);
-  font-size: 0.9em;
-}
-
-/* Notify */
-.notify {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  padding: 12px 20px;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  z-index: 2000;
-  animation: slideIn 0.2s ease;
-}
-
-.notify-info {
-  background: var(--accent-weak);
-  color: var(--accent);
-  border: 1px solid var(--accent);
-}
-
-.notify-error {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
 }
 </style>

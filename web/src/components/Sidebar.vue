@@ -1,32 +1,72 @@
+
 <script setup lang="ts">
-import { computed, watch } from 'vue'
-import { useStore } from '../stores/app'
+import { computed, watch, ref, onMounted } from 'vue'
+import type { Conversation } from '../types'
+import { useConversationsStore } from '../stores/conversations'
+import { useConfigStore } from '../stores/config'
+import { api } from '../services/api'
 import { formatTime } from '../utils'
 import ConversationModal from './ConversationModal.vue'
 
-const { state, actions } = useStore()
+const conversationsStore = useConversationsStore()
+const configStore = useConfigStore()
+
+const allConversations = ref<Conversation[]>([])
+
+// Load conversations
+async function loadConversations() {
+  allConversations.value = await api.getConversations()
+}
+
+onMounted(() => {
+  loadConversations()
+})
 
 // Save selected skill to localStorage when changed
-watch(() => state.selectedSkill, (newVal) => {
+watch(() => configStore.state.selectedSkill, (newVal) => {
   localStorage.setItem('selectedSkill', newVal)
 })
 
 const MAX_VISIBLE = 3
-const visibleConversations = computed(() => state.conversations.slice(0, MAX_VISIBLE))
-const hasMoreConversations = computed(() => state.conversations.length > MAX_VISIBLE)
-const moreCount = computed(() => state.conversations.length - MAX_VISIBLE)
+const visibleConversations = computed(() => allConversations.value.slice(0, MAX_VISIBLE))
+const hasMoreConversations = computed(() => allConversations.value.length > MAX_VISIBLE)
+const moreCount = computed(() => allConversations.value.length - MAX_VISIBLE)
 
-const getPreview = (conv: typeof state.conversations[0]) => {
+const getPreview = (conv: Conversation) => {
   return conv.firstUserMessage || conv.summary || '新会话'
 }
 
-const selectModel = (name: string) => {
-  state.selectedModel = name
-  localStorage.setItem('selectedModel', name)
+const selectModel = async (name: string) => {
+  await configStore.actions.selectModel(name)
 }
 
 const showAllConversations = () => {
-  state.showConversationModal = true
+  configStore.actions.showConversations()
+}
+
+const createConversation = async () => {
+  const conv = await api.createConversation()
+  if (conv) {
+    await loadConversations()
+    if (conv.id) {
+      await conversationsStore.actions.setCurrentConversation(conv.id)
+    }
+  }
+}
+
+const selectConversation = async (id: string) => {
+  await conversationsStore.actions.setCurrentConversation(id)
+}
+
+const deleteConversation = async (id: string) => {
+  await api.deleteConversation(id)
+  conversationsStore.actions.removeState(id)
+  await loadConversations()
+  if (allConversations.value.length > 0) {
+    await conversationsStore.actions.setCurrentConversation(allConversations.value[0].id)
+  } else {
+    await createConversation()
+  }
 }
 </script>
 
@@ -39,19 +79,19 @@ const showAllConversations = () => {
     <!-- Conversations -->
     <div class="sidebar-section">
       <h3>会话</h3>
-      <button class="btn btn-primary" @click="actions.createConversation">新建</button>
+      <button class="btn btn-primary" @click="createConversation">新建</button>
       <ul class="conversation-list">
         <li
           v-for="conv in visibleConversations"
           :key="conv.id"
-          :class="{ active: conv.id === state.currentConversationId }"
-          @click="actions.selectConversation(conv.id)"
+          :class="{ active: conv.id === conversationsStore.currentConversationId }"
+          @click="selectConversation(conv.id)"
         >
           <div class="conv-info">
             <span class="conv-time">{{ formatTime(new Date(conv.updatedAt || conv.createdAt)) }}</span>
             <span class="conv-preview">{{ getPreview(conv).substring(0, 30) }}</span>
           </div>
-          <button class="conv-delete" @click.stop="actions.deleteConversation(conv.id)" title="删除">×</button>
+          <button class="conv-delete" @click.stop="deleteConversation(conv.id)" title="删除">×</button>
         </li>
         <li v-if="hasMoreConversations" class="conv-more" @click="showAllConversations">
           <span class="conv-more-text">更多 ({{ moreCount }})</span>
@@ -63,13 +103,13 @@ const showAllConversations = () => {
     <div class="sidebar-section">
       <h3>Skill</h3>
       <div class="model-section">
-        <select class="full-select" v-model="state.selectedSkill">
+        <select class="full-select" v-model="configStore.state.selectedSkill">
           <option value="">无</option>
-          <option v-for="skill in state.skills" :key="skill.name" :value="skill.name">
+          <option v-for="skill in configStore.state.skills" :key="skill.name" :value="skill.name">
             {{ skill.name }}
           </option>
         </select>
-        <button class="btn btn-icon" title="刷新技能" @click="actions.reloadSkills">↻</button>
+        <button class="btn btn-icon" title="刷新技能" @click="configStore.actions.reloadSkills">↻</button>
       </div>
     </div>
 
@@ -81,25 +121,25 @@ const showAllConversations = () => {
           <select class="full-select" @change="selectModel(($event.target as HTMLSelectElement).value)">
             <option value="">选择预设...</option>
             <option
-              v-for="preset in state.presets"
+              v-for="preset in configStore.state.presets"
               :key="preset.name"
               :value="preset.name"
-              :selected="preset.name === state.selectedModel"
+              :selected="preset.name === configStore.state.selectedModel"
             >
               {{ preset.name }}
             </option>
           </select>
-          <button class="btn btn-icon" title="配置模型" @click="state.showConfigModal = true">⚙</button>
+          <button class="btn btn-icon" title="配置模型" @click="configStore.actions.showConfig">⚙</button>
         </div>
       </div>
       <div class="sidebar-section">
         <h3>技能</h3>
-        <button class="btn" @click="state.showSkillModal = true">管理</button>
+        <button class="btn" @click="configStore.actions.showSkills">管理</button>
       </div>
     </div>
 
     <!-- Conversation Modal -->
-    <ConversationModal v-if="state.showConversationModal" />
+    <ConversationModal v-if="configStore.state.showConversationModal" />
   </aside>
 </template>
 

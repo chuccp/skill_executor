@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useStore } from '../stores/app'
+import { useConfigStore } from '../stores/config'
 import { api } from '../services/api'
 import type { Preset } from '../types'
 
-const { state, actions } = useStore()
+const configStore = useConfigStore()
 
 const configName = ref('')
 const configApiKey = ref('')
@@ -206,7 +206,7 @@ const currentProviders = computed(() => {
 })
 
 const closeModal = () => {
-  state.showConfigModal = false
+  configStore.actions.hideConfig()
   resetForm()
 }
 
@@ -263,7 +263,7 @@ const saveConfig = async () => {
   }
 
   if (success) {
-    await actions.loadPresets()
+    await configStore.actions.loadPresets()
     closeModal()
   } else {
     alert('保存失败')
@@ -273,13 +273,11 @@ const saveConfig = async () => {
 const deletePreset = async (name: string) => {
   if (!confirm('确定删除?')) return
   await api.deletePreset(name)
-  await actions.loadPresets()
+  await configStore.actions.loadPresets()
 }
 
 const selectPreset = async (name: string) => {
-  state.selectedModel = name
-  localStorage.setItem('selectedModel', name)
-  await api.usePreset(name)
+  await configStore.actions.selectModel(name)
   closeModal()
 }
 
@@ -357,7 +355,7 @@ const editPreset = (preset: Preset) => {
             <button class="btn btn-primary" @click="formStep = 1">+ 添加</button>
           </div>
           <div class="preset-list">
-            <div v-for="p in state.presets" :key="p.name" class="preset-item" @click="selectPreset(p.name)">
+            <div v-for="p in configStore.state.presets" :key="p.name" class="preset-item" @click="selectPreset(p.name)">
               <div class="preset-info">
                 <span class="preset-name">{{ p.name }}</span>
                 <span class="preset-model">{{ p.env.ANTHROPIC_MODEL }}</span>
@@ -367,7 +365,7 @@ const editPreset = (preset: Preset) => {
                 <button class="btn btn-small btn-danger" @click.stop="deletePreset(p.name)" title="删除">×</button>
               </div>
             </div>
-            <div v-if="!state.presets.length" class="preset-empty">暂无配置，点击上方按钮添加新模型</div>
+            <div v-if="!configStore.state.presets.length" class="preset-empty">暂无配置，点击上方按钮添加新模型</div>
           </div>
         </div>
       </div>

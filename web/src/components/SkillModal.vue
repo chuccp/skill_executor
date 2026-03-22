@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { useStore } from '../stores/app'
+import { useConfigStore } from '../stores/config'
 
-const { state } = useStore()
+const configStore = useConfigStore()
 
 const closeModal = () => {
-  state.showSkillModal = false
+  configStore.actions.hideSkills()
 }
 
-const selectSkill = (skill: typeof state.selectedSkillDetail) => {
-  state.selectedSkillDetail = skill
+const selectSkill = (skill: typeof configStore.state.selectedSkillDetail) => {
+  configStore.state.selectedSkillDetail = skill
 }
 </script>
 
@@ -25,22 +25,22 @@ const selectSkill = (skill: typeof state.selectedSkillDetail) => {
             <div class="skill-list-title">技能列表</div>
             <div class="skill-list">
               <div
-                v-for="s in state.skills"
+                v-for="s in configStore.state.skills"
                 :key="s.name"
                 class="skill-item"
-                :class="{ active: state.selectedSkillDetail?.name === s.name }"
+                :class="{ active: configStore.state.selectedSkillDetail?.name === s.name }"
                 @click="selectSkill(s)"
               >
                 {{ s.name }}
               </div>
-              <div v-if="!state.skills.length" class="skill-empty">暂无技能</div>
+              <div v-if="!configStore.state.skills.length" class="skill-empty">暂无技能</div>
             </div>
           </div>
           <div class="skill-detail-panel">
-            <div v-if="state.selectedSkillDetail" class="skill-detail">
-              <h4>{{ state.selectedSkillDetail.name }}</h4>
-              <p class="skill-desc">{{ state.selectedSkillDetail.description }}</p>
-              <pre class="skill-content">{{ state.selectedSkillDetail.prompt }}</pre>
+            <div v-if="configStore.state.selectedSkillDetail" class="skill-detail">
+              <h4>{{ configStore.state.selectedSkillDetail.name }}</h4>
+              <p class="skill-desc">{{ configStore.state.selectedSkillDetail.description }}</p>
+              <pre class="skill-content">{{ configStore.state.selectedSkillDetail.prompt }}</pre>
             </div>
             <div v-else class="skill-empty">选择一个技能查看详情</div>
           </div>
