@@ -411,6 +411,39 @@ export function createApiRouter(
     });
   });
 
+  // 获取媒体文件的绝对路径（用于 Tauri 导出）
+  router.get('/media-path', (req: Request, res: Response) => {
+    const relativePath = req.query.relative as string;
+
+    if (!relativePath) {
+      res.json({ success: false, error: 'Missing relative path' });
+      return;
+    }
+
+    // 安全检查：禁止路径遍历
+    if (relativePath.includes('..') || path.isAbsolute(relativePath)) {
+      res.json({ success: false, error: 'Invalid path' });
+      return;
+    }
+
+    const mediaDir = path.join(getWorkingDir(), 'media');
+    const absolutePath = path.join(mediaDir, relativePath);
+
+    // 确保路径在 media 目录内
+    if (!absolutePath.startsWith(mediaDir)) {
+      res.json({ success: false, error: 'Access denied' });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        absolutePath: absolutePath.replace(/\\/g, '/'),
+        name: path.basename(absolutePath)
+      }
+    });
+  });
+
   // 媒体文件访问 API - 只允许访问 media 目录内的文件
   router.get('/media/*', (req: Request, res: Response) => {
     // 获取请求的相对路径

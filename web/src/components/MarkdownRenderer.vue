@@ -2,12 +2,14 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { exportMedia, isTauri } from '../services/exportMedia'
 
 const props = defineProps<{
   content: string
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
+const exportStatus = ref<string | null>(null)
 
 // 自定义渲染器 - 为代码块添加语言类名
 const renderer = new marked.Renderer()
@@ -26,6 +28,28 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#039;')
 }
 
+// 导出媒体文件
+async function handleExport(url: string, name: string) {
+  if (!isTauri()) {
+    // 浏览器环境直接下载
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    return
+  }
+
+  exportStatus.value = '导出中...'
+  const result = await exportMedia(url, name)
+  if (result.success) {
+    exportStatus.value = '导出成功'
+    setTimeout(() => { exportStatus.value = null }, 2000)
+  } else {
+    exportStatus.value = result.error || '导出失败'
+    setTimeout(() => { exportStatus.value = null }, 3000)
+  }
+}
+
 // 配置 marked
 marked.setOptions({
   breaks: true,
@@ -39,34 +63,59 @@ const htmlContent = computed(() => {
 
   // 处理媒体语法：![video: name](url), ![audio: name](url)
   let processed = props.content
-    .replace(/!\[video:\s*([^\]]*)\]\(([^)]+)\)/g, '<video controls src="$2" style="max-width:100%;border-radius:8px;"></video>')
-    .replace(/!\[audio:\s*([^\]]*)\]\(([^)]+)\)/g, '<audio controls src="$2" style="width:100%;"></audio>')
+    .replace(/!\[video:\s*([^\]]*)\]\(([^)]+)\)/g, (_match, name, url) => {
+      return `<div class="media-container video-container" data-media-url="${url}" data-media-name="${name || 'video'}.mp4"><video controls src="${url}" style="max-width:100%;border-radius:8px;"></video><button class="media-export-btn" title="导出">⬇</button></div>`
+    })
+    .replace(/!\[audio:\s*([^\]]*)\]\(([^)]+)\)/g, (_match, name, url) => {
+      return `<div class="media-container audio-container" data-media-url="${url}" data-media-name="${name || 'audio'}.mp3"><audio controls src="${url}" style="width:100%;"></audio><button class="media-export-btn" title="导出">⬇</button></div>`
+    })
 
   // 解析 markdown
   const html = marked.parse(processed) as string
 
   // 清理 XSS
   return DOMPurify.sanitize(html, {
-    ADD_TAGS: ['video', 'audio', 'iframe'],
-    ADD_ATTR: ['controls', 'src', 'allow', 'allowfullscreen', 'class', 'style']
+    ADD_TAGS: ['video', 'audio', 'iframe', 'button'],
+    ADD_ATTR: ['controls', 'src', 'allow', 'allowfullscreen', 'class', 'style', 'title', 'data-media-url', 'data-media-name']
   })
 })
 
-// 内容变化时滚动代码块到底部
+// 为导出按钮添加点击事件和滚动代码块
 watch(() => props.content, () => {
   nextTick(() => {
     if (containerRef.value) {
+      // 代码块滚动
       const preBlocks = containerRef.value.querySelectorAll('pre')
       preBlocks.forEach((pre) => {
         pre.scrollTop = pre.scrollHeight
       })
+
+      // 导出按钮点击
+      const exportBtns = containerRef.value.querySelectorAll('.media-export-btn')
+      exportBtns.forEach((btn) => {
+        btn.removeEventListener('click', handleExportClick)
+        btn.addEventListener('click', handleExportClick)
+      })
     }
   })
-})
+}, { immediate: true })
+
+function handleExportClick(e: Event) {
+  const btn = e.currentTarget as HTMLElement
+  const container = btn.closest('.media-container') as HTMLElement
+  if (container) {
+    const url = container.dataset.mediaUrl || ''
+    const name = container.dataset.mediaName || 'media'
+    handleExport(url, name)
+  }
+}
 </script>
 
 <template>
-  <div class="markdown-content" ref="containerRef" v-html="htmlContent"></div>
+  <div class="markdown-wrapper">
+    <div class="markdown-content" ref="containerRef" v-html="htmlContent"></div>
+    <div v-if="exportStatus" class="export-status">{{ exportStatus }}</div>
+  </div>
 </template>
 
 <style>
@@ -210,5 +259,64 @@ watch(() => props.content, () => {
 .markdown-content img {
   max-width: 100%;
   border-radius: 8px;
+}
+
+/* Media container styles */
+.markdown-content .media-container {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.markdown-content .media-export-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.markdown-content .media-container:hover .media-export-btn {
+  opacity: 1;
+}
+
+.markdown-content .media-export-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.audio-container .media-export-btn {
+  top: 50%;
+  transform: translateY(-50%);
+  right: 8px;
+}
+
+/* Export status */
+.export-status {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.markdown-wrapper {
+  width: 100%;
 }
 </style>
