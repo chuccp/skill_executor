@@ -394,7 +394,7 @@ export async function handleFilesystemTool(
     }
 
     case 'play_media': {
-      const rawPath = tool.input?.file_path;
+      const rawPath = tool.input?.url || tool.input?.file_path;
       const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
 
       if (!filePath) return '错误：文件路径为空';
