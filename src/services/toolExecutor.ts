@@ -785,7 +785,8 @@ export async function executeTool(
 ): Promise<string> {
   const { conversationId, commandExecutor, skillsDir, skillLoader, conversationManager, ws, pendingCommands, pendingQuestions } = ctx;
 
-  switch (tool.name) {
+  try {
+    switch (tool.name) {
     // ========== 文件系统工具 ==========
     case 'read_file': {
       const rawPath = tool.input?.file_path;
@@ -2206,6 +2207,14 @@ ${result}`;
 
     default:
       return `未知工具: ${tool.name}`;
+  }
+  } catch (error: any) {
+    const errMsg = `工具执行错误 (${tool.name}): ${error.message || error}`;
+    console.error('[ToolExecutor] Error:', errMsg);
+    if (ws) {
+      ws.send(JSON.stringify({ type: 'error', content: errMsg }));
+    }
+    return errMsg;
   }
 }
 

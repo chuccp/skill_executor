@@ -349,6 +349,12 @@ export const conversationsActions = {
       language: language,
       isStreaming: true
     })
+
+    // 同时追加到 message.content（markdown 格式）
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.content += '\n```' + language + '\n'
+    }
   },
 
   // 追加代码内容
@@ -359,8 +365,15 @@ export const conversationsActions = {
     const blocks = state.streaming.contentBlocks
     const lastBlock = blocks[blocks.length - 1]
 
+    // 更新 contentBlocks
     if (lastBlock && lastBlock.type === 'code' && lastBlock.isStreaming) {
       lastBlock.code = (lastBlock.code || '') + code
+    }
+
+    // 同时追加到 message.content（无论 contentBlocks 状态如何）
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.content += code
     }
   },
 
@@ -375,20 +388,32 @@ export const conversationsActions = {
     if (lastBlock && lastBlock.type === 'code') {
       lastBlock.isStreaming = false
     }
+
+    // 同时关闭 markdown 代码块
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.content += '\n```\n'
+    }
   },
 
   // 开始命令执行 - 使用代码块类型
   startCommand(command: string) {
     const state = this.getCurrentState()
-    if (state) {
-      const blocks = state.streaming.contentBlocks
-      blocks.push({
-        id: `code-${Date.now()}`,
-        type: 'code',
-        code: `$ ${command}\n`,
-        language: 'bash',
-        isStreaming: true
-      })
+    if (!state) return
+
+    const blocks = state.streaming.contentBlocks
+    blocks.push({
+      id: `code-${Date.now()}`,
+      type: 'code',
+      code: `$ ${command}\n`,
+      language: 'bash',
+      isStreaming: true
+    })
+
+    // 同时追加到 message.content（markdown 格式）
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      lastMsg.content += '\n```bash\n$ ' + command + '\n'
     }
   },
 
@@ -410,6 +435,15 @@ export const conversationsActions = {
       if (!success) {
         lastBlock.code = (lastBlock.code || '') + '\n❌ 命令执行失败\n'
       }
+    }
+
+    // 同时关闭 markdown 代码块
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant') {
+      if (!success) {
+        lastMsg.content += '\n❌ 命令执行失败\n'
+      }
+      lastMsg.content += '\n```\n'
     }
   },
 
