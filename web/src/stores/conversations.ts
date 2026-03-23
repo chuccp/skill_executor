@@ -23,6 +23,9 @@ function createEmptyStreamingState(): StreamingState {
 interface UsageState {
   inputTokens: number
   outputTokens: number
+  contextTokens?: number
+  contextLimit?: number
+  contextPercent?: number
 }
 
 // 当前 token 使用量
@@ -455,7 +458,7 @@ export const conversationsActions = {
   // ========== Token 使用量管理 ==========
 
   // 设置 token 使用量
-  setUsage(usage: { inputTokens: number; outputTokens: number }) {
+  setUsage(usage: UsageState) {
     currentUsage.value = usage
   },
 

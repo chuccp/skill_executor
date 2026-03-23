@@ -10,6 +10,48 @@ import { TOOLS, executeTool, ToolContext } from './toolExecutor';
 import { buildSystemPrompt, getDetailedTaskDescription } from './systemPrompt';
 import { TodoItem } from './tools';
 
+// ==================== 模型上下文限制 ====================
+
+/**
+ * 获取模型的上下文 token 限制
+ */
+function getContextLimit(model: string): number {
+  const modelLower = model.toLowerCase();
+
+  // Claude 模型
+  if (modelLower.includes('claude')) {
+    if (modelLower.includes('opus')) return 200000;
+    if (modelLower.includes('sonnet')) return 200000;
+    if (modelLower.includes('haiku')) return 200000;
+    return 200000;
+  }
+
+  // GPT-4 模型
+  if (modelLower.includes('gpt-4')) {
+    if (modelLower.includes('turbo')) return 128000;
+    return 128000;
+  }
+
+  // GPT-3.5
+  if (modelLower.includes('gpt-3.5')) return 16385;
+
+  // Qwen 模型
+  if (modelLower.includes('qwen')) {
+    if (modelLower.includes('max')) return 32000;
+    if (modelLower.includes('plus')) return 128000;
+    if (modelLower.includes('turbo')) return 128000;
+    return 32000;
+  }
+
+  // DeepSeek 模型
+  if (modelLower.includes('deepseek')) {
+    return 64000;
+  }
+
+  // 默认限制
+  return 128000;
+}
+
 // ==================== 工具依赖分析 ====================
 
 /**
@@ -209,6 +251,21 @@ async function handleChat(
   const MAX_ITERATIONS = 20;
   const autoProgress: { tasks: TodoItem[], toolCount: number } = { tasks: [], toolCount: 0 };
 
+  // 在请求前检查是否需要压缩上下文
+  const convData = conversationManager.get(conversationId);
+  if (convData) {
+    const messages = convData.messages;
+    // 检查消息数量（原有的压缩逻辑）
+    if (messages.length > 50) {
+      console.log(`[WS] 消息数量 ${messages.length} 超过阈值 50，触发压缩`);
+      conversationManager.compress(conversationId);
+      ws.send(JSON.stringify({
+        type: 'context_compressed',
+        content: `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
+      }));
+    }
+  }
+
   try {
     let iteration = 0;
 
@@ -246,7 +303,22 @@ async function handleChat(
             input: event.toolInput
           });
         } else if (event.type === 'usage' && event.usage) {
-          ws.send(JSON.stringify({ type: 'usage', usage: event.usage }));
+          // 添加上下文信息
+          const config = llmService.getConfig();
+          const model = config.model || 'unknown';
+          const contextLimit = getContextLimit(model);
+          const contextTokens = event.usage.inputTokens;
+          const contextPercent = Math.round((contextTokens / contextLimit) * 100);
+
+          ws.send(JSON.stringify({
+            type: 'usage',
+            usage: {
+              ...event.usage,
+              contextTokens,
+              contextLimit,
+              contextPercent
+            }
+          }));
         } else if (event.type === 'error') {
           console.error('[WS] 流式错误:', event.content);
           ws.send(JSON.stringify({ type: 'error', content: event.content }));

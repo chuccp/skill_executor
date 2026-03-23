@@ -10,6 +10,7 @@ const MAX_MESSAGE_LENGTH = 8000; // 单条消息最大长度
 const MAX_MESSAGES_PER_CONVERSATION = 100; // 每个会话最大消息数
 const SUMMARIZE_THRESHOLD = 50; // 触发总结的消息数阈值
 const WORKING_MEMORY_SIZE = 20; // 工作记忆保留最近消息数
+const CONTEXT_PERCENT_THRESHOLD = 80; // 上下文使用百分比阈值，超过则自动压缩
 const MEMORY_CHUNK_SIZE = 10; // 记忆切片包含的消息数
 const RETRIEVAL_LIMIT = 3; // 召回的记忆片段数量
 const CONTEXT_CHAR_BUDGET = 20000; // 工作记忆字符预算（近似）
@@ -308,7 +309,7 @@ export class ConversationManager {
   }
 
   // 更新消息（用于追加 thinking 和 toolResults）
-  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[]; usage?: { inputTokens: number; outputTokens: number } }): boolean {
+  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[]; usage?: { inputTokens: number; outputTokens: number; contextTokens?: number; contextLimit?: number; contextPercent?: number } }): boolean {
     const data = this.conversations.get(conversationId);
     if (!data || messageIndex < 0 || messageIndex >= data.messages.length) return false;
 
@@ -397,53 +398,50 @@ export class ConversationManager {
 
   // 生成消息摘要
   private generateSummary(messages: ChatMessage[]): string {
-    const userMessages = messages.filter(m => m.role === 'user');
-    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    const sections: string[] = [];
 
-    // 统计关键信息
-    const topics = this.extractTopics(userMessages);
-    
-    let summary = `之前的对话包含 ${messages.length} 条消息。\n`;
-    
-    if (topics.length > 0) {
-      summary += `讨论的主要话题：${topics.join('、')}。\n`;
-    }
-
-    // 提取最后几条关键交互
-    const lastInteractions = messages.slice(-5);
-    if (lastInteractions.length > 0) {
-      summary += '\n最后的交互：\n';
-      for (const msg of lastInteractions) {
-        const preview = msg.content.substring(0, 100).replace(/\n/g, ' ');
-        summary += `- ${msg.role === 'user' ? '用户' : 'AI'}: ${preview}${msg.content.length > 100 ? '...' : ''}\n`;
-      }
-    }
-
-    return summary;
-  }
-
-  // 提取话题关键词
-  private extractTopics(messages: ChatMessage[]): string[] {
-    const keywords = new Set<string>();
-    const patterns = [
-      /(?:帮我|请|可以|能不能)(\S+)/g,
-      /(\S+)(?:文件|代码|函数|方法)/g,
-      /(?:关于|有关)(\S+)/g
-    ];
+    // 按任务分组（用户请求 + AI响应）
+    const tasks: { request: string; result: string }[] = [];
+    let currentRequest = '';
+    let currentResult = '';
 
     for (const msg of messages) {
-      for (const pattern of patterns) {
-        let match;
-        while ((match = pattern.exec(msg.content)) !== null) {
-          const word = match[1]?.trim();
-          if (word && word.length > 1 && word.length < 10) {
-            keywords.add(word);
-          }
+      if (msg.role === 'user') {
+        // 过滤工具结果等内部消息
+        if (msg.content.startsWith('[工具结果]') || msg.content.startsWith('[历史对话摘要]')) continue;
+
+        // 如果有之前的任务，保存它
+        if (currentRequest && currentResult) {
+          tasks.push({ request: currentRequest, result: currentResult });
         }
+        currentRequest = msg.content.substring(0, 150);
+        currentResult = '';
+      } else if (msg.role === 'assistant') {
+        currentResult = msg.content.substring(0, 200);
+      }
+    }
+    // 保存最后一个任务
+    if (currentRequest && currentResult) {
+      tasks.push({ request: currentRequest, result: currentResult });
+    }
+
+    // 生成摘要
+    sections.push(`共 ${messages.length} 条消息，${tasks.length} 个任务。`);
+
+    // 记录主要任务（最多10个）
+    if (tasks.length > 0) {
+      sections.push('\n已完成任务：');
+      const recentTasks = tasks.slice(-10);
+      for (let i = 0; i < recentTasks.length; i++) {
+        const task = recentTasks[i];
+        const requestPreview = task.request.replace(/\n/g, ' ').substring(0, 80);
+        const resultPreview = task.result.replace(/\n/g, ' ').substring(0, 100);
+        sections.push(`${i + 1}. 用户: ${requestPreview}${task.request.length > 80 ? '...' : ''}`);
+        sections.push(`   结果: ${resultPreview}${task.result.length > 100 ? '...' : ''}`);
       }
     }
 
-    return Array.from(keywords).slice(0, 5);
+    return sections.join('\n');
   }
 
   // 构建记忆切片

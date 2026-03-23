@@ -88,6 +88,12 @@ export function useWebSocketHandler() {
       conversationsStore.actions.finishStream()
     },
 
+    // 上下文压缩通知
+    context_compressed: (data: WSServerMessage) => {
+      console.log('[WebSocket] 上下文已压缩:', data.content)
+      // 可以在这里显示 toast 或其他通知
+    },
+
     error: (data: WSServerMessage) => {
       console.error('[WebSocket] Server error:', data.content)
       conversationsStore.actions.stopStream()

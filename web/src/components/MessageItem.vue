@@ -100,7 +100,11 @@ const roleLabel = computed(() => {
     <div v-if="isStreaming || (isAssistant && tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0))" class="status-row">
       <span v-if="isStreaming" class="stream-status">{{ streamStatus }}</span>
       <span v-if="isAssistant && tokenUsage && (tokenUsage.inputTokens > 0 || tokenUsage.outputTokens > 0)" class="token-usage">
-        {{ formatTokens(tokenUsage.inputTokens) }}/{{ formatTokens(tokenUsage.outputTokens) }}
+        <span class="usage-label">tokens:</span> {{ formatTokens(tokenUsage.inputTokens) }}/{{ formatTokens(tokenUsage.outputTokens) }}
+        <span v-if="tokenUsage.contextTokens" class="context-info">
+          <span class="usage-label">context:</span> {{ formatTokens(tokenUsage.contextTokens) }}/{{ formatTokens(tokenUsage.contextLimit || 128000) }}
+          <span class="context-percent" :class="{ 'high-usage': (tokenUsage.contextPercent || 0) > 80 }">({{ tokenUsage.contextPercent }}%)</span>
+        </span>
       </span>
     </div>
   </div>
@@ -273,6 +277,30 @@ const roleLabel = computed(() => {
 .token-usage {
   font-size: 0.75rem;
   color: var(--muted);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.usage-label {
+  color: var(--text);
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.context-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.context-percent {
+  font-weight: 500;
+}
+
+.context-percent.high-usage {
+  color: #e53e3e;
+  font-weight: 600;
 }
 
 @keyframes fadeIn {

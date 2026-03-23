@@ -31,6 +31,9 @@ export interface ChatMessage {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    contextTokens?: number;
+    contextLimit?: number;
+    contextPercent?: number;
   };
 }
 
@@ -67,6 +70,9 @@ export interface StreamEvent {
   usage?: {
     inputTokens: number;
     outputTokens: number;
+    contextTokens?: number;
+    contextLimit?: number;
+    contextPercent?: number;
   };
 }
 

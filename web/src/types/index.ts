@@ -19,6 +19,9 @@ export interface Message {
   usage?: {
     inputTokens: number
     outputTokens: number
+    contextTokens?: number      // 当前上下文 token 数
+    contextLimit?: number       // 模型上下文限制
+    contextPercent?: number     // 上下文使用百分比
   }
 }
 
@@ -114,6 +117,7 @@ export type WSServerMessageType =
   | 'command_output'
   | 'command_result'
   | 'command_cancelled'
+  | 'context_compressed'
   | 'file_read'
   | 'file_written'
   | 'file_replaced'
@@ -170,6 +174,9 @@ export interface WSServerMessage {
   usage?: {
     inputTokens: number
     outputTokens: number
+    contextTokens?: number      // 当前上下文 token 数
+    contextLimit?: number       // 模型上下文限制
+    contextPercent?: number     // 上下文使用百分比
   }
 }
 
