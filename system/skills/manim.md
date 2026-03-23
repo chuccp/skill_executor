@@ -99,7 +99,7 @@ class MainScene(Scene):
 ```
 
 #### 重要原则
-- **纯文本优先**：使用 `Text` 而非 `MathTex`，避免 LaTeX 依赖
+- **LaTeX 优先**：使用 `MathTex` 渲染数学公式，遇到 LaTeX 错误时再用 `Text`
 - **分段方法**：将动画分成多个方法，便于调试和同步
 - **时间控制**：每个部分预留 5-10 秒等待时间，用于语音旁白
 - **颜色方案**：使用内置颜色常量（RED, BLUE, GREEN, YELLOW 等）
