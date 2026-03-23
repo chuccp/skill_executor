@@ -50,18 +50,27 @@ watch(() => configStore.state.askQuestion, (newVal) => {
   if (newVal) scrollToBottom()
 })
 
-// Send ask response - 发送用户回答给后端
+// Send ask response - 用户回答后发送新消息让 AI 继续
 const sendAskResponse = async (value: any) => {
-  const askId = configStore.state.askId
-
-  // 发送 ask_response 给后端，resolve 工具调用的 Promise
-  const { wsService } = await import('../services/websocket')
-  if (askId) {
-    wsService.sendAskResponse(askId, value)
-  }
+  const option = configStore.state.askOptions.find(o => o.value === value || o.label === value)
+  const answerText = option ? option.label : String(value)
+  const answerContent = `[用户回答] ${answerText}`
 
   // 清空询问状态
   configStore.actions.clearAskUser()
+
+  // 发送新的 chat 消息，让 AI 继续工作
+  const { wsService } = await import('../services/websocket')
+  const conversationId = conversationsStore.currentConversationId
+  if (conversationId) {
+    // 添加用户消息
+    conversationsStore.actions.addMessage('user', answerContent)
+    // 添加新的 AI 消息并开始流式
+    conversationsStore.actions.addMessage('assistant', '')
+    conversationsStore.actions.startStream()
+    // 发送 chat 消息
+    wsService.sendChat(conversationId, answerContent)
+  }
 }
 </script>
 

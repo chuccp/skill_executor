@@ -469,7 +469,9 @@ export async function handleChat(
       }
       } finally {
         // P1 修复：释放锁，允许下一次压缩
+        console.log('[WS] finally 块执行，释放锁');
         conversationLock?.release();
+        console.log('[WS] 锁已释放，状态:', { locked: conversationLock?.isLocked() });
       }
       
       // P1: 每次迭代结束时发送进度更新
