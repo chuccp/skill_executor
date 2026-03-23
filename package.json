@@ -12,7 +12,7 @@
     "dev:all": "npm run kill-ports && concurrently \"npm run dev\" \"npm run dev:web\"",
     "build:web": "cd web && npm run build",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "concurrently \"npm run dev:server\" \"tauri dev\"",
     "tauri:build": "tauri build"
   },
   "dependencies": {
