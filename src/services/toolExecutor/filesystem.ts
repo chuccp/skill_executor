@@ -199,16 +199,36 @@ export async function handleFilesystemTool(
       const pattern = tool.input?.pattern;
       const searchPath = resolveToWorkingDir(tool.input?.path);
       const include = tool.input?.include;
+      const context = tool.input?.context || 0;
+      const maxResults = tool.input?.max_results || 100;
+      const excludeBinary = tool.input?.exclude_binary !== false; // 默认 true
 
       if (!pattern) return '错误：搜索模式为空';
 
-      const results = grepContent({ pattern, path: searchPath, include });
+      const results = grepContent({
+        pattern,
+        path: searchPath,
+        include,
+        context,
+        maxResults,
+        excludeBinary
+      });
 
       if (results.length === 0) {
         return `未找到匹配 "${pattern}" 的内容`;
       }
 
-      const output = results.map(r => `${r.file}:${r.line}: ${r.content}`).join('\n');
+      const output = results.map(r => {
+        let line = `${r.file}:${r.line}: ${r.content}`;
+        if (r.contextBefore && r.contextBefore.length > 0) {
+          line = r.contextBefore.map(c => `  ${c}`).join('\n') + '\n' + line;
+        }
+        if (r.contextAfter && r.contextAfter.length > 0) {
+          line += '\n' + r.contextAfter.map(c => `  ${c}`).join('\n');
+        }
+        return line;
+      }).join('\n\n');
+
       if (ws) ws.send(JSON.stringify({ type: 'grep_result', pattern, results }));
       return `找到 ${results.length} 个匹配:\n${output}`;
     }

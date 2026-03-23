@@ -49,10 +49,16 @@ export function useWebSocketHandler() {
     },
 
     ask_user: (data: WSServerMessage) => {
+      console.log('[WebSocket] 收到 ask_user 消息:', data);
       if (data.question !== undefined) {
         // 清除进度文本，显示问题
         conversationsStore.actions.setProgress('')
         configStore.actions.setAskUser(data.question, data.options || [], data.askId || '')
+        console.log('[WebSocket] ask_user 状态已设置:', {
+          question: data.question,
+          options: data.options,
+          askId: data.askId
+        });
       }
     },
 

@@ -122,13 +122,16 @@ export const TOOLS = [
   },
   {
     name: 'grep',
-    description: '在文件内容中搜索匹配的文本。支持正则表达式。',
+    description: '在文件内容中搜索匹配的文本。支持正则表达式、上下文显示和结果数量限制。',
     input_schema: {
       type: 'object',
       properties: {
         pattern: { type: 'string', description: '搜索模式（支持正则）' },
         path: { type: 'string', description: '搜索路径（可选）' },
-        include: { type: 'string', description: '文件匹配模式（可选）' }
+        include: { type: 'string', description: '文件匹配模式（可选）' },
+        context: { type: 'number', description: '显示上下文行数（默认 0）' },
+        max_results: { type: 'number', description: '最大结果数量（默认 100）' },
+        exclude_binary: { type: 'boolean', description: '是否排除二进制文件（默认 true）' }
       },
       required: ['pattern']
     }
@@ -230,23 +233,28 @@ export const TOOLS = [
   // ========== Web 工具 ==========
   {
     name: 'web_search',
-    description: '搜索网络信息。',
+    description: '搜索网络信息，支持多种搜索引擎（Bing默认），超时控制和结果数量限制。',
     input_schema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索查询' }
+        query: { type: 'string', description: '搜索查询' },
+        engine: { type: 'string', enum: ['bing', 'duckduckgo'], description: '搜索引擎（默认 bing）' },
+        timeout: { type: 'number', description: '超时时间（毫秒，默认 10000）' },
+        max_results: { type: 'number', description: '最大结果数量（默认 10）' }
       },
       required: ['query']
     }
   },
   {
     name: 'web_fetch',
-    description: '获取网页内容。',
+    description: '获取网页内容，支持超时控制和内容长度限制。',
     input_schema: {
       type: 'object',
       properties: {
         url: { type: 'string', description: '网页 URL' },
-        prompt: { type: 'string', description: '提取提示（可选）' }
+        prompt: { type: 'string', description: '提取提示（可选）' },
+        timeout: { type: 'number', description: '超时时间（毫秒，默认 15000）' },
+        max_content_length: { type: 'number', description: '最大内容长度（默认 20000）' }
       },
       required: ['url']
     }
@@ -460,7 +468,7 @@ export const TOOLS = [
   // ========== 用户交互工具 ==========
   {
     name: 'ask_user',
-    description: '向用户提问并等待回答。用于获取额外信息或确认。',
+    description: '向用户提问并等待回答。用于获取额外信息或确认。如果决定要问用户，必须立即调用此工具，不要只在思考中说要问。',
     input_schema: {
       type: 'object',
       properties: {
@@ -472,9 +480,11 @@ export const TOOLS = [
           items: {
             type: 'object',
             properties: {
-              label: { type: 'string', description: '选项标签' },
-              description: { type: 'string', description: '选项描述' }
-            }
+              label: { type: 'string', description: '选项显示标签' },
+              value: { type: 'string', description: '选项值（必须提供）' },
+              description: { type: 'string', description: '选项描述（可选）' }
+            },
+            required: ['label', 'value']
           }
         },
         multi_select: { type: 'boolean', description: '是否多选' }

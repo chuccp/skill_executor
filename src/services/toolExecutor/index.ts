@@ -22,3 +22,4 @@ export { handleGitTool } from './git';
 export { handleAgentTool } from './agent';
 export { handleTtsTool } from './tts';
 export { handleProjectTool } from './project';
+export { handleCodeQualityTool } from './codeQuality';

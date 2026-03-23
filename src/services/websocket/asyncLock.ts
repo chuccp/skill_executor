@@ -1,6 +1,6 @@
 /**
  * 异步锁 - 用于保护临界区域的并发访问
- * 
+ *
  * 用途：
  * - 防止上下文压缩与工具执行冲突
  * - 确保会话数据一致性
@@ -9,6 +9,7 @@
 export class AsyncLock {
   private locked = false;
   private queue: Array<() => void> = [];
+  private lockHolder: string | null = null; // 调试：记录谁持有锁
 
   /**
    * 获取锁
@@ -18,11 +19,13 @@ export class AsyncLock {
     return new Promise((resolve) => {
       if (!this.locked) {
         this.locked = true;
+        this.lockHolder = new Error().stack?.split('\n')[2] || 'unknown';
         resolve();
       } else {
         // 加入等待队列
         this.queue.push(() => {
           this.locked = true;
+          this.lockHolder = new Error().stack?.split('\n')[2] || 'unknown';
           resolve();
         });
       }
@@ -33,11 +36,13 @@ export class AsyncLock {
    * 释放锁，允许下一个等待者继续
    */
   release(): void {
+    console.log('[AsyncLock] release() called, queue length:', this.queue.length, 'holder:', this.lockHolder);
     if (this.queue.length > 0) {
       const next = this.queue.shift();
       next?.();
     } else {
       this.locked = false;
+      this.lockHolder = null;
     }
   }
 
@@ -78,6 +83,19 @@ export class AsyncLock {
    */
   getWaitingCount(): number {
     return this.queue.length;
+  }
+
+  /**
+   * 强制重置锁（用于异常恢复）
+   */
+  forceReset(): void {
+    console.log('[AsyncLock] forceReset() called, was locked:', this.locked, 'holder:', this.lockHolder);
+    this.locked = false;
+    this.lockHolder = null;
+    // 清空等待队列，通知所有等待者
+    const waiters = this.queue;
+    this.queue = [];
+    waiters.forEach(resolve => resolve());
   }
 }
 

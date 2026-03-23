@@ -59,6 +59,10 @@ export async function handleChat(
     }));
   }
 
+  // 检查锁状态（调试日志）
+  const conversationLock = lockManager?.getLock(actualConversationId);
+  console.log('[WS] 锁状态:', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
+
   // 添加用户消息
   await conversationManager.addMessage(actualConversationId, 'user', content);
   ws.send(JSON.stringify({ type: 'user_message', content }));
@@ -107,39 +111,29 @@ export async function handleChat(
     const estimatedTokens = Math.round(totalChars / 4);
     const contextPercent = Math.round((estimatedTokens / contextLimit) * 100);
 
-    // P1 修复：使用非阻塞锁获取，防止压缩与工具执行冲突
-    const conversationLock = lockManager?.getLock(actualConversationId);
-    const lockAcquired = conversationLock?.tryAcquire() ?? true;
+    // 检查是否需要压缩
+    const needCompressByPercent = contextPercent > CONTEXT_PERCENT_THRESHOLD;
+    const needCompressByCount = messages.length > SUMMARIZE_THRESHOLD;
 
-    // 检查上下文使用百分比
-    if (contextPercent > CONTEXT_PERCENT_THRESHOLD) {
+    if (needCompressByPercent || needCompressByCount) {
+      // P1 修复：只有需要压缩时才获取锁
+      const conversationLock = lockManager?.getLock(actualConversationId);
+      const lockAcquired = conversationLock?.tryAcquire() ?? true;
+
       if (lockAcquired) {
         try {
-          console.log(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
-          const compressed = await conversationManager.compress(actualConversationId, llmService);
-          if (compressed) {
-            ws.send(JSON.stringify({
-              type: 'context_compressed',
-              content: `上下文已压缩（${contextPercent}% → 约${Math.round(contextPercent * 0.3)}%）`
-            }));
+          if (needCompressByPercent) {
+            console.log(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
+          } else {
+            console.log(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
           }
-        } finally {
-          conversationLock?.release();
-        }
-      } else {
-        console.log(`[WS] 工具执行在进行中，跳过上下文压缩检查`);
-      }
-    }
-    // 同时检查消息数量（备用条件）
-    else if (messages.length > SUMMARIZE_THRESHOLD) {
-      if (lockAcquired) {
-        try {
-          console.log(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
           const compressed = await conversationManager.compress(actualConversationId, llmService);
           if (compressed) {
             ws.send(JSON.stringify({
               type: 'context_compressed',
-              content: `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
+              content: needCompressByPercent
+                ? `上下文已压缩（${contextPercent}% → 约${Math.round(contextPercent * 0.3)}%）`
+                : `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
             }));
           }
         } finally {
@@ -275,7 +269,9 @@ export async function handleChat(
 
       // P1 修复：在工具执行期间获取锁，防止上下文压缩干扰
       const conversationLock = lockManager?.getLock(actualConversationId);
+      console.log('[WS] 等待获取锁...', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
       await conversationLock?.acquire();
+      console.log('[WS] 锁已获取，开始执行工具');
 
       try {
         // 按组执行工具（组内并行，组间串行）
@@ -562,6 +558,8 @@ export function handleAskResponse(
 ) {
   const { askId, answer } = message;
 
+  console.log('[handleAskResponse] 收到用户回答:', { askId, answer });
+
   if (!askId) {
     ws.send(JSON.stringify({ type: 'error', content: '缺少问题ID' }));
     return;
@@ -569,10 +567,12 @@ export function handleAskResponse(
 
   const pending = pendingQuestions.get(askId);
   if (!pending) {
+    console.warn('[handleAskResponse] 未找到对应的问题:', askId);
     ws.send(JSON.stringify({ type: 'error', content: '问题已过期' }));
     return;
   }
 
+  console.log('[handleAskResponse] resolve Promise, askId:', askId);
   pendingQuestions.delete(askId);
   pending.resolve(answer);
 }

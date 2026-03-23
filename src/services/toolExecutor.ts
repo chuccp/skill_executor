@@ -60,6 +60,7 @@ import { handleGitTool } from './toolExecutor/git';
 import { handleAgentTool } from './toolExecutor/agent';
 import { handleTtsTool } from './toolExecutor/tts';
 import { handleProjectTool } from './toolExecutor/project';
+import { handleCodeQualityTool } from './toolExecutor/codeQuality';
 
 // 导出工具定义和上下文类型
 export { TOOLS } from './toolExecutor/definitions';
@@ -118,6 +119,10 @@ export async function executeTool(
 
     // 项目分析工具
     result = await handleProjectTool(tool, ctx);
+    if (result !== null) return result;
+
+    // 代码质量工具
+    result = await handleCodeQualityTool(tool, ctx);
     if (result !== null) return result;
 
     // 未知工具

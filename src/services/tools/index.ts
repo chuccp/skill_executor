@@ -32,6 +32,10 @@ export type { DirectoryInfo, FileOperationResult, FileInfo, ReplaceResult } from
 export { editFile, editMultipleFiles } from './edit';
 export type { EditOperation, EditResult, MultiFileEdit, MultiFileEditResult } from './edit';
 
+// 代码质量
+export { formatCode, analyzeCode, lintCode } from './codeQuality';
+export type { FormatOptions, CodeMetrics, LintResult } from './codeQuality';
+
 // Notebook
 export {
   readNotebook,
