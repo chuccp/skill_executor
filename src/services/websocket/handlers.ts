@@ -240,6 +240,10 @@ export async function handleChat(
       
       // P1: 更新总工具数量
       progressStats.totalTools += toolCalls.length;
+
+      toolCalls.forEach((toolCall)=>{
+        console.log(`[WS] 工具调用: ${toolCall.name}:${JSON.stringify(toolCall.input).substring(0, 20)}`);
+      })
       
       // P0 修复：检测循环停滞（相同工具重复调用）
       // const toolCallKey = toolCalls.map(t => `${t.name}:${JSON.stringify(t.input).substring(0, 20)}`).join('|');
