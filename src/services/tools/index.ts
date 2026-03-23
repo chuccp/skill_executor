@@ -64,3 +64,79 @@ export type { TodoItem, QuestionOption, Question, AsyncTask, PlanStep, Plan } fr
 // Git
 export { listWorktrees, createWorktree, removeWorktree } from './git';
 export type { WorktreeInfo } from './git';
+
+// 智能编辑
+export { editFile as smartEditFile, findText, getDiff } from './smartEdit';
+
+// 快速搜索
+export { fastGlob, findCodeFiles, findConfigFiles, findRecentFiles } from './fastSearch';
+export type { FastGlobOptions } from './fastSearch';
+
+// 多格式文件读取
+export {
+  readPdf,
+  readDocx,
+  readXlsx,
+  readXlsxAsJson,
+  writeXlsx,
+  getImageInfo,
+  resizeImage,
+  imageToBase64,
+  readFileAuto
+} from './fileReaders';
+export type { PdfResult, DocxResult, XlsxResult, ImageInfo, ImageResizeOptions } from './fileReaders';
+
+// Web 抓取
+export {
+  httpRequest,
+  parseHtml,
+  htmlToMarkdown,
+  scrapeWebPage,
+  fetchJson,
+  postJson
+} from './webScraper';
+export type { FetchOptions, ParsedHtml, WebScrapeResult } from './webScraper';
+
+// Git 操作增强
+export {
+  getGitStatus,
+  getGitLog,
+  getGitBranches,
+  gitAdd,
+  gitCommit,
+  gitPush,
+  gitPull,
+  gitCheckout,
+  gitCreateBranch,
+  gitMerge,
+  getGitDiff,
+  getGitRemotes,
+  gitFetch,
+  gitStash,
+  gitStashPop,
+  gitStashList
+} from './gitOps';
+export type { GitStatus } from './gitOps';
+
+// 命令执行增强
+export {
+  execCommand,
+  execShell,
+  execStreaming,
+  execBackground,
+  execPipe,
+  execWithTimeout
+} from './execEnhanced';
+export type { ExecOptions, ExecResult, StreamingExecOptions, BackgroundProcess } from './execEnhanced';
+
+// Markdown 处理
+export {
+  parseMarkdown,
+  readMarkdownFile,
+  writeMarkdownFile,
+  markdownToHtml,
+  extractMarkdownHeadings,
+  parseSkillFile,
+  parseSkillContent
+} from './markdown';
+export type { ParsedMarkdown, MarkdownFile, SkillFile } from './markdown';
