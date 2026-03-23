@@ -2,21 +2,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { Conversation, ChatMessage } from '../types';
+import {
+  MAX_MESSAGE_LENGTH,
+  WORKING_MEMORY_SIZE,
+  MEMORY_CHUNK_SIZE,
+  RETRIEVAL_LIMIT,
+  CONTEXT_CHAR_BUDGET,
+  MAX_MEMORY_CHUNKS,
+  MEMORY_TTL_DAYS,
+  INDEX_SAVE_DEBOUNCE_MS
+} from '../config/constants';
 
 // 持久化存储路径
 const DATA_DIR = path.join(process.cwd(), 'data');
 const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
-const MAX_MESSAGE_LENGTH = 8000; // 单条消息最大长度
-const MAX_MESSAGES_PER_CONVERSATION = 100; // 每个会话最大消息数
-const SUMMARIZE_THRESHOLD = 50; // 触发总结的消息数阈值
-const WORKING_MEMORY_SIZE = 20; // 工作记忆保留最近消息数
-const CONTEXT_PERCENT_THRESHOLD = 80; // 上下文使用百分比阈值，超过则自动压缩
-const MEMORY_CHUNK_SIZE = 10; // 记忆切片包含的消息数
-const RETRIEVAL_LIMIT = 3; // 召回的记忆片段数量
-const CONTEXT_CHAR_BUDGET = 20000; // 工作记忆字符预算（近似）
-const MAX_MEMORY_CHUNKS = 60; // 单会话最大记忆片段数
-const MEMORY_TTL_DAYS = 30; // 记忆片段过期天数
-const INDEX_SAVE_DEBOUNCE_MS = 1000;
 
 // 会话元数据（用于列表显示）
 interface ConversationMeta {
@@ -299,10 +298,8 @@ export class ConversationManager {
       data.meta.firstUserMessage = content.substring(0, 50);
     }
 
-    // 检查是否需要压缩（避免上下文膨胀）
-    if (data.messages.length > SUMMARIZE_THRESHOLD) {
-      this.compressConversation(conversationId);
-    }
+    // 注意：压缩逻辑已移到 websocket.ts，在请求前执行
+    // 这样可以使用 LLM 生成更准确的摘要
 
     this.save();
     return message;
@@ -357,20 +354,32 @@ export class ConversationManager {
 
   // ========== 会话压缩 ==========
 
-  // 压缩会话（保留最近消息 + 历史摘要）
-  private compressConversation(conversationId: string): void {
+  // 压缩会话（保留最近消息 + LLM 生成的历史摘要）
+  async compressConversation(conversationId: string, llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }): Promise<boolean> {
     const data = this.conversations.get(conversationId);
-    if (!data || data.messages.length <= SUMMARIZE_THRESHOLD) return;
+    if (!data || data.messages.length <= WORKING_MEMORY_SIZE) return false;
 
     // 保留最近的消息（过滤已有系统摘要/记忆，避免重复）
     const recentMessages = data.messages
       .slice(-WORKING_MEMORY_SIZE)
       .filter(m => !this.isSystemMemory(m));
 
-    // 生成历史摘要
+    // 需要压缩的旧消息
     const oldMessages = data.messages.slice(0, -WORKING_MEMORY_SIZE)
       .filter(m => !this.isSystemMemory(m));
-    const summary = this.generateSummary(oldMessages);
+
+    if (oldMessages.length === 0) return false;
+
+    // 生成历史摘要
+    let summary: string;
+    if (llmService) {
+      // 使用 LLM 生成摘要
+      summary = await this.generateSummaryWithLLM(oldMessages, llmService);
+    } else {
+      // 回退到简单摘要
+      summary = this.generateSimpleSummary(oldMessages);
+    }
+
     const memoryChunks = this.mergeMemoryChunks(
       data.meta.memoryChunks || [],
       this.buildMemoryChunks(oldMessages)
@@ -392,12 +401,61 @@ export class ConversationManager {
     data.meta.messageCount = data.messages.length;
     this.rebuildMemoryIndex(conversationId, trimmedChunks);
     this.saveMemoryIndex();
+    this.save();
 
     console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩: ${oldMessages.length} 条消息已总结`);
+    return true;
   }
 
-  // 生成消息摘要
-  private generateSummary(messages: ChatMessage[]): string {
+  // 使用 LLM 生成摘要
+  private async generateSummaryWithLLM(
+    messages: ChatMessage[],
+    llmService: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }
+  ): Promise<string> {
+    // 构建消息内容预览
+    const messagePreview = messages.map(m => {
+      const content = m.content.substring(0, 500);
+      return `${m.role === 'user' ? '用户' : 'AI'}: ${content}${m.content.length > 500 ? '...' : ''}`;
+    }).join('\n\n');
+
+    const systemPrompt = `你是一个对话摘要助手。请将以下历史对话压缩成一个简洁的摘要。
+
+要求：
+1. 保留关键的任务请求和完成结果
+2. 保留重要的决策和选择
+3. 忽略无关细节和重复内容
+4. 摘要长度控制在 500 字以内
+5. 使用中文，简洁清晰
+
+格式：
+【任务概要】
+- 已完成的任务列表
+
+【关键决策】
+- 用户做出的重要选择
+
+【上下文要点】
+- 需要后续参考的关键信息`;
+
+    const chatMessages: ChatMessage[] = [
+      {
+        role: 'user',
+        content: `请总结以下对话历史（共 ${messages.length} 条消息）：\n\n${messagePreview}`,
+        timestamp: new Date()
+      }
+    ];
+
+    try {
+      const summary = await llmService.chat(chatMessages, systemPrompt);
+      return summary || this.generateSimpleSummary(messages);
+    } catch (error) {
+      console.error('[Conversation] LLM 摘要生成失败:', error);
+      return this.generateSimpleSummary(messages);
+    }
+  }
+
+  // 简单摘要（无 LLM 时的回退方案）
+  private generateSimpleSummary(messages: ChatMessage[]): string {
     const sections: string[] = [];
 
     // 按任务分组（用户请求 + AI响应）
@@ -654,14 +712,12 @@ export class ConversationManager {
     };
   }
 
-  // 手动触发压缩
-  compress(id: string): boolean {
+  // 手动触发压缩（使用 LLM 生成摘要）
+  async compress(id: string, llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }): Promise<boolean> {
     const data = this.conversations.get(id);
     if (!data) return false;
 
-    this.compressConversation(id);
-    this.save();
-    return true;
+    return this.compressConversation(id, llmService);
   }
 
   // ========== 工具方法 ==========

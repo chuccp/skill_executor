@@ -9,6 +9,7 @@ import * as path from 'path';
 import { TOOLS, executeTool, ToolContext } from './toolExecutor';
 import { buildSystemPrompt, getDetailedTaskDescription } from './systemPrompt';
 import { TodoItem } from './tools';
+import { SUMMARIZE_THRESHOLD, CONTEXT_PERCENT_THRESHOLD } from '../config/constants';
 
 // ==================== 模型上下文限制 ====================
 
@@ -253,16 +254,39 @@ async function handleChat(
 
   // 在请求前检查是否需要压缩上下文
   const convData = conversationManager.get(conversationId);
+  const config = llmService.getConfig();
+  const model = config.model || 'unknown';
+  const contextLimit = getContextLimit(model);
+
   if (convData) {
     const messages = convData.messages;
-    // 检查消息数量（原有的压缩逻辑）
-    if (messages.length > 50) {
-      console.log(`[WS] 消息数量 ${messages.length} 超过阈值 50，触发压缩`);
-      conversationManager.compress(conversationId);
-      ws.send(JSON.stringify({
-        type: 'context_compressed',
-        content: `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
-      }));
+
+    // 估算当前上下文的 token 数量（约 1 token ≈ 4 字符）
+    const totalChars = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+    const estimatedTokens = Math.round(totalChars / 4);
+    const contextPercent = Math.round((estimatedTokens / contextLimit) * 100);
+
+    // 检查上下文使用百分比
+    if (contextPercent > CONTEXT_PERCENT_THRESHOLD) {
+      console.log(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
+      const compressed = await conversationManager.compress(conversationId, llmService);
+      if (compressed) {
+        ws.send(JSON.stringify({
+          type: 'context_compressed',
+          content: `上下文已压缩（${contextPercent}% → 约${Math.round(contextPercent * 0.3)}%）`
+        }));
+      }
+    }
+    // 同时检查消息数量（备用条件）
+    else if (messages.length > SUMMARIZE_THRESHOLD) {
+      console.log(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
+      const compressed = await conversationManager.compress(conversationId, llmService);
+      if (compressed) {
+        ws.send(JSON.stringify({
+          type: 'context_compressed',
+          content: `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
+        }));
+      }
     }
   }
 
