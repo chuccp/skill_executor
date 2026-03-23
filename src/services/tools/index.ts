@@ -140,3 +140,42 @@ export {
   parseSkillContent
 } from './markdown';
 export type { ParsedMarkdown, MarkdownFile, SkillFile } from './markdown';
+
+// 日志工具
+export { createLogger, logger, log, createModuleLogger } from './logger';
+
+// 参数验证
+export {
+  z,
+  validators,
+  validate,
+  validateOrThrow,
+  validateToolInput,
+  createValidator,
+  filePathSchema,
+  dirPathSchema,
+  editSchema,
+  multiEditSchema,
+  bashSchema,
+  globSchema,
+  grepSchema,
+  webFetchSchema,
+  webSearchSchema
+} from './validation';
+export type { ValidationResult } from './validation';
+
+// HTTP 客户端
+export {
+  ky,
+  defaultClient,
+  createHttpClient,
+  httpGet,
+  httpPost,
+  httpPut,
+  httpDelete,
+  httpGetText,
+  httpGetBuffer,
+  downloadFile,
+  httpGetWithRetry
+} from './http';
+export type { HttpClientOptions, HttpResponse } from './http';
