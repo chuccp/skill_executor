@@ -1,7 +1,6 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { Conversation, ChatMessage } from '../types';
+import { getDatabase } from './database';
 import {
   MAX_MESSAGE_LENGTH,
   WORKING_MEMORY_SIZE,
@@ -9,31 +8,10 @@ import {
   RETRIEVAL_LIMIT,
   CONTEXT_CHAR_BUDGET,
   MAX_MEMORY_CHUNKS,
-  MEMORY_TTL_DAYS,
-  INDEX_SAVE_DEBOUNCE_MS
+  MEMORY_TTL_DAYS
 } from '../config/constants';
 
-// 持久化存储路径
-const DATA_DIR = path.join(process.cwd(), 'data');
-const CONVERSATIONS_FILE = path.join(DATA_DIR, 'conversations.json');
-
-// 会话元数据（用于列表显示）
-interface ConversationMeta {
-  id: string;
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-  summary?: string;
-  firstUserMessage?: string;
-  memoryChunks?: MemoryChunk[];
-}
-
-// 完整会话数据
-interface ConversationData {
-  meta: ConversationMeta;
-  messages: ChatMessage[];
-}
-
+// 内存中的记忆缓存
 interface MemoryChunk {
   id: string;
   text: string;
@@ -42,174 +20,49 @@ interface MemoryChunk {
 }
 
 export class ConversationManager {
-  private conversations: Map<string, ConversationData> = new Map();
-  private dataPath: string;
-  private saveTimeout: NodeJS.Timeout | null = null;
+  private db = getDatabase().getDb();
   private memoryIndex: Map<string, Map<string, Set<string>>> = new Map();
   private memoryChunkMap: Map<string, Map<string, MemoryChunk>> = new Map();
-  private indexPath: string;
-  private indexSaveTimeout: NodeJS.Timeout | null = null;
 
-  constructor(dataPath: string = CONVERSATIONS_FILE) {
-    this.dataPath = dataPath;
-    this.indexPath = path.join(path.dirname(this.dataPath), 'memory_index.json');
-    this.load();
-  }
-
-  // ========== 加载和保存 ==========
-
-  private load(): void {
-    try {
-      // 确保目录存在
-      const dir = path.dirname(this.dataPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      if (fs.existsSync(this.dataPath)) {
-        const content = fs.readFileSync(this.dataPath, 'utf-8');
-        const data = JSON.parse(content);
-        
-        if (data.conversations && Array.isArray(data.conversations)) {
-          for (const conv of data.conversations) {
-            if (conv.meta && conv.messages) {
-              this.conversations.set(conv.meta.id, conv);
-            }
-          }
-        }
-        
-        console.log(`[Conversation] 已加载 ${this.conversations.size} 个会话`);
-      }
-    } catch (error) {
-      console.error('[Conversation] 加载会话失败:', error);
-      this.conversations = new Map();
-      this.memoryIndex = new Map();
-      this.memoryChunkMap = new Map();
-    }
-
+  constructor() {
     this.loadMemoryIndex();
-    this.rebuildIndexFromMeta();
-  }
-
-  private save(): void {
-    // 防抖：延迟保存，避免频繁写入
-    if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
-    }
-    
-    this.saveTimeout = setTimeout(() => {
-      this.doSave();
-    }, 1000);
-  }
-
-  private doSave(): void {
-    try {
-      const dir = path.dirname(this.dataPath);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-
-      const data = {
-        version: 1,
-        savedAt: new Date().toISOString(),
-        conversations: Array.from(this.conversations.values())
-      };
-
-      fs.writeFileSync(this.dataPath, JSON.stringify(data, null, 2), 'utf-8');
-      console.log(`[Conversation] 已保存 ${this.conversations.size} 个会话`);
-    } catch (error) {
-      console.error('[Conversation] 保存会话失败:', error);
-    }
   }
 
   private loadMemoryIndex(): void {
     try {
-      if (!fs.existsSync(this.indexPath)) return;
-      const content = fs.readFileSync(this.indexPath, 'utf-8');
-      const data = JSON.parse(content);
-      if (!data || typeof data !== 'object') return;
-      for (const [convId, indexObj] of Object.entries<any>(data.index || {})) {
-        const map = new Map<string, Set<string>>();
-        for (const [k, ids] of Object.entries<any>(indexObj)) {
-          map.set(k, new Set(ids as string[]));
-        }
-        this.memoryIndex.set(convId, map);
-      }
-      for (const [convId, chunks] of Object.entries<any>(data.chunks || {})) {
-        const map = new Map<string, MemoryChunk>();
-        for (const c of chunks as MemoryChunk[]) {
-          map.set(c.id, c);
-        }
-        this.memoryChunkMap.set(convId, map);
-        const conv = this.conversations.get(convId);
-        if (conv && (!conv.meta.memoryChunks || conv.meta.memoryChunks.length === 0)) {
-          conv.meta.memoryChunks = Array.from(map.values());
-        }
-      }
-      console.log(`[Conversation] 已加载记忆索引`);
-    } catch (e) {
-      console.error('[Conversation] 加载记忆索引失败:', e);
-    }
-  }
+      const rows = this.db.prepare(`
+        SELECT conversation_id, memory_chunks FROM conversation_memories
+      `).all() as { conversation_id: string; memory_chunks: string }[];
 
-  private saveMemoryIndex(): void {
-    if (this.indexSaveTimeout) {
-      clearTimeout(this.indexSaveTimeout);
-    }
-    this.indexSaveTimeout = setTimeout(() => {
-      this.doSaveMemoryIndex();
-    }, INDEX_SAVE_DEBOUNCE_MS);
-  }
-
-  private doSaveMemoryIndex(): void {
-    try {
-      const indexObj: Record<string, Record<string, string[]>> = {};
-      for (const [convId, idx] of this.memoryIndex) {
-        const out: Record<string, string[]> = {};
-        for (const [k, set] of idx) {
-          out[k] = Array.from(set);
+      for (const row of rows) {
+        try {
+          const chunks = JSON.parse(row.memory_chunks) as MemoryChunk[];
+          const map = new Map<string, MemoryChunk>();
+          for (const c of chunks) {
+            map.set(c.id, c);
+          }
+          this.memoryChunkMap.set(row.conversation_id, map);
+          this.rebuildMemoryIndexForConversation(row.conversation_id, chunks);
+        } catch {
+          // 忽略解析错误
         }
-        indexObj[convId] = out;
       }
-      const chunksObj: Record<string, MemoryChunk[]> = {};
-      for (const [convId, map] of this.memoryChunkMap) {
-        chunksObj[convId] = Array.from(map.values());
-      }
-
-      const payload = {
-        version: 1,
-        savedAt: new Date().toISOString(),
-        index: indexObj,
-        chunks: chunksObj
-      };
-      fs.writeFileSync(this.indexPath, JSON.stringify(payload, null, 2), 'utf-8');
-      console.log(`[Conversation] 已保存记忆索引`);
-    } catch (e) {
-      console.error('[Conversation] 保存记忆索引失败:', e);
+      console.log(`[Conversation] 已加载 ${this.memoryChunkMap.size} 个会话的记忆索引`);
+    } catch {
+      // 表可能不存在，忽略
     }
   }
 
   // ========== 会话管理 ==========
 
-  // 创建新会话
   create(): Conversation {
     const id = uuidv4();
     const now = new Date();
-    
-    const meta: ConversationMeta = {
-      id,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-      messageCount: 0
-    };
 
-    const conversation: ConversationData = {
-      meta,
-      messages: []
-    };
-
-    this.conversations.set(id, conversation);
-    this.save();
+    this.db.prepare(`
+      INSERT INTO conversations (id, created_at, updated_at, message_count)
+      VALUES (?, ?, ?, 0)
+    `).run(id, now.toISOString(), now.toISOString());
 
     return {
       id,
@@ -219,201 +72,283 @@ export class ConversationManager {
     };
   }
 
-  // 获取会话
   get(id: string): Conversation | undefined {
-    const data = this.conversations.get(id);
-    if (!data) return undefined;
+    const row = this.db.prepare(`
+      SELECT * FROM conversations WHERE id = ?
+    `).get(id) as { id: string; created_at: string; updated_at: string } | undefined;
+
+    if (!row) return undefined;
+
+    const messages = this.getMessages(id);
 
     return {
-      id: data.meta.id,
-      messages: data.messages,
-      createdAt: new Date(data.meta.createdAt),
-      updatedAt: new Date(data.meta.updatedAt)
+      id: row.id,
+      messages,
+      createdAt: new Date(row.created_at),
+      updatedAt: new Date(row.updated_at)
     };
   }
 
-  // 获取会话元数据（用于列表）
-  getMeta(id: string): ConversationMeta | undefined {
-    return this.conversations.get(id)?.meta;
+  getMeta(id: string): {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    messageCount: number;
+    summary?: string;
+    firstUserMessage?: string;
+  } | undefined {
+    const row = this.db.prepare(`
+      SELECT * FROM conversations WHERE id = ?
+    `).get(id) as { id: string; created_at: string; updated_at: string; message_count: number; summary: string | null; first_user_message: string | null } | undefined;
+
+    if (!row) return undefined;
+
+    return {
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messageCount: row.message_count,
+      summary: row.summary || undefined,
+      firstUserMessage: row.first_user_message || undefined
+    };
   }
 
-  // 获取所有会话元数据
-  getAllMeta(): ConversationMeta[] {
-    return Array.from(this.conversations.values())
-      .map(d => d.meta)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  getAllMeta(): {
+    id: string;
+    createdAt: string;
+    updatedAt: string;
+    messageCount: number;
+    summary?: string;
+    firstUserMessage?: string;
+  }[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM conversations ORDER BY updated_at DESC
+    `).all() as { id: string; created_at: string; updated_at: string; message_count: number; summary: string | null; first_user_message: string | null }[];
+
+    return rows.map(row => ({
+      id: row.id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      messageCount: row.message_count,
+      summary: row.summary || undefined,
+      firstUserMessage: row.first_user_message || undefined
+    }));
   }
 
-  // 获取所有会话（完整数据）
   getAll(): Conversation[] {
-    return Array.from(this.conversations.values())
-      .map(data => ({
-        id: data.meta.id,
-        messages: data.messages,
-        createdAt: new Date(data.meta.createdAt),
-        updatedAt: new Date(data.meta.updatedAt)
-      }))
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const metas = this.getAllMeta();
+    return metas.map(meta => {
+      const messages = this.getMessages(meta.id);
+      return {
+        id: meta.id,
+        messages,
+        createdAt: new Date(meta.createdAt),
+        updatedAt: new Date(meta.updatedAt)
+      };
+    });
   }
 
-  // 删除会话
   delete(id: string): boolean {
-    const result = this.conversations.delete(id);
-    if (result) {
+    const result = this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+
+    if (result.changes > 0) {
       this.memoryIndex.delete(id);
       this.memoryChunkMap.delete(id);
-      // 立即保存，不使用防抖，确保删除操作持久化
-      this.doSaveMemoryIndex();
-      this.doSave();
     }
-    return result;
+
+    return result.changes > 0;
   }
 
   // ========== 消息管理 ==========
 
-  // 添加消息
-  addMessage(conversationId: string, role: ChatMessage['role'], content: string, extra?: { thinking?: string; toolResults?: any[] }): ChatMessage | null {
-    const data = this.conversations.get(conversationId);
-    if (!data) return null;
+  addMessage(
+    conversationId: string,
+    role: ChatMessage['role'],
+    content: string,
+    extra?: { thinking?: string; toolResults?: any[] }
+  ): ChatMessage | null {
+    const conv = this.db.prepare('SELECT id FROM conversations WHERE id = ?').get(conversationId);
+    if (!conv) return null;
 
-    // 截断过长的消息
     if (content.length > MAX_MESSAGE_LENGTH) {
       content = content.substring(0, MAX_MESSAGE_LENGTH) + '\n... (内容已截断)';
     }
 
-    const message: ChatMessage = {
+    const timestamp = new Date();
+    const thinking = extra?.thinking || null;
+    const toolResults = extra?.toolResults ? JSON.stringify(extra.toolResults) : null;
+
+    this.db.prepare(`
+      INSERT INTO messages (conversation_id, role, content, thinking, tool_results, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(conversationId, role, content, thinking, toolResults, timestamp.toISOString());
+
+    this.db.prepare(`
+      UPDATE conversations
+      SET updated_at = ?, message_count = message_count + 1
+      WHERE id = ?
+    `).run(timestamp.toISOString(), conversationId);
+
+    this.db.prepare(`
+      UPDATE conversations
+      SET first_user_message = COALESCE(first_user_message, ?)
+      WHERE id = ?
+    `).run(content.substring(0, 50), conversationId);
+
+    return {
       role,
       content,
-      timestamp: new Date(),
-      ...(extra?.thinking && { thinking: extra.thinking }),
+      timestamp,
+      ...(thinking && { thinking }),
       ...(extra?.toolResults && { toolResults: extra.toolResults })
     };
-
-    data.messages.push(message);
-    data.meta.messageCount = data.messages.length;
-    data.meta.updatedAt = new Date().toISOString();
-
-    // 保存第一条用户消息作为预览
-    if (role === 'user' && !data.meta.firstUserMessage) {
-      data.meta.firstUserMessage = content.substring(0, 50);
-    }
-
-    // 注意：压缩逻辑已移到 websocket.ts，在请求前执行
-    // 这样可以使用 LLM 生成更准确的摘要
-
-    this.save();
-    return message;
   }
 
-  // 更新消息（用于追加 thinking 和 toolResults）
-  updateMessage(conversationId: string, messageIndex: number, extra: { thinking?: string; toolResults?: any[]; usage?: { inputTokens: number; outputTokens: number; contextTokens?: number; contextLimit?: number; contextPercent?: number }; content?: string }): boolean {
-    const data = this.conversations.get(conversationId);
-    if (!data || messageIndex < 0 || messageIndex >= data.messages.length) return false;
+  updateMessage(
+    conversationId: string,
+    messageIndex: number,
+    extra: {
+      thinking?: string;
+      toolResults?: any[];
+      usage?: { inputTokens: number; outputTokens: number; contextTokens?: number; contextLimit?: number; contextPercent?: number };
+      content?: string;
+    }
+  ): boolean {
+    const messages = this.db.prepare(`
+      SELECT id, role FROM messages
+      WHERE conversation_id = ?
+      ORDER BY timestamp ASC
+    `).all(conversationId) as { id: number; role: string }[];
 
-    let msg = data.messages[messageIndex];
-    // If index points to a non-assistant message (e.g. tool result user entries),
-    // fallback to the latest assistant message so UI extras persist correctly.
+    if (messageIndex < 0 || messageIndex >= messages.length) return false;
+
+    let msg = messages[messageIndex];
+
     if (msg.role !== 'assistant') {
-      for (let i = data.messages.length - 1; i >= 0; i -= 1) {
-        if (data.messages[i].role === 'assistant') {
-          msg = data.messages[i];
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant') {
+          msg = messages[i];
           break;
         }
       }
     }
-    if (msg.role !== 'assistant') return false;
-    if (extra.thinking) msg.thinking = extra.thinking;
-    if (extra.toolResults) msg.toolResults = extra.toolResults;
-    if (extra.usage) msg.usage = extra.usage;
-    if (extra.content !== undefined) msg.content = extra.content;
 
-    this.save();
+    if (msg.role !== 'assistant') return false;
+
+    if (extra.thinking) {
+      this.db.prepare('UPDATE messages SET thinking = ? WHERE id = ?').run(extra.thinking, msg.id);
+    }
+    if (extra.toolResults) {
+      this.db.prepare('UPDATE messages SET tool_results = ? WHERE id = ?').run(JSON.stringify(extra.toolResults), msg.id);
+    }
+    if (extra.content !== undefined) {
+      this.db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(extra.content, msg.id);
+    }
+
     return true;
   }
 
-  // 获取消息列表
   getMessages(conversationId: string): ChatMessage[] {
-    return this.conversations.get(conversationId)?.messages || [];
+    const rows = this.db.prepare(`
+      SELECT role, content, thinking, tool_results, timestamp
+      FROM messages
+      WHERE conversation_id = ?
+      ORDER BY timestamp ASC
+    `).all(conversationId) as { role: string; content: string | null; thinking: string | null; tool_results: string | null; timestamp: string }[];
+
+    return rows.map(row => ({
+      role: row.role as 'user' | 'assistant' | 'system',
+      content: row.content || '',
+      timestamp: new Date(row.timestamp),
+      ...(row.thinking && { thinking: row.thinking }),
+      ...(row.tool_results && { toolResults: JSON.parse(row.tool_results) })
+    }));
   }
 
-  // 清空会话消息
   clear(id: string): boolean {
-    const data = this.conversations.get(id);
-    if (!data) return false;
+    const conv = this.db.prepare('SELECT id FROM conversations WHERE id = ?').get(id);
+    if (!conv) return false;
 
-    data.messages = [];
-    data.meta.messageCount = 0;
-    data.meta.summary = undefined;
-    data.meta.memoryChunks = [];
+    this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+
+    this.db.prepare(`
+      UPDATE conversations
+      SET message_count = 0, summary = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(new Date().toISOString(), id);
+
     this.memoryIndex.delete(id);
     this.memoryChunkMap.delete(id);
-    data.meta.updatedAt = new Date().toISOString();
-    this.saveMemoryIndex();
-    this.save();
+
     return true;
   }
 
   // ========== 会话压缩 ==========
 
-  // 压缩会话（保留最近消息 + LLM 生成的历史摘要）
-  async compressConversation(conversationId: string, llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }): Promise<boolean> {
-    const data = this.conversations.get(conversationId);
-    if (!data || data.messages.length <= WORKING_MEMORY_SIZE) return false;
+  async compress(
+    conversationId: string,
+    llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }
+  ): Promise<boolean> {
+    const messages = this.getMessages(conversationId);
+    if (messages.length <= WORKING_MEMORY_SIZE) return false;
 
-    // 保留最近的消息（过滤已有系统摘要/记忆，避免重复）
-    const recentMessages = data.messages
+    const recentMessages = messages
       .slice(-WORKING_MEMORY_SIZE)
       .filter(m => !this.isSystemMemory(m));
 
-    // 需要压缩的旧消息
-    const oldMessages = data.messages.slice(0, -WORKING_MEMORY_SIZE)
+    const oldMessages = messages.slice(0, -WORKING_MEMORY_SIZE)
       .filter(m => !this.isSystemMemory(m));
 
     if (oldMessages.length === 0) return false;
 
-    // 生成历史摘要
     let summary: string;
     if (llmService) {
-      // 使用 LLM 生成摘要
       summary = await this.generateSummaryWithLLM(oldMessages, llmService);
     } else {
-      // 回退到简单摘要
       summary = this.generateSimpleSummary(oldMessages);
     }
 
-    const memoryChunks = this.mergeMemoryChunks(
-      data.meta.memoryChunks || [],
-      this.buildMemoryChunks(oldMessages)
-    );
-    const trimmedChunks = this.trimMemoryChunks(memoryChunks);
+    const existingChunks = this.memoryChunkMap.get(conversationId) ?
+      Array.from(this.memoryChunkMap.get(conversationId)!.values()) : [];
+    const newChunks = this.buildMemoryChunks(oldMessages);
+    const mergedChunks = this.mergeMemoryChunks(existingChunks, newChunks);
+    const trimmedChunks = this.trimMemoryChunks(mergedChunks);
 
-    // 创建压缩后的消息
-    data.messages = [
-      {
-        role: 'user',
-        content: `[历史对话摘要]\n${summary}`,
-        timestamp: new Date()
-      },
-      ...recentMessages
-    ];
+    const recentIds = this.db.prepare(`
+      SELECT id FROM messages
+      WHERE conversation_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(conversationId, WORKING_MEMORY_SIZE * 2) as { id: number }[];
 
-    data.meta.summary = summary;
-    data.meta.memoryChunks = trimmedChunks;
-    data.meta.messageCount = data.messages.length;
-    this.rebuildMemoryIndex(conversationId, trimmedChunks);
-    this.saveMemoryIndex();
-    this.save();
+    if (recentIds.length > 0) {
+      const ids = recentIds.map(r => r.id);
+      const placeholders = ids.map(() => '?').join(',');
+
+      this.db.prepare(`
+        DELETE FROM messages
+        WHERE conversation_id = ? AND id NOT IN (${placeholders})
+      `).run(conversationId, ...ids);
+    }
+
+    this.addMessage(conversationId, 'user', `[历史对话摘要]\n${summary}`);
+
+    this.db.prepare(`
+      UPDATE conversations
+      SET summary = ?, message_count = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?)
+      WHERE id = ?
+    `).run(summary, conversationId, conversationId);
+
+    this.saveMemoryChunks(conversationId, trimmedChunks);
 
     console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩: ${oldMessages.length} 条消息已总结`);
     return true;
   }
 
-  // 使用 LLM 生成摘要
   private async generateSummaryWithLLM(
     messages: ChatMessage[],
     llmService: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }
   ): Promise<string> {
-    // 构建消息内容预览
     const messagePreview = messages.map(m => {
       const content = m.content.substring(0, 500);
       return `${m.role === 'user' ? '用户' : 'AI'}: ${content}${m.content.length > 500 ? '...' : ''}`;
@@ -426,17 +361,7 @@ export class ConversationManager {
 2. 保留重要的决策和选择
 3. 忽略无关细节和重复内容
 4. 摘要长度控制在 500 字以内
-5. 使用中文，简洁清晰
-
-格式：
-【任务概要】
-- 已完成的任务列表
-
-【关键决策】
-- 用户做出的重要选择
-
-【上下文要点】
-- 需要后续参考的关键信息`;
+5. 使用中文，简洁清晰`;
 
     const chatMessages: ChatMessage[] = [
       {
@@ -455,21 +380,15 @@ export class ConversationManager {
     }
   }
 
-  // 简单摘要（无 LLM 时的回退方案）
   private generateSimpleSummary(messages: ChatMessage[]): string {
     const sections: string[] = [];
-
-    // 按任务分组（用户请求 + AI响应）
     const tasks: { request: string; result: string }[] = [];
     let currentRequest = '';
     let currentResult = '';
 
     for (const msg of messages) {
       if (msg.role === 'user') {
-        // 过滤工具结果等内部消息
         if (msg.content.startsWith('[工具结果]') || msg.content.startsWith('[历史对话摘要]')) continue;
-
-        // 如果有之前的任务，保存它
         if (currentRequest && currentResult) {
           tasks.push({ request: currentRequest, result: currentResult });
         }
@@ -479,31 +398,25 @@ export class ConversationManager {
         currentResult = msg.content.substring(0, 200);
       }
     }
-    // 保存最后一个任务
     if (currentRequest && currentResult) {
       tasks.push({ request: currentRequest, result: currentResult });
     }
 
-    // 生成摘要
     sections.push(`共 ${messages.length} 条消息，${tasks.length} 个任务。`);
 
-    // 记录主要任务（最多10个）
     if (tasks.length > 0) {
       sections.push('\n已完成任务：');
       const recentTasks = tasks.slice(-10);
       for (let i = 0; i < recentTasks.length; i++) {
         const task = recentTasks[i];
-        const requestPreview = task.request.replace(/\n/g, ' ').substring(0, 80);
-        const resultPreview = task.result.replace(/\n/g, ' ').substring(0, 100);
-        sections.push(`${i + 1}. 用户: ${requestPreview}${task.request.length > 80 ? '...' : ''}`);
-        sections.push(`   结果: ${resultPreview}${task.result.length > 100 ? '...' : ''}`);
+        sections.push(`${i + 1}. 用户: ${task.request.substring(0, 80)}`);
+        sections.push(`   结果: ${task.result.substring(0, 100)}`);
       }
     }
 
     return sections.join('\n');
   }
 
-  // 构建记忆切片
   private buildMemoryChunks(messages: ChatMessage[]): MemoryChunk[] {
     if (!messages || messages.length === 0) return [];
     const chunks: MemoryChunk[] = [];
@@ -523,7 +436,7 @@ export class ConversationManager {
 
   private extractKeywords(text: string): string[] {
     const tokens = text
-      .replace(/[^\w\u4e00-\u9fa5]+/g, ' ')
+      .replace(/[^\w\u4e00-\u9fa5]/g, ' ')
       .split(/\s+/)
       .map(t => t.trim())
       .filter(t => t.length >= 2 && t.length <= 12);
@@ -546,15 +459,14 @@ export class ConversationManager {
     return scored.slice(0, RETRIEVAL_LIMIT).map(s => s.chunk);
   }
 
-  // 构建上下文消息（工作记忆 + 摘要记忆 + 召回记忆）
   buildContextMessages(conversationId: string, userInput: string): ChatMessage[] {
-    const data = this.conversations.get(conversationId);
-    if (!data) return [];
+    const messages = this.getMessages(conversationId);
+    if (messages.length === 0) return [];
 
-    const recentRaw = data.messages
+    const recentRaw = messages
       .slice(-WORKING_MEMORY_SIZE * 2)
       .filter(m => !this.isSystemMemory(m));
-    // 不过滤工具结果，让 LLM 能看到工具调用的结果
+
     const recent: ChatMessage[] = [];
     let used = 0;
     for (let i = recentRaw.length - 1; i >= 0; i -= 1) {
@@ -566,11 +478,11 @@ export class ConversationManager {
       if (recent.length >= WORKING_MEMORY_SIZE) break;
     }
 
-    // 调试日志：显示上下文消息数量和最后一条消息
-    console.log(`[Conversation] 构建上下文: ${recent.length} 条消息, 最后一条: ${recent.length > 0 ? recent[recent.length-1].content?.substring(0, 50) : '无'}...`);
-    const summary = data.meta.summary;
-    const chunks = data.meta.memoryChunks || [];
-    const retrieved = this.retrieveMemory(userInput, chunks);
+    const meta = this.db.prepare('SELECT summary FROM conversations WHERE id = ?').get(conversationId) as { summary: string | null } | undefined;
+    const summary = meta?.summary;
+    const chunks = this.memoryChunkMap.get(conversationId);
+    const memoryChunks = chunks ? Array.from(chunks.values()) : [];
+    const retrieved = this.retrieveMemory(userInput, memoryChunks);
 
     const context: ChatMessage[] = [];
 
@@ -628,56 +540,43 @@ export class ConversationManager {
     return `${text.length}:${head}`;
   }
 
-  private rebuildMemoryIndex(conversationId: string, chunks: MemoryChunk[]): void {
+  private rebuildMemoryIndexForConversation(conversationId: string, chunks: MemoryChunk[]): void {
     const index: Map<string, Set<string>> = new Map();
-    const chunkMap: Map<string, MemoryChunk> = new Map();
+    const map = new Map<string, MemoryChunk>();
     for (const c of chunks) {
-      chunkMap.set(c.id, c);
+      map.set(c.id, c);
       for (const k of c.keywords || []) {
         if (!index.has(k)) index.set(k, new Set());
         index.get(k)!.add(c.id);
       }
     }
     this.memoryIndex.set(conversationId, index);
-    this.memoryChunkMap.set(conversationId, chunkMap);
+    this.memoryChunkMap.set(conversationId, map);
   }
 
-  private rebuildIndexFromMeta(): void {
-    for (const [id, data] of this.conversations) {
-      const chunks = data.meta.memoryChunks || [];
-      if (!chunks || chunks.length === 0) continue;
-      const idx = this.memoryIndex.get(id);
-      const map = this.memoryChunkMap.get(id);
-      const sizeMismatch = !map || map.size !== chunks.length;
-      if (!idx || idx.size === 0 || sizeMismatch) {
-        this.rebuildMemoryIndex(id, chunks);
-      }
-    }
+  private saveMemoryChunks(conversationId: string, chunks: MemoryChunk[]): void {
+    this.rebuildMemoryIndexForConversation(conversationId, chunks);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_memories (
+        conversation_id TEXT PRIMARY KEY,
+        memory_chunks TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT OR REPLACE INTO conversation_memories (conversation_id, memory_chunks, updated_at)
+      VALUES (?, ?, ?)
+    `).run(conversationId, JSON.stringify(chunks), now);
   }
 
   private scoreChunksByQuery(queryKeywords: string[], chunks: MemoryChunk[]): { chunk: MemoryChunk; score: number }[] {
     const scored: { chunk: MemoryChunk; score: number }[] = [];
     if (!chunks || chunks.length === 0) return scored;
 
-    let candidateIds: Set<string> | null = null;
-    const convId = this.findConversationIdByChunks(chunks);
-    const idx = convId ? this.memoryIndex.get(convId) : null;
-    if (idx) {
-      for (const k of queryKeywords) {
-        const set = idx.get(k);
-        if (!set) continue;
-        candidateIds = candidateIds ? new Set([...candidateIds, ...set]) : new Set(set);
-      }
-    }
-
-    let candidates = candidateIds
-      ? chunks.filter(c => candidateIds!.has(c.id))
-      : chunks;
-    if (candidateIds && candidates.length === 0) {
-      candidates = chunks;
-    }
-
-    for (const c of candidates) {
+    for (const c of chunks) {
       const overlap = c.keywords.filter(k => queryKeywords.includes(k)).length;
       if (overlap === 0) continue;
       const recency = this.recencyBoost(c.createdAt);
@@ -696,14 +595,51 @@ export class ConversationManager {
     return 0;
   }
 
-  private findConversationIdByChunks(chunks: MemoryChunk[]): string | null {
-    for (const [id, data] of this.conversations) {
-      if (data.meta.memoryChunks === chunks) return id;
-    }
-    return null;
+  // ========== 工具方法 ==========
+
+  getStats(): { totalConversations: number; totalMessages: number; oldestConversation: string | null } {
+    const stats = getDatabase().getStats();
+    const oldest = this.db.prepare('SELECT id FROM conversations ORDER BY created_at ASC LIMIT 1').get() as { id: string } | undefined;
+
+    return {
+      totalConversations: stats.conversations,
+      totalMessages: stats.messages,
+      oldestConversation: oldest?.id || null
+    };
   }
 
-  // 统计召回命中率（简单）
+  cleanup(keepCount: number = 50): number {
+    const allMeta = this.getAllMeta();
+    if (allMeta.length <= keepCount) return 0;
+
+    const toDelete = allMeta.slice(keepCount);
+    for (const meta of toDelete) {
+      this.delete(meta.id);
+    }
+
+    console.log(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
+    return toDelete.length;
+  }
+
+  searchMessages(query: string, limit: number = 20): { conversationId: string; message: ChatMessage }[] {
+    const rows = this.db.prepare(`
+      SELECT conversation_id, role, content, timestamp
+      FROM messages
+      WHERE content LIKE ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `).all(`%${query}%`, limit) as { conversation_id: string; role: string; content: string; timestamp: string }[];
+
+    return rows.map(row => ({
+      conversationId: row.conversation_id,
+      message: {
+        role: row.role as 'user' | 'assistant' | 'system',
+        content: row.content,
+        timestamp: new Date(row.timestamp)
+      }
+    }));
+  }
+
   getMemoryStats(conversationId: string): { chunkCount: number; indexKeys: number } {
     const chunks = this.memoryChunkMap.get(conversationId);
     const idx = this.memoryIndex.get(conversationId);
@@ -711,56 +647,6 @@ export class ConversationManager {
       chunkCount: chunks ? chunks.size : 0,
       indexKeys: idx ? idx.size : 0
     };
-  }
-
-  // 手动触发压缩（使用 LLM 生成摘要）
-  async compress(id: string, llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }): Promise<boolean> {
-    const data = this.conversations.get(id);
-    if (!data) return false;
-
-    return this.compressConversation(id, llmService);
-  }
-
-  // ========== 工具方法 ==========
-
-  // 获取统计信息
-  getStats(): { totalConversations: number; totalMessages: number; oldestConversation: string | null } {
-    let totalMessages = 0;
-    let oldest: Date | null = null;
-    let oldestId: string | null = null;
-
-    for (const [id, data] of this.conversations) {
-      totalMessages += data.messages.length;
-      const createdAt = new Date(data.meta.createdAt);
-      if (!oldest || createdAt < oldest) {
-        oldest = createdAt;
-        oldestId = id;
-      }
-    }
-
-    return {
-      totalConversations: this.conversations.size,
-      totalMessages,
-      oldestConversation: oldestId
-    };
-  }
-
-  // 清理旧会话（保留最近的 N 个）
-  cleanup(keepCount: number = 50): number {
-    const allMeta = this.getAllMeta();
-    if (allMeta.length <= keepCount) return 0;
-
-    const toDelete = allMeta.slice(keepCount);
-    for (const meta of toDelete) {
-      this.conversations.delete(meta.id);
-      this.memoryIndex.delete(meta.id);
-      this.memoryChunkMap.delete(meta.id);
-    }
-
-    this.saveMemoryIndex();
-    this.save();
-    console.log(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
-    return toDelete.length;
   }
 }
 
