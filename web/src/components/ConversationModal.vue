@@ -5,6 +5,7 @@ import { useConversationsStore } from '../stores/conversations'
 import { useConfigStore } from '../stores/config'
 import { api } from '../services/api'
 import { formatTime } from '../utils'
+import { confirmDialog } from '../services/tauri'
 
 const conversationsStore = useConversationsStore()
 const configStore = useConfigStore()
@@ -33,6 +34,9 @@ const selectAndClose = async (id: string) => {
 }
 
 const deleteConversation = async (id: string) => {
+  const confirmed = await confirmDialog('确定要删除这个会话吗？', '删除会话')
+  if (!confirmed) return
+
   await api.deleteConversation(id)
   conversationsStore.actions.removeState(id)
   await loadConversations()

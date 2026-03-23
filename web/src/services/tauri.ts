@@ -1,4 +1,4 @@
-// 媒体导出服务 - 使用 Tauri 对话框
+// Tauri 服务 - 对话框、文件操作等
 
 interface SaveResult {
   success: boolean
@@ -9,6 +9,19 @@ interface SaveResult {
 // 检查是否在 Tauri 环境
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI__' in window
+}
+
+// 显示确认对话框
+export async function confirmDialog(message: string, title: string = '确认'): Promise<boolean> {
+  if (isTauri()) {
+    try {
+      const { ask } = await import('@tauri-apps/plugin-dialog')
+      return await ask(message, { title, kind: 'warning' })
+    } catch {
+      return window.confirm(message)
+    }
+  }
+  return window.confirm(message)
 }
 
 // 导出媒体文件

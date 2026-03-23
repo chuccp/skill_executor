@@ -2,7 +2,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { exportMedia, isTauri } from '../services/exportMedia'
+import { exportMedia, isTauri } from '../services/tauri'
 
 const props = defineProps<{
   content: string
