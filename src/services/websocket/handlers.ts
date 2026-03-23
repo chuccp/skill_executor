@@ -42,14 +42,23 @@ export async function handleChat(
   // 清除停止标记
   stoppedConversations?.delete(conversationId);
 
-  const conversation = conversationManager.get(conversationId);
+  let actualConversationId = conversationId;
+  let conversation = await conversationManager.get(conversationId);
+
   if (!conversation) {
-    ws.send(JSON.stringify({ type: 'error', content: 'Conversation not found' }));
-    return;
+    // 会话不存在，自动创建新会话
+    console.log('[WS] 会话不存在，自动创建新会话:', conversationId);
+    conversation = await conversationManager.create();
+    actualConversationId = conversation.id;
+    // 通知前端新会话已创建
+    ws.send(JSON.stringify({
+      type: 'conversation_created',
+      conversationId: actualConversationId
+    }));
   }
 
   // 添加用户消息
-  conversationManager.addMessage(conversationId, 'user', content);
+  await conversationManager.addMessage(actualConversationId, 'user', content);
   ws.send(JSON.stringify({ type: 'user_message', content }));
 
   // 获取 skill 的 prompt
@@ -67,7 +76,7 @@ export async function handleChat(
   const autoProgress: AutoProgress = { tasks: [], toolCount: 0 };
 
   // 在请求前检查是否需要压缩上下文
-  const convData = conversationManager.get(conversationId);
+  const convData = await conversationManager.get(actualConversationId);
   const config = llmService.getConfig();
   const model = config.model || 'unknown';
   const contextLimit = getContextLimit(model);
@@ -83,7 +92,7 @@ export async function handleChat(
     // 检查上下文使用百分比
     if (contextPercent > CONTEXT_PERCENT_THRESHOLD) {
       console.log(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
-      const compressed = await conversationManager.compress(conversationId, llmService);
+      const compressed = await conversationManager.compress(actualConversationId, llmService);
       if (compressed) {
         ws.send(JSON.stringify({
           type: 'context_compressed',
@@ -94,7 +103,7 @@ export async function handleChat(
     // 同时检查消息数量（备用条件）
     else if (messages.length > SUMMARIZE_THRESHOLD) {
       console.log(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
-      const compressed = await conversationManager.compress(conversationId, llmService);
+      const compressed = await conversationManager.compress(actualConversationId, llmService);
       if (compressed) {
         ws.send(JSON.stringify({
           type: 'context_compressed',
@@ -109,8 +118,8 @@ export async function handleChat(
 
     while (iteration < MAX_ITERATIONS) {
       // 检查是否被停止
-      if (stoppedConversations?.has(conversationId)) {
-        console.log('[WS] 会话被停止:', conversationId);
+      if (stoppedConversations?.has(actualConversationId)) {
+        console.log('[WS] 会话被停止:', actualConversationId);
         return;
       }
 
@@ -121,11 +130,11 @@ export async function handleChat(
       let toolCalls: any[] = [];
 
       // 流式响应
-      const contextMessages = conversationManager.buildContextMessages(conversationId, content);
+      const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
       for await (const event of llmService.chatStream(contextMessages, systemPrompt, TOOLS)) {
         // 检查是否被停止
-        if (stoppedConversations?.has(conversationId)) {
-          console.log('[WS] 会话被停止:', conversationId);
+        if (stoppedConversations?.has(actualConversationId)) {
+          console.log('[WS] 会话被停止:', actualConversationId);
           return;
         }
 
@@ -170,7 +179,7 @@ export async function handleChat(
 
       // 如果没有工具调用，结束循环
       if (toolCalls.length === 0) {
-        conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+        await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
         break;
       }
 
@@ -221,7 +230,7 @@ export async function handleChat(
         // 并行执行组内所有工具
         const executeToolWithCtx = async (tool: any): Promise<{ toolId: string; result: string }> => {
           const ctx: ToolContext = {
-            conversationId,
+            conversationId: actualConversationId,
             commandExecutor,
             skillsDir,
             skillLoader,
@@ -284,7 +293,7 @@ export async function handleChat(
             ws.send(JSON.stringify(wsMsg));
 
             // 将工具结果作为用户消息添加到对话
-            conversationManager.addMessage(conversationId, 'user', `[工具结果] ${result}`);
+            await conversationManager.addMessage(actualConversationId, 'user', `[工具结果] ${result}`);
           }
         }
 
@@ -292,7 +301,7 @@ export async function handleChat(
         if (shouldEndTurn) {
           // 保存当前 AI 消息（如果有内容的话）
           if (fullResponse) {
-            conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+            await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
           }
           autoProgress.tasks.forEach(t => t.status = 'completed');
           ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));

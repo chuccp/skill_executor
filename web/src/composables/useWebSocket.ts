@@ -3,12 +3,14 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useConversationsStore } from '../stores/conversations'
 import { useConfigStore } from '../stores/config'
+import { useStore } from '../stores/app'
 import { wsService } from '../services/websocket'
 import type { WSServerMessage } from '../types'
 
 export function useWebSocketHandler() {
   const conversationsStore = useConversationsStore()
   const configStore = useConfigStore()
+  const appStore = useStore()
 
   // Event handlers
   const handlers = {
@@ -28,7 +30,7 @@ export function useWebSocketHandler() {
       }
     },
 
-    tool_result: (msg: WSServerMessage) => {
+    tool_result: (_msg: WSServerMessage) => {
       // 不再处理 display，媒体通过 media_result 事件处理
     },
 
@@ -64,7 +66,11 @@ export function useWebSocketHandler() {
     // Token 使用量更新
     usage: (data: WSServerMessage) => {
       if (data.usage) {
-        conversationsStore.actions.setUsage(data.usage)
+        conversationsStore.actions.setUsage({
+          ...data.usage,
+          totalInputTokens: conversationsStore.currentUsage?.totalInputTokens || 0,
+          totalOutputTokens: conversationsStore.currentUsage?.totalOutputTokens || 0
+        })
       }
     },
 
@@ -97,6 +103,16 @@ export function useWebSocketHandler() {
     context_compressed: (data: WSServerMessage) => {
       console.log('[WebSocket] 上下文已压缩:', data.content)
       // 可以在这里显示 toast 或其他通知
+    },
+
+    // 新会话创建
+    conversation_created: (data: WSServerMessage) => {
+      if (data.conversationId) {
+        console.log('[WebSocket] 新会话已创建:', data.conversationId)
+        conversationsStore.actions.setCurrentConversationId(data.conversationId)
+        // 刷新会话列表
+        appStore.actions.loadConversations()
+      }
     },
 
     error: (data: WSServerMessage) => {

@@ -127,6 +127,14 @@ export const conversationsActions = {
     return currentConversationId.value
   },
 
+  // 设置当前会话 ID（不加载消息，用于后端已创建会话的场景）
+  setCurrentConversationId(id: string) {
+    currentConversationId.value = id
+    localStorage.setItem('lastConversationId', id)
+    // 确保会话状态存在
+    getOrCreateState(id)
+  },
+
   // 获取当前会话消息
   getCurrentMessages(): Message[] {
     const state = this.getCurrentState()

@@ -20,19 +20,25 @@ interface MemoryChunk {
 }
 
 export class ConversationManager {
-  private db = getDatabase().getDb();
+  private db: Awaited<ReturnType<typeof getDatabase>> | null = null;
   private memoryIndex: Map<string, Map<string, Set<string>>> = new Map();
   private memoryChunkMap: Map<string, Map<string, MemoryChunk>> = new Map();
+  private initialized: Promise<void>;
 
   constructor() {
-    this.loadMemoryIndex();
+    this.initialized = this.init();
   }
 
-  private loadMemoryIndex(): void {
+  private async init(): Promise<void> {
+    this.db = await getDatabase();
+    await this.loadMemoryIndex();
+  }
+
+  private async loadMemoryIndex(): Promise<void> {
     try {
-      const rows = this.db.prepare(`
+      const rows = await this.db!.run(`
         SELECT conversation_id, memory_chunks FROM conversation_memories
-      `).all() as { conversation_id: string; memory_chunks: string }[];
+      `);
 
       for (const row of rows) {
         try {
@@ -55,14 +61,15 @@ export class ConversationManager {
 
   // ========== 会话管理 ==========
 
-  create(): Conversation {
+  async create(): Promise<Conversation> {
+    await this.ensureInitialized();
     const id = uuidv4();
     const now = new Date();
 
-    this.db.prepare(`
+    await this.db!.execute(`
       INSERT INTO conversations (id, created_at, updated_at, message_count)
       VALUES (?, ?, ?, 0)
-    `).run(id, now.toISOString(), now.toISOString());
+    `, [id, now.toISOString(), now.toISOString()]);
 
     return {
       id,
@@ -72,14 +79,15 @@ export class ConversationManager {
     };
   }
 
-  get(id: string): Conversation | undefined {
-    const row = this.db.prepare(`
+  async get(id: string): Promise<Conversation | undefined> {
+    await this.ensureInitialized();
+    const row = await this.db!.get(`
       SELECT * FROM conversations WHERE id = ?
-    `).get(id) as { id: string; created_at: string; updated_at: string } | undefined;
+    `, [id]);
 
     if (!row) return undefined;
 
-    const messages = this.getMessages(id);
+    const messages = await this.getMessages(id);
 
     return {
       id: row.id,
@@ -89,17 +97,17 @@ export class ConversationManager {
     };
   }
 
-  getMeta(id: string): {
+  async getMeta(id: string): Promise<{
     id: string;
     createdAt: string;
     updatedAt: string;
     messageCount: number;
     summary?: string;
     firstUserMessage?: string;
-  } | undefined {
-    const row = this.db.prepare(`
+  } | undefined> {
+    const row = await this.db!.get(`
       SELECT * FROM conversations WHERE id = ?
-    `).get(id) as { id: string; created_at: string; updated_at: string; message_count: number; summary: string | null; first_user_message: string | null } | undefined;
+    `, [id]);
 
     if (!row) return undefined;
 
@@ -113,19 +121,19 @@ export class ConversationManager {
     };
   }
 
-  getAllMeta(): {
+  async getAllMeta(): Promise<{
     id: string;
     createdAt: string;
     updatedAt: string;
     messageCount: number;
     summary?: string;
     firstUserMessage?: string;
-  }[] {
-    const rows = this.db.prepare(`
+  }[]> {
+    const rows = await this.db!.run(`
       SELECT * FROM conversations ORDER BY updated_at DESC
-    `).all() as { id: string; created_at: string; updated_at: string; message_count: number; summary: string | null; first_user_message: string | null }[];
+    `);
 
-    return rows.map(row => ({
+    return rows.map((row: any) => ({
       id: row.id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -135,21 +143,23 @@ export class ConversationManager {
     }));
   }
 
-  getAll(): Conversation[] {
-    const metas = this.getAllMeta();
-    return metas.map(meta => {
-      const messages = this.getMessages(meta.id);
-      return {
+  async getAll(): Promise<Conversation[]> {
+    const metas = await this.getAllMeta();
+    const conversations: Conversation[] = [];
+    for (const meta of metas) {
+      const messages = await this.getMessages(meta.id);
+      conversations.push({
         id: meta.id,
         messages,
         createdAt: new Date(meta.createdAt),
         updatedAt: new Date(meta.updatedAt)
-      };
-    });
+      });
+    }
+    return conversations;
   }
 
-  delete(id: string): boolean {
-    const result = this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id);
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db!.execute('DELETE FROM conversations WHERE id = ?', [id]);
 
     if (result.changes > 0) {
       this.memoryIndex.delete(id);
@@ -161,13 +171,13 @@ export class ConversationManager {
 
   // ========== 消息管理 ==========
 
-  addMessage(
+  async addMessage(
     conversationId: string,
     role: ChatMessage['role'],
     content: string,
     extra?: { thinking?: string; toolResults?: any[] }
-  ): ChatMessage | null {
-    const conv = this.db.prepare('SELECT id FROM conversations WHERE id = ?').get(conversationId);
+  ): Promise<ChatMessage | null> {
+    const conv = await this.db!.get('SELECT id FROM conversations WHERE id = ?', [conversationId]);
     if (!conv) return null;
 
     if (content.length > MAX_MESSAGE_LENGTH) {
@@ -178,22 +188,22 @@ export class ConversationManager {
     const thinking = extra?.thinking || null;
     const toolResults = extra?.toolResults ? JSON.stringify(extra.toolResults) : null;
 
-    this.db.prepare(`
+    await this.db!.execute(`
       INSERT INTO messages (conversation_id, role, content, thinking, tool_results, timestamp)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).run(conversationId, role, content, thinking, toolResults, timestamp.toISOString());
+    `, [conversationId, role, content, thinking, toolResults, timestamp.toISOString()]);
 
-    this.db.prepare(`
+    await this.db!.execute(`
       UPDATE conversations
       SET updated_at = ?, message_count = message_count + 1
       WHERE id = ?
-    `).run(timestamp.toISOString(), conversationId);
+    `, [timestamp.toISOString(), conversationId]);
 
-    this.db.prepare(`
+    await this.db!.execute(`
       UPDATE conversations
       SET first_user_message = COALESCE(first_user_message, ?)
       WHERE id = ?
-    `).run(content.substring(0, 50), conversationId);
+    `, [content.substring(0, 50), conversationId]);
 
     return {
       role,
@@ -204,7 +214,7 @@ export class ConversationManager {
     };
   }
 
-  updateMessage(
+  async updateMessage(
     conversationId: string,
     messageIndex: number,
     extra: {
@@ -213,12 +223,12 @@ export class ConversationManager {
       usage?: { inputTokens: number; outputTokens: number; contextTokens?: number; contextLimit?: number; contextPercent?: number };
       content?: string;
     }
-  ): boolean {
-    const messages = this.db.prepare(`
+  ): Promise<boolean> {
+    const messages = await this.db!.run(`
       SELECT id, role FROM messages
       WHERE conversation_id = ?
       ORDER BY timestamp ASC
-    `).all(conversationId) as { id: number; role: string }[];
+    `, [conversationId]);
 
     if (messageIndex < 0 || messageIndex >= messages.length) return false;
 
@@ -236,27 +246,27 @@ export class ConversationManager {
     if (msg.role !== 'assistant') return false;
 
     if (extra.thinking) {
-      this.db.prepare('UPDATE messages SET thinking = ? WHERE id = ?').run(extra.thinking, msg.id);
+      await this.db!.execute('UPDATE messages SET thinking = ? WHERE id = ?', [extra.thinking, msg.id]);
     }
     if (extra.toolResults) {
-      this.db.prepare('UPDATE messages SET tool_results = ? WHERE id = ?').run(JSON.stringify(extra.toolResults), msg.id);
+      await this.db!.execute('UPDATE messages SET tool_results = ? WHERE id = ?', [JSON.stringify(extra.toolResults), msg.id]);
     }
     if (extra.content !== undefined) {
-      this.db.prepare('UPDATE messages SET content = ? WHERE id = ?').run(extra.content, msg.id);
+      await this.db!.execute('UPDATE messages SET content = ? WHERE id = ?', [extra.content, msg.id]);
     }
 
     return true;
   }
 
-  getMessages(conversationId: string): ChatMessage[] {
-    const rows = this.db.prepare(`
+  async getMessages(conversationId: string): Promise<ChatMessage[]> {
+    const rows = await this.db!.run(`
       SELECT role, content, thinking, tool_results, timestamp
       FROM messages
       WHERE conversation_id = ?
       ORDER BY timestamp ASC
-    `).all(conversationId) as { role: string; content: string | null; thinking: string | null; tool_results: string | null; timestamp: string }[];
+    `, [conversationId]);
 
-    return rows.map(row => ({
+    return rows.map((row: any) => ({
       role: row.role as 'user' | 'assistant' | 'system',
       content: row.content || '',
       timestamp: new Date(row.timestamp),
@@ -265,17 +275,17 @@ export class ConversationManager {
     }));
   }
 
-  clear(id: string): boolean {
-    const conv = this.db.prepare('SELECT id FROM conversations WHERE id = ?').get(id);
+  async clear(id: string): Promise<boolean> {
+    const conv = await this.db!.get('SELECT id FROM conversations WHERE id = ?', [id]);
     if (!conv) return false;
 
-    this.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+    await this.db!.execute('DELETE FROM messages WHERE conversation_id = ?', [id]);
 
-    this.db.prepare(`
+    await this.db!.execute(`
       UPDATE conversations
       SET message_count = 0, summary = NULL, updated_at = ?
       WHERE id = ?
-    `).run(new Date().toISOString(), id);
+    `, [new Date().toISOString(), id]);
 
     this.memoryIndex.delete(id);
     this.memoryChunkMap.delete(id);
@@ -289,7 +299,7 @@ export class ConversationManager {
     conversationId: string,
     llmService?: { chat: (messages: ChatMessage[], systemPrompt?: string) => Promise<string> }
   ): Promise<boolean> {
-    const messages = this.getMessages(conversationId);
+    const messages = await this.getMessages(conversationId);
     if (messages.length <= WORKING_MEMORY_SIZE) return false;
 
     const recentMessages = messages
@@ -314,34 +324,34 @@ export class ConversationManager {
     const mergedChunks = this.mergeMemoryChunks(existingChunks, newChunks);
     const trimmedChunks = this.trimMemoryChunks(mergedChunks);
 
-    const recentIds = this.db.prepare(`
+    const recentIds = await this.db!.run(`
       SELECT id FROM messages
       WHERE conversation_id = ?
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(conversationId, WORKING_MEMORY_SIZE * 2) as { id: number }[];
+    `, [conversationId, WORKING_MEMORY_SIZE * 2]);
 
     if (recentIds.length > 0) {
-      const ids = recentIds.map(r => r.id);
+      const ids = recentIds.map((r: any) => r.id);
       const placeholders = ids.map(() => '?').join(',');
 
-      this.db.prepare(`
+      await this.db!.execute(`
         DELETE FROM messages
         WHERE conversation_id = ? AND id NOT IN (${placeholders})
-      `).run(conversationId, ...ids);
+      `, [conversationId, ...ids]);
     }
 
-    this.addMessage(conversationId, 'user', `[历史对话摘要]\n${summary}`);
+    await this.addMessage(conversationId, 'user', `[历史对话摘要]\n${summary}`);
 
-    this.db.prepare(`
+    await this.db!.execute(`
       UPDATE conversations
       SET summary = ?, message_count = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?)
       WHERE id = ?
-    `).run(summary, conversationId, conversationId);
+    `, [summary, conversationId, conversationId]);
 
-    this.saveMemoryChunks(conversationId, trimmedChunks);
+    await this.saveMemoryChunks(conversationId, trimmedChunks);
 
-    console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩: ${oldMessages.length} 条消息已总结`);
+    console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩：${oldMessages.length} 条消息已总结`);
     return true;
   }
 
@@ -409,8 +419,8 @@ export class ConversationManager {
       const recentTasks = tasks.slice(-10);
       for (let i = 0; i < recentTasks.length; i++) {
         const task = recentTasks[i];
-        sections.push(`${i + 1}. 用户: ${task.request.substring(0, 80)}`);
-        sections.push(`   结果: ${task.result.substring(0, 100)}`);
+        sections.push(`${i + 1}. 用户：${task.request.substring(0, 80)}`);
+        sections.push(`   结果：${task.result.substring(0, 100)}`);
       }
     }
 
@@ -459,8 +469,8 @@ export class ConversationManager {
     return scored.slice(0, RETRIEVAL_LIMIT).map(s => s.chunk);
   }
 
-  buildContextMessages(conversationId: string, userInput: string): ChatMessage[] {
-    const messages = this.getMessages(conversationId);
+  async buildContextMessages(conversationId: string, userInput: string): Promise<ChatMessage[]> {
+    const messages = await this.getMessages(conversationId);
     if (messages.length === 0) return [];
 
     const recentRaw = messages
@@ -478,7 +488,7 @@ export class ConversationManager {
       if (recent.length >= WORKING_MEMORY_SIZE) break;
     }
 
-    const meta = this.db.prepare('SELECT summary FROM conversations WHERE id = ?').get(conversationId) as { summary: string | null } | undefined;
+    const meta = await this.db!.get('SELECT summary FROM conversations WHERE id = ?', [conversationId]);
     const summary = meta?.summary;
     const chunks = this.memoryChunkMap.get(conversationId);
     const memoryChunks = chunks ? Array.from(chunks.values()) : [];
@@ -554,10 +564,10 @@ export class ConversationManager {
     this.memoryChunkMap.set(conversationId, map);
   }
 
-  private saveMemoryChunks(conversationId: string, chunks: MemoryChunk[]): void {
+  private async saveMemoryChunks(conversationId: string, chunks: MemoryChunk[]): Promise<void> {
     this.rebuildMemoryIndexForConversation(conversationId, chunks);
 
-    this.db.exec(`
+    await this.db!.exec(`
       CREATE TABLE IF NOT EXISTS conversation_memories (
         conversation_id TEXT PRIMARY KEY,
         memory_chunks TEXT NOT NULL,
@@ -566,10 +576,10 @@ export class ConversationManager {
     `);
 
     const now = Date.now();
-    this.db.prepare(`
+    await this.db!.execute(`
       INSERT OR REPLACE INTO conversation_memories (conversation_id, memory_chunks, updated_at)
       VALUES (?, ?, ?)
-    `).run(conversationId, JSON.stringify(chunks), now);
+    `, [conversationId, JSON.stringify(chunks), now]);
   }
 
   private scoreChunksByQuery(queryKeywords: string[], chunks: MemoryChunk[]): { chunk: MemoryChunk; score: number }[] {
@@ -597,9 +607,9 @@ export class ConversationManager {
 
   // ========== 工具方法 ==========
 
-  getStats(): { totalConversations: number; totalMessages: number; oldestConversation: string | null } {
-    const stats = getDatabase().getStats();
-    const oldest = this.db.prepare('SELECT id FROM conversations ORDER BY created_at ASC LIMIT 1').get() as { id: string } | undefined;
+  async getStats(): Promise<{ totalConversations: number; totalMessages: number; oldestConversation: string | null }> {
+    const stats = await this.db!.getStats();
+    const oldest = await this.db!.get('SELECT id FROM conversations ORDER BY created_at ASC LIMIT 1');
 
     return {
       totalConversations: stats.conversations,
@@ -608,29 +618,29 @@ export class ConversationManager {
     };
   }
 
-  cleanup(keepCount: number = 50): number {
-    const allMeta = this.getAllMeta();
+  async cleanup(keepCount: number = 50): Promise<number> {
+    const allMeta = await this.getAllMeta();
     if (allMeta.length <= keepCount) return 0;
 
     const toDelete = allMeta.slice(keepCount);
     for (const meta of toDelete) {
-      this.delete(meta.id);
+      await this.delete(meta.id);
     }
 
     console.log(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
     return toDelete.length;
   }
 
-  searchMessages(query: string, limit: number = 20): { conversationId: string; message: ChatMessage }[] {
-    const rows = this.db.prepare(`
+  async searchMessages(query: string, limit: number = 20): Promise<{ conversationId: string; message: ChatMessage }[]> {
+    const rows = await this.db!.run(`
       SELECT conversation_id, role, content, timestamp
       FROM messages
       WHERE content LIKE ?
       ORDER BY timestamp DESC
       LIMIT ?
-    `).all(`%${query}%`, limit) as { conversation_id: string; role: string; content: string; timestamp: string }[];
+    `, [`%${query}%`, limit]);
 
-    return rows.map(row => ({
+    return rows.map((row: any) => ({
       conversationId: row.conversation_id,
       message: {
         role: row.role as 'user' | 'assistant' | 'system',
@@ -647,6 +657,11 @@ export class ConversationManager {
       chunkCount: chunks ? chunks.size : 0,
       indexKeys: idx ? idx.size : 0
     };
+  }
+
+  // 确保初始化完成
+  async ensureInitialized(): Promise<void> {
+    await this.initialized;
   }
 }
 

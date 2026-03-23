@@ -1,35 +1,76 @@
-import Database from 'better-sqlite3';
+import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
 
 /**
- * SQLite 数据库服务
+ * SQLite 数据库服务 (使用 sql.js - 纯 JavaScript 实现)
  * 提供统一的数据库访问接口
  */
 export class DatabaseService {
-  private db: Database.Database;
+  private db: SqlJsDatabase | null = null;
   private dbPath: string;
+  protected initialized: Promise<void>;
 
   constructor(dataDir: string = path.join(process.cwd(), 'data')) {
+    this.dbPath = path.join(dataDir, 'skill_executor.db');
+    
+    // 异步初始化
+    this.initialized = this.initDatabase(dataDir);
+  }
+
+  /**
+   * 初始化数据库
+   */
+  private async initDatabase(dataDir: string): Promise<void> {
     // 确保数据目录存在
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    this.dbPath = path.join(dataDir, 'skill_executor.db');
-    this.db = new Database(this.dbPath);
-
-    // 启用 WAL 模式提高并发性能
-    this.db.pragma('journal_mode = WAL');
+    const SQL = await initSqlJs();
+    
+    // 尝试加载现有数据库
+    try {
+      if (fs.existsSync(this.dbPath)) {
+        const fileBuffer = fs.readFileSync(this.dbPath);
+        this.db = new SQL.Database(fileBuffer);
+      } else {
+        this.db = new SQL.Database();
+      }
+    } catch (error) {
+      console.error('[Database] 加载数据库失败，创建新数据库:', error);
+      this.db = new SQL.Database();
+    }
 
     // 初始化表结构
     this.initTables();
+    console.log(`[Database] 数据库初始化完成：${this.dbPath}`);
+  }
+
+  /**
+   * 等待数据库初始化完成
+   */
+  private async ensureInitialized(): Promise<void> {
+    await this.initialized;
+  }
+
+  /**
+   * 保存数据库到文件
+   */
+  private async saveToFile(): Promise<void> {
+    if (!this.db) return;
+    
+    const data = this.db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(this.dbPath, buffer);
   }
 
   /**
    * 初始化数据库表
    */
   private initTables(): void {
+    if (!this.db) return;
+
     // 会话表
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS conversations (
@@ -125,99 +166,162 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_agents_parent ON agents(parent_conversation_id);
       CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
     `);
-
-    console.log(`[Database] 数据库初始化完成: ${this.dbPath}`);
   }
 
   /**
    * 获取数据库实例
    */
-  getDb(): Database.Database {
+  async getDb(): Promise<SqlJsDatabase> {
+    await this.ensureInitialized();
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
     return this.db;
   }
 
   /**
    * 执行事务
    */
-  transaction<T>(fn: () => T): T {
-    return this.db.transaction(fn)();
+  async transaction<T>(fn: () => T): Promise<T> {
+    const db = await this.getDb();
+    try {
+      db.exec('BEGIN TRANSACTION');
+      const result = fn();
+      db.exec('COMMIT');
+      await this.saveToFile();
+      return result;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   /**
    * 执行 SQL
    */
-  exec(sql: string): void {
-    this.db.exec(sql);
+  async exec(sql: string): Promise<void> {
+    const db = await this.getDb();
+    db.exec(sql);
+    await this.saveToFile();
   }
 
   /**
-   * 准备语句
+   * 运行查询并返回结果
    */
-  prepare(sql: string): Database.Statement {
-    return this.db.prepare(sql);
+  async run(sql: string, params?: any[]): Promise<any> {
+    const db = await this.getDb();
+    const stmt = db.prepare(sql);
+    if (params) {
+      stmt.bind(params);
+    }
+    const results: any[] = [];
+    while (stmt.step()) {
+      results.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return results;
+  }
+
+  /**
+   * 运行单个查询
+   */
+  async get(sql: string, params?: any[]): Promise<any | null> {
+    const results = await this.run(sql, params);
+    return results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * 执行插入/更新/删除
+   */
+  async execute(sql: string, params?: any[]): Promise<{ changes: number; lastInsertRowId: number }> {
+    const db = await this.getDb();
+    const stmt = db.prepare(sql);
+    if (params) {
+      stmt.bind(params);
+    }
+    stmt.step();
+    const changes = db.getRowsModified();
+    stmt.free();
+
+    // 获取最后插入的 row ID
+    const lastIdStmt = db.prepare('SELECT last_insert_rowid() as id');
+    lastIdStmt.step();
+    const lastIdResult = lastIdStmt.getAsObject() as { id: number };
+    const lastInsertRowId = lastIdResult.id;
+    lastIdStmt.free();
+
+    await this.saveToFile();
+    return { changes, lastInsertRowId };
   }
 
   /**
    * 关闭数据库
    */
-  close(): void {
-    this.db.close();
-    console.log('[Database] 数据库已关闭');
+  async close(): Promise<void> {
+    if (this.db) {
+      await this.saveToFile();
+      this.db.close();
+      this.db = null;
+      console.log('[Database] 数据库已关闭');
+    }
   }
 
   /**
    * 备份数据库
    */
-  backup(backupPath: string): void {
-    this.db.backup(backupPath);
-    console.log(`[Database] 数据库已备份到: ${backupPath}`);
+  async backup(backupPath: string): Promise<void> {
+    const db = await this.getDb();
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(backupPath, buffer);
+    console.log(`[Database] 数据库已备份到：${backupPath}`);
   }
 
   /**
    * 获取数据库统计信息
    */
-  getStats(): {
+  async getStats(): Promise<{
     conversations: number;
     messages: number;
     memories: number;
     agents: number;
     plans: number;
-  } {
-    const conversations = this.db.prepare('SELECT COUNT(*) as count FROM conversations').get() as { count: number };
-    const messages = this.db.prepare('SELECT COUNT(*) as count FROM messages').get() as { count: number };
-    const memories = this.db.prepare('SELECT COUNT(*) as count FROM memories').get() as { count: number };
-    const agents = this.db.prepare('SELECT COUNT(*) as count FROM agents').get() as { count: number };
-    const plans = this.db.prepare('SELECT COUNT(*) as count FROM agent_plans').get() as { count: number };
+  }> {
+    const conversations = await this.get('SELECT COUNT(*) as count FROM conversations');
+    const messages = await this.get('SELECT COUNT(*) as count FROM messages');
+    const memories = await this.get('SELECT COUNT(*) as count FROM memories');
+    const agents = await this.get('SELECT COUNT(*) as count FROM agents');
+    const plans = await this.get('SELECT COUNT(*) as count FROM agent_plans');
 
     return {
-      conversations: conversations.count,
-      messages: messages.count,
-      memories: memories.count,
-      agents: agents.count,
-      plans: plans.count
+      conversations: conversations?.count || 0,
+      messages: messages?.count || 0,
+      memories: memories?.count || 0,
+      agents: agents?.count || 0,
+      plans: plans?.count || 0
     };
   }
 
   /**
    * 清理旧数据
    */
-  cleanup(maxAgeDays: number = 30): { conversations: number; memories: number } {
+  async cleanup(maxAgeDays: number = 30): Promise<{ conversations: number; memories: number }> {
     const cutoffTime = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
 
     // 清理旧会话（保留有消息的）
-    const conversationsResult = this.prepare(`
+    const conversationsResult = await this.execute(`
       DELETE FROM conversations
       WHERE updated_at < datetime(?, 'unixepoch', 'localtime')
       AND id NOT IN (SELECT DISTINCT conversation_id FROM messages)
-    `).run(cutoffTime / 1000);
+    `, [cutoffTime / 1000]);
 
     // 清理低重要性的旧记忆
-    const memoriesResult = this.prepare(`
+    const memoriesResult = await this.execute(`
       DELETE FROM memories
       WHERE created_at < ? AND importance < 0.3 AND access_count < 2
-    `).run(cutoffTime);
+    `, [cutoffTime]);
 
-    console.log(`[Database] 清理完成: ${conversationsResult.changes} 个会话, ${memoriesResult.changes} 条记忆`);
+    console.log(`[Database] 清理完成：${conversationsResult.changes} 个会话，${memoriesResult.changes} 条记忆`);
 
     return {
       conversations: conversationsResult.changes,
@@ -232,19 +336,20 @@ let dbInstance: DatabaseService | null = null;
 /**
  * 获取数据库实例（单例）
  */
-export function getDatabase(dataDir?: string): DatabaseService {
+export async function getDatabase(dataDir?: string): Promise<DatabaseService> {
   if (!dbInstance) {
     dbInstance = new DatabaseService(dataDir);
   }
+  await (dbInstance as any).initialized;
   return dbInstance;
 }
 
 /**
  * 关闭数据库连接
  */
-export function closeDatabase(): void {
+export async function closeDatabase(): Promise<void> {
   if (dbInstance) {
-    dbInstance.close();
+    await dbInstance.close();
     dbInstance = null;
   }
 }

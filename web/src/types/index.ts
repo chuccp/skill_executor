@@ -180,6 +180,7 @@ export interface WSServerMessage {
     contextPercent?: number     // 上下文使用百分比
   }
   markdown?: string  // 媒体 markdown
+  conversationId?: string  // 新创建的会话 ID
 }
 
 export type WSEventHandler = (event: WSServerMessage) => void

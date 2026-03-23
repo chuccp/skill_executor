@@ -3,6 +3,7 @@ import { ref, nextTick, computed } from 'vue'
 import { useConversationsStore } from '../stores/conversations'
 import { useConfigStore } from '../stores/config'
 import { wsService } from '../services/websocket'
+import { api } from '../services/api'
 
 const conversationsStore = useConversationsStore()
 const configStore = useConfigStore()
@@ -20,7 +21,7 @@ const canSend = computed(() => {
 })
 
 const sendMessage = async () => {
-  const convId = conversationsStore.currentConversationId
+  let convId = conversationsStore.currentConversationId
 
   // 如果正在流式输出，点击按钮停止
   if (isStreaming.value) {
@@ -35,7 +36,20 @@ const sendMessage = async () => {
   if (!canSend.value) return
 
   const content = inputText.value.trim()
-  if (!content || !convId) return
+  
+  // 如果没有当前会话，创建新会话
+  if (!convId) {
+    const newConv = await api.createConversation()
+    if (newConv) {
+      convId = newConv.id
+      await conversationsStore.actions.setCurrentConversation(convId)
+    } else {
+      console.error('[InputArea] 创建会话失败')
+      return
+    }
+  }
+  
+  if (!content) return
 
   // 如果正在等待用户提问回答，将输入作为回答发送（发送新的 chat 消息）
   if (configStore.state.askQuestion) {
@@ -51,7 +65,7 @@ const sendMessage = async () => {
     conversationsStore.actions.startStream()
 
     // 发送新的 chat 消息，开启新一轮对话
-    wsService.sendChat(convId, answerContent)
+    wsService.sendChat(convId!, answerContent)
     inputText.value = ''
     return
   }
@@ -63,7 +77,7 @@ const sendMessage = async () => {
   conversationsStore.actions.startStream()
 
   // 通过 WebSocket 发送聊天消息
-  wsService.sendChat(convId, content, configStore.state.selectedSkill || undefined)
+  wsService.sendChat(convId!, content, configStore.state.selectedSkill || undefined)
 }
 
 const handleKeydown = (e: KeyboardEvent) => {

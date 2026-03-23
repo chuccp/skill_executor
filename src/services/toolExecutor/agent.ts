@@ -177,12 +177,12 @@ export async function handleAgentTool(
       if (!query) return '错误：缺少搜索查询';
       if (!ctx.agentOrchestrator) return '错误：AgentOrchestrator 未初始化';
 
-      const memories = ctx.agentOrchestrator.searchMemory(query, limit);
+      const memories = await ctx.agentOrchestrator.searchMemory(query, limit);
       if (memories.length === 0) {
         return '没有找到相关记忆';
       }
 
-      return memories.map((m, i) =>
+      return memories.map((m: any, i: number) =>
         `${i + 1}. [${m.metadata.type}] ${m.content.substring(0, 200)}...\n   标签: ${m.metadata.tags.join(', ')}`
       ).join('\n\n');
     }

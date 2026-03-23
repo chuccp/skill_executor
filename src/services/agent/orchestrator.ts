@@ -25,6 +25,7 @@ export class AgentOrchestrator {
   private commandExecutor: CommandExecutor;
   private skillLoader: SkillLoader;
   private skillsDir: string;
+  private initialized: Promise<void>;
 
   constructor(
     llmService: LLMService,
@@ -38,6 +39,12 @@ export class AgentOrchestrator {
     this.skillLoader = skillLoader;
     this.skillsDir = path.join(process.cwd(), 'skills');
     this.memory = new VectorStore();
+    this.initialized = this.init();
+  }
+
+  private async init(): Promise<void> {
+    await this.conversationManager.ensureInitialized();
+    await this.memory.ensureInitialized();
   }
 
   // ==================== 规划功能 ====================
@@ -49,7 +56,7 @@ export class AgentOrchestrator {
     const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     // 检索相关记忆
-    const relevantMemories = this.memory.search(goal, 3);
+    const relevantMemories = await this.memory.search(goal, 3);
     const memoryContext = relevantMemories.length > 0
       ? `\n\n相关历史经验：\n${relevantMemories.map(m => `- ${m.content}`).join('\n')}`
       : '';
@@ -132,7 +139,7 @@ export class AgentOrchestrator {
   ): Promise<{ success: boolean; results: Record<string, string> }> {
     const plan = this.plans.get(planId);
     if (!plan) {
-      throw new Error(`计划不存在: ${planId}`);
+      throw new Error(`计划不存在：${planId}`);
     }
 
     plan.status = 'executing';
@@ -200,8 +207,8 @@ export class AgentOrchestrator {
 
       // 保存成功的经验到长期记忆
       if (task.status === 'completed') {
-        this.memory.add({
-          content: `任务: ${task.description}\n结果: ${task.result}`,
+        await this.memory.add({
+          content: `任务：${task.description}\n结果：${task.result}`,
           metadata: {
             type: 'task_result',
             tags: this.extractTags(task.description),
@@ -344,8 +351,8 @@ export class AgentOrchestrator {
     }
 
     // 基于关键词判断
-    const hasFailure = /失败|错误|问题|失败|失败/i.test(result);
-    const needsFix = /需要.*修正|需要.*修复|建议.*修改/i.test(result);
+    const hasFailure = /失败 | 错误 | 问题 | 失败 | 失败/i.test(result);
+    const needsFix = /需要.*修正 | 需要.*修复 | 建议.*修改/i.test(result);
 
     return {
       success: !hasFailure,
@@ -395,8 +402,8 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
 
     if (fixReview.success) {
       // 保存错误解决方案到记忆
-      this.memory.add({
-        content: `问题: ${review.issues.join(', ')}\n解决方案: ${fixResult.result}`,
+      await this.memory.add({
+        content: `问题：${review.issues.join(', ')}\n解决方案：${fixResult.result}`,
         metadata: {
           type: 'error_solution',
           tags: this.extractTags(task.description),
@@ -428,7 +435,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
     };
 
     this.agents.set(agent.id, agent);
-    console.log(`[Agent] 创建子代理: ${agent.id}, 角色：${agent.role}, 任务：${agent.task.substring(0, 50)}...`);
+    console.log(`[Agent] 创建子代理：${agent.id}, 角色：${agent.role}, 任务：${agent.task.substring(0, 50)}...`);
 
     // 异步执行代理任务
     this.executeAgent(agent).catch(err => {
@@ -450,17 +457,17 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
 
     try {
       // 为子代理创建独立的对话
-      const agentConversation = this.conversationManager.create();
+      const agentConversation = await this.conversationManager.create();
       agent.conversationId = agentConversation.id;
 
       // 构建针对角色的系统提示
       const agentPrompt = getRolePrompt(agent.role, agent.task);
 
       // 检索相关记忆
-      const relevantMemories = this.memory.search(agent.task, 3);
+      const relevantMemories = await this.memory.search(agent.task, 3);
       if (relevantMemories.length > 0) {
         const memoryText = relevantMemories.map(m => m.content).join('\n\n');
-        this.conversationManager.addMessage(
+        await this.conversationManager.addMessage(
           agent.conversationId,
           'user',
           `[相关经验]\n${memoryText}\n\n请参考以上经验执行任务。`
@@ -468,7 +475,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       }
 
       // 添加初始用户消息
-      this.conversationManager.addMessage(agent.conversationId, 'user', agent.task);
+      await this.conversationManager.addMessage(agent.conversationId, 'user', agent.task);
 
       // 执行 LLM 调用循环
       const MAX_ITERATIONS = 10;
@@ -478,7 +485,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       while (iteration < MAX_ITERATIONS) {
         iteration++;
 
-        const contextMessages = this.conversationManager.buildContextMessages(agent.conversationId, agent.task);
+        const contextMessages = await this.conversationManager.buildContextMessages(agent.conversationId, agent.task);
         let toolCalls: any[] = [];
 
         for await (const event of this.llmService.chatStream(contextMessages, agentPrompt, TOOLS)) {
@@ -511,7 +518,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
 
         for (const tool of toolCalls) {
           const result = await executeTool(tool, ctx);
-          this.conversationManager.addMessage(agent.conversationId, 'user', `[工具结果] ${result}`);
+          await this.conversationManager.addMessage(agent.conversationId, 'user', `[工具结果] ${result}`);
         }
       }
 
@@ -538,7 +545,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
     while (Date.now() - startTime < timeoutMs) {
       const agent = this.agents.get(agentId);
       if (!agent) {
-        throw new Error(`代理不存在: ${agentId}`);
+        throw new Error(`代理不存在：${agentId}`);
       }
 
       if (agent.status === 'completed' || agent.status === 'failed') {
@@ -548,7 +555,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    throw new Error(`代理执行超时: ${agentId}`);
+    throw new Error(`代理执行超时：${agentId}`);
   }
 
   // ==================== 辅助方法 ====================
@@ -641,14 +648,14 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
   /**
    * 搜索记忆
    */
-  searchMemory(query: string, limit?: number): MemoryEntry[] {
+  async searchMemory(query: string, limit?: number): Promise<MemoryEntry[]> {
     return this.memory.search(query, limit);
   }
 
   /**
    * 添加记忆
    */
-  addMemory(content: string, type: MemoryEntry['metadata']['type'], tags: string[], importance?: number): string {
+  async addMemory(content: string, type: MemoryEntry['metadata']['type'], tags: string[], importance?: number): Promise<string> {
     return this.memory.add({
       content,
       metadata: {
@@ -658,5 +665,10 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       },
       importance: importance ?? 0.5
     });
+  }
+
+  // 确保初始化完成
+  async ensureInitialized(): Promise<void> {
+    await this.initialized;
   }
 }

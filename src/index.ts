@@ -98,8 +98,8 @@ if (presets.length > 0) {
 
 const llmService = new LLMService(defaultConfig);
 
-// 创建 Agent 编排器
-const agentOrchestrator = new AgentOrchestrator(llmService, conversationManager, commandExecutor, skillLoader);
+// 创建 Agent 编排器（异步初始化）
+let agentOrchestrator: AgentOrchestrator;
 
 // 加载 skills
 const loadedSkills = skillLoader.loadAll();
@@ -129,8 +129,17 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// 设置 WebSocket
-setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecutor, agentOrchestrator);
+// 设置 WebSocket（等待异步初始化）
+async function setupApp() {
+  // 等待 conversationManager 初始化完成
+  await conversationManager.ensureInitialized();
+  
+  // 创建 Agent 编排器
+  agentOrchestrator = new AgentOrchestrator(llmService, conversationManager, commandExecutor, skillLoader);
+  await agentOrchestrator.ensureInitialized();
+
+  setupWebSocket(wss, conversationManager, skillLoader, llmService, commandExecutor, agentOrchestrator);
+}
 
 // 启动服务器
 const PORT = process.env.PORT || 38592;
@@ -138,6 +147,9 @@ const PORT = process.env.PORT || 38592;
 async function startServer() {
   // 只检查后端端口
   await checkAndFreePort(Number(PORT));
+  
+  // 等待异步初始化
+  await setupApp();
 
   server.listen(PORT, () => {
     console.log(`Server running at http://localhost:${PORT}`);

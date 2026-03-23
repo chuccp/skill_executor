@@ -48,26 +48,26 @@ export function createApiRouter(
   // ========== 会话管理 ==========
 
   // 创建新会话
-  router.post('/conversations', (req: Request, res: Response) => {
-    const conversation = conversationManager.create();
+  router.post('/conversations', async (req: Request, res: Response) => {
+    const conversation = await conversationManager.create();
     res.json({ success: true, data: conversation });
   });
 
   // 获取所有会话元数据（用于列表显示）
-  router.get('/conversations/meta', (req: Request, res: Response) => {
-    const metaList = conversationManager.getAllMeta();
+  router.get('/conversations/meta', async (req: Request, res: Response) => {
+    const metaList = await conversationManager.getAllMeta();
     res.json({ success: true, data: metaList });
   });
 
   // 获取所有会话（完整数据）
-  router.get('/conversations', (req: Request, res: Response) => {
-    const conversations = conversationManager.getAll();
+  router.get('/conversations', async (req: Request, res: Response) => {
+    const conversations = await conversationManager.getAll();
     res.json({ success: true, data: conversations });
   });
 
   // 获取单个会话
-  router.get('/conversations/:id', (req: Request, res: Response) => {
-    const conversation = conversationManager.get(req.params.id);
+  router.get('/conversations/:id', async (req: Request, res: Response) => {
+    const conversation = await conversationManager.get(req.params.id);
     if (!conversation) {
       res.json({ success: false, error: 'Conversation not found' });
       return;
@@ -82,32 +82,32 @@ export function createApiRouter(
   });
 
   // 删除会话
-  router.delete('/conversations/:id', (req: Request, res: Response) => {
-    const success = conversationManager.delete(req.params.id);
+  router.delete('/conversations/:id', async (req: Request, res: Response) => {
+    const success = await conversationManager.delete(req.params.id);
     res.json({ success });
   });
 
   // 清空会话消息（保留会话）
-  router.delete('/conversations/:id/messages', (req: Request, res: Response) => {
-    const success = conversationManager.clear(req.params.id);
+  router.delete('/conversations/:id/messages', async (req: Request, res: Response) => {
+    const success = await conversationManager.clear(req.params.id);
     res.json({ success });
   });
 
   // 压缩会话
-  router.post('/conversations/:id/compress', (req: Request, res: Response) => {
-    const success = conversationManager.compress(req.params.id);
+  router.post('/conversations/:id/compress', async (req: Request, res: Response) => {
+    const success = await conversationManager.compress(req.params.id, llmService);
     res.json({ success });
   });
 
   // 获取会话统计
-  router.get('/conversations/stats', (req: Request, res: Response) => {
-    const stats = conversationManager.getStats();
+  router.get('/conversations/stats', async (req: Request, res: Response) => {
+    const stats = await conversationManager.getStats();
     res.json({ success: true, data: stats });
   });
 
   // 获取记忆统计
-  router.get('/conversations/:id/memory-stats', (req: Request, res: Response) => {
-    const conversation = conversationManager.get(req.params.id);
+  router.get('/conversations/:id/memory-stats', async (req: Request, res: Response) => {
+    const conversation = await conversationManager.get(req.params.id);
     if (!conversation) {
       res.json({ success: false, error: 'Conversation not found' });
       return;
@@ -117,9 +117,9 @@ export function createApiRouter(
   });
 
   // 清理旧会话
-  router.post('/conversations/cleanup', (req: Request, res: Response) => {
+  router.post('/conversations/cleanup', async (req: Request, res: Response) => {
     const { keepCount = 50 } = req.body;
-    const deletedCount = conversationManager.cleanup(keepCount);
+    const deletedCount = await conversationManager.cleanup(keepCount);
     res.json({ success: true, data: { deletedCount } });
   });
 
@@ -130,7 +130,7 @@ export function createApiRouter(
     const { content } = req.body;
     console.log('[API] 添加用户消息:', { content: content?.substring(0, 50) });
 
-    const conversation = conversationManager.get(req.params.id);
+    const conversation = await conversationManager.get(req.params.id);
 
     if (!conversation) {
       res.json({ success: false, error: 'Conversation not found' });
@@ -138,7 +138,7 @@ export function createApiRouter(
     }
 
     // 只添加用户消息
-    conversationManager.addMessage(req.params.id, 'user', content);
+    await conversationManager.addMessage(req.params.id, 'user', content);
     res.json({ success: true });
   });
 
@@ -147,7 +147,7 @@ export function createApiRouter(
     const { thinking, toolResults, usage, content } = req.body;
     const { id, index } = req.params;
 
-    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults, usage, content });
+    const success = await conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults, usage, content });
     res.json({ success });
   });
 

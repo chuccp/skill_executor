@@ -11,37 +11,31 @@ import { MemoryEntry } from './types';
  * 使用内存缓存 + SQLite 持久化
  */
 export class VectorStore {
-  private db = getDatabase().getDb();
+  private db: Awaited<ReturnType<typeof getDatabase>> | null = null;
   private cache: Map<string, MemoryEntry> = new Map();
   private maxMemories: number = 1000;
+  private initialized: Promise<void>;
 
   constructor() {
-    this.load();
+    this.initialized = this.init();
   }
 
-  private load(): void {
+  private async init(): Promise<void> {
+    this.db = await getDatabase();
+    await this.load();
+  }
+
+  private async load(): Promise<void> {
     try {
-      const rows = this.db.prepare(`
+      const rows = await this.db!.run(`
         SELECT * FROM memories ORDER BY importance DESC LIMIT ?
-      `).all(this.maxMemories) as {
-        id: string;
-        content: string;
-        embedding: Buffer | null;
-        type: string;
-        tags: string;
-        importance: number;
-        access_count: number;
-        last_accessed: number;
-        created_at: number;
-        conversation_id: string | null;
-        agent_id: string | null;
-      }[];
+      `, [this.maxMemories]);
 
       for (const row of rows) {
         let embedding: number[] | undefined;
         if (row.embedding) {
           try {
-            embedding = Array.from(new Float64Array(row.embedding));
+            embedding = Array.from(new Float64Array(row.embedding as Buffer));
           } catch {
             // 忽略解析错误
           }
@@ -53,7 +47,7 @@ export class VectorStore {
           embedding,
           metadata: {
             type: row.type as MemoryEntry['metadata']['type'],
-            tags: row.tags ? JSON.parse(row.tags) : [],
+            tags: row.tags ? JSON.parse(row.tags as string) : [],
             timestamp: row.created_at,
             conversationId: row.conversation_id || undefined,
             agentId: row.agent_id || undefined
@@ -114,7 +108,7 @@ export class VectorStore {
   /**
    * 添加记忆
    */
-  add(entry: Omit<MemoryEntry, 'id' | 'embedding' | 'accessCount' | 'lastAccessed'>): string {
+  async add(entry: Omit<MemoryEntry, 'id' | 'embedding' | 'accessCount' | 'lastAccessed'>): Promise<string> {
     const id = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const embedding = this.embed(entry.content);
     const now = Date.now();
@@ -123,10 +117,10 @@ export class VectorStore {
     const embeddingBuffer = Buffer.from(new Float64Array(embedding).buffer);
 
     // 保存到 SQLite
-    this.db.prepare(`
+    await this.db!.execute(`
       INSERT INTO memories (id, content, embedding, type, tags, importance, access_count, last_accessed, created_at, conversation_id, agent_id)
       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
-    `).run(
+    `, [
       id,
       entry.content,
       embeddingBuffer,
@@ -137,7 +131,7 @@ export class VectorStore {
       now,
       entry.metadata.conversationId || null,
       entry.metadata.agentId || null
-    );
+    ]);
 
     // 更新缓存
     const fullEntry: MemoryEntry = {
@@ -151,7 +145,7 @@ export class VectorStore {
 
     // 检查是否需要清理
     if (this.cache.size > this.maxMemories) {
-      this.evict();
+      await this.evict();
     }
 
     return id;
@@ -160,7 +154,7 @@ export class VectorStore {
   /**
    * 检索相似记忆
    */
-  search(query: string, limit: number = 5): MemoryEntry[] {
+  async search(query: string, limit: number = 5): Promise<MemoryEntry[]> {
     const queryEmbedding = this.embed(query);
     const results: { entry: MemoryEntry; score: number }[] = [];
 
@@ -184,9 +178,9 @@ export class VectorStore {
       entry.lastAccessed = now;
 
       // 异步更新数据库
-      this.db.prepare(`
+      await this.db!.execute(`
         UPDATE memories SET access_count = ?, last_accessed = ? WHERE id = ?
-      `).run(entry.accessCount, now, entry.id);
+      `, [entry.accessCount, now, entry.id]);
     }
 
     return topResults.map(r => r.entry);
@@ -195,7 +189,7 @@ export class VectorStore {
   /**
    * 按类型检索
    */
-  getByType(type: MemoryEntry['metadata']['type'], limit: number = 10): MemoryEntry[] {
+  async getByType(type: MemoryEntry['metadata']['type'], limit: number = 10): Promise<MemoryEntry[]> {
     return Array.from(this.cache.values())
       .filter(e => e.metadata.type === type)
       .sort((a, b) => b.importance - a.importance)
@@ -205,7 +199,7 @@ export class VectorStore {
   /**
    * 删除最不重要的记忆
    */
-  private evict(): void {
+  private async evict(): Promise<void> {
     const entries = Array.from(this.cache.values());
     entries.sort((a, b) => {
       const scoreA = a.importance * 0.5 + (a.accessCount / 100) * 0.5;
@@ -217,29 +211,34 @@ export class VectorStore {
     for (let i = 0; i < toRemove; i++) {
       const entry = entries[i];
       this.cache.delete(entry.id);
-      this.db.prepare('DELETE FROM memories WHERE id = ?').run(entry.id);
+      await this.db!.execute('DELETE FROM memories WHERE id = ?', [entry.id]);
     }
   }
 
   /**
    * 更新记忆重要性
    */
-  updateImportance(id: string, importance: number): void {
+  async updateImportance(id: string, importance: number): Promise<void> {
     const entry = this.cache.get(id);
     if (entry) {
       entry.importance = Math.max(0, Math.min(1, importance));
-      this.db.prepare('UPDATE memories SET importance = ? WHERE id = ?').run(entry.importance, id);
+      await this.db!.execute('UPDATE memories SET importance = ? WHERE id = ?', [entry.importance, id]);
     }
   }
 
   /**
    * 获取统计信息
    */
-  getStats(): { total: number; cached: number } {
-    const row = this.db.prepare('SELECT COUNT(*) as count FROM memories').get() as { count: number } | undefined;
+  async getStats(): Promise<{ total: number; cached: number }> {
+    const row = await this.db!.get('SELECT COUNT(*) as count FROM memories');
     return {
       total: row?.count || 0,
       cached: this.cache.size
     };
+  }
+
+  // 确保初始化完成
+  async ensureInitialized(): Promise<void> {
+    await this.initialized;
   }
 }
