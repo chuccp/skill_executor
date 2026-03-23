@@ -1,102 +1,13 @@
 /**
  * 增强的文件读取工具
- * 支持多种文件格式：PDF, DOCX, XLSX, 图片
+ * 支持图片格式
+ * 对于无法直接读取的文件，会自动检查并安装命令行工具来打开
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
-import mammoth from 'mammoth';
-import * as XLSX from 'xlsx';
+import { exec } from 'child_process';
 import sharp from 'sharp';
-
-// pdf-parse dynamic import for ESM compatibility
-const pdfParse: any = require('pdf-parse');
-
-// ==================== PDF 读取 ====================
-
-export interface PdfResult {
-  text: string;
-  pages: number;
-  info?: {
-    title?: string;
-    author?: string;
-    subject?: string;
-    creator?: string;
-    creationDate?: Date;
-  };
-}
-
-export async function readPdf(filePath: string): Promise<PdfResult> {
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdfParse(dataBuffer);
-
-  return {
-    text: data.text,
-    pages: data.numpages,
-    info: {
-      title: data.info?.Title,
-      author: data.info?.Author,
-      subject: data.info?.Subject,
-      creator: data.info?.Creator,
-      creationDate: data.info?.CreationDate ? new Date(data.info.CreationDate) : undefined
-    }
-  };
-}
-
-// ==================== DOCX 读取 ====================
-
-export interface DocxResult {
-  text: string;
-  html?: string;
-  messages?: string[];
-}
-
-export async function readDocx(filePath: string): Promise<DocxResult> {
-  const result = await mammoth.extractRawText({ path: filePath });
-  const htmlResult = await mammoth.convertToHtml({ path: filePath });
-
-  return {
-    text: result.value,
-    html: htmlResult.value,
-    messages: result.messages.map(m => m.message)
-  };
-}
-
-// ==================== XLSX 读取 ====================
-
-export interface XlsxResult {
-  sheets: { name: string; data: any[][] }[];
-  sheetNames: string[];
-}
-
-export async function readXlsx(filePath: string): Promise<XlsxResult> {
-  const workbook = XLSX.readFile(filePath);
-  const sheets = workbook.SheetNames.map(name => ({
-    name,
-    data: XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1 }) as any[][]
-  }));
-
-  return {
-    sheets,
-    sheetNames: workbook.SheetNames
-  };
-}
-
-export async function readXlsxAsJson(filePath: string, sheetName?: string): Promise<any[]> {
-  const workbook = XLSX.readFile(filePath);
-  const sheet = sheetName
-    ? workbook.Sheets[sheetName]
-    : workbook.Sheets[workbook.SheetNames[0]];
-
-  return XLSX.utils.sheet_to_json(sheet);
-}
-
-export async function writeXlsx(filePath: string, data: any[][], sheetName: string = 'Sheet1'): Promise<void> {
-  const workbook = XLSX.utils.book_new();
-  const worksheet = XLSX.utils.aoa_to_sheet(data);
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-  XLSX.writeFile(workbook, filePath);
-}
 
 // ==================== 图片处理 ====================
 
@@ -173,17 +84,104 @@ export async function imageToBase64(filePath: string): Promise<string> {
 
 // ==================== 通用文件读取 ====================
 
-export async function readFileAuto(filePath: string): Promise<{ type: string; content: any }> {
+// 文件扩展名对应的命令行工具映射
+const FILE_TYPE_TOOLS: Record<string, { toolName: string; checkCmd: string; installCmd: { mac: string; linux: string; win: string } }> = {
+  '.pdf': {
+    toolName: 'poppler',
+    checkCmd: 'pdftotext -v',
+    installCmd: {
+      mac: 'brew install poppler',
+      linux: 'sudo apt install poppler-utils -y || sudo yum install poppler-utils -y',
+      win: 'winget install poppler --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.docx': {
+    toolName: 'pandoc',
+    checkCmd: 'pandoc --version',
+    installCmd: {
+      mac: 'brew install pandoc',
+      linux: 'sudo apt install pandoc -y || sudo yum install pandoc -y',
+      win: 'winget install JohnMacFarlane.Pandoc --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.doc': {
+    toolName: 'antiword or catdoc',
+    checkCmd: 'antiword -v || catdoc -v',
+    installCmd: {
+      mac: 'brew install antiword || brew install catdoc',
+      linux: 'sudo apt install antiword -y || sudo apt install catdoc -y',
+      win: 'winget install GnuWin32.Antiword --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.xlsx': {
+    toolName: 'ssconvert (gnumeric)',
+    checkCmd: 'ssconvert --version',
+    installCmd: {
+      mac: 'brew install gnumeric',
+      linux: 'sudo apt install gnumeric -y || sudo yum install gnumeric -y',
+      win: 'winget install Gnumeric.Gnumeric --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.xls': {
+    toolName: 'ssconvert (gnumeric)',
+    checkCmd: 'ssconvert --version',
+    installCmd: {
+      mac: 'brew install gnumeric',
+      linux: 'sudo apt install gnumeric -y || sudo yum install gnumeric -y',
+      win: 'winget install Gnumeric.Gnumeric --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.pptx': {
+    toolName: 'libreoffice',
+    checkCmd: 'soffice --version',
+    installCmd: {
+      mac: 'brew install --cask libreoffice',
+      linux: 'sudo apt install libreoffice -y || sudo yum install libreoffice -y',
+      win: 'winget install TheDocumentFoundation.LibreOffice --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.ppt': {
+    toolName: 'libreoffice',
+    checkCmd: 'soffice --version',
+    installCmd: {
+      mac: 'brew install --cask libreoffice',
+      linux: 'sudo apt install libreoffice -y || sudo yum install libreoffice -y',
+      win: 'winget install TheDocumentFoundation.LibreOffice --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.rtf': {
+    toolName: 'unrtf',
+    checkCmd: 'unrtf --version',
+    installCmd: {
+      mac: 'brew install unrtf',
+      linux: 'sudo apt install unrtf -y || sudo yum install unrtf -y',
+      win: 'winget install unrtf --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.7z': {
+    toolName: 'p7zip',
+    checkCmd: '7z --version',
+    installCmd: {
+      mac: 'brew install p7zip',
+      linux: 'sudo apt install p7zip-full -y || sudo yum install p7zip -y',
+      win: 'winget install 7zip.7zip --accept-source-agreements --accept-package-agreements'
+    }
+  },
+  '.rar': {
+    toolName: 'unar or unrar',
+    checkCmd: 'unar -v || unrar -v',
+    installCmd: {
+      mac: 'brew install unar',
+      linux: 'sudo apt install unar -y || sudo apt install unrar -y',
+      win: 'winget install 7zip.7zip --accept-source-agreements --accept-package-agreements'
+    }
+  }
+};
+
+export async function readFileAuto(filePath: string): Promise<{ type: string; content: any; needsSystemOpen?: boolean }> {
   const ext = path.extname(filePath).toLowerCase();
 
   switch (ext) {
-    case '.pdf':
-      return { type: 'pdf', content: await readPdf(filePath) };
-    case '.docx':
-      return { type: 'docx', content: await readDocx(filePath) };
-    case '.xlsx':
-    case '.xls':
-      return { type: 'xlsx', content: await readXlsx(filePath) };
     case '.jpg':
     case '.jpeg':
     case '.png':
@@ -191,6 +189,112 @@ export async function readFileAuto(filePath: string): Promise<{ type: string; co
     case '.gif':
       return { type: 'image', content: await getImageInfo(filePath) };
     default:
-      return { type: 'text', content: fs.readFileSync(filePath, 'utf-8') };
+      // 检查是否是需要命令行工具的类型
+      if (FILE_TYPE_TOOLS[ext]) {
+        return {
+          type: 'needs_cli_tool',
+          content: `此文件类型 (${ext}) 需要使用 open_file 工具打开。系统会自动检查并安装所需的命令行工具。`,
+          needsSystemOpen: true
+        };
+      }
+      try {
+        return { type: 'text', content: fs.readFileSync(filePath, 'utf-8') };
+      } catch (e: any) {
+        return {
+          type: 'binary',
+          content: `无法读取此文件: ${e.message}。建议使用 open_file 工具调用系统默认程序打开。`,
+          needsSystemOpen: true
+        };
+      }
   }
+}
+
+// 检查命令行工具是否已安装
+async function checkToolInstalled(checkCmd: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    exec(checkCmd, (error: any) => {
+      resolve(!error);
+    });
+  });
+}
+
+// 安装命令行工具
+async function installTool(installCmd: string): Promise<{ success: boolean; message: string }> {
+  return new Promise((resolve) => {
+    exec(installCmd, (error: any) => {
+      if (error) {
+        resolve({
+          success: false,
+          message: `安装失败: ${error.message}\n建议手动执行: ${installCmd}`
+        });
+      } else {
+        resolve({
+          success: true,
+          message: `安装成功`
+        });
+      }
+    });
+  });
+}
+
+// 获取平台对应的安装命令
+function getPlatformInstallCmd(installCmd: { mac: string; linux: string; win: string }): string {
+  const platform = process.platform;
+  if (platform === 'darwin') return installCmd.mac;
+  if (platform === 'win32') return installCmd.win;
+  return installCmd.linux;
+}
+
+// 使用系统默认程序打开文件
+export async function openWithSystemApp(filePath: string): Promise<{ success: boolean; message: string }> {
+  const ext = path.extname(filePath).toLowerCase();
+  const platform = process.platform;
+
+  // 检查是否有对应的命令行工具
+  const toolInfo = FILE_TYPE_TOOLS[ext];
+  if (toolInfo) {
+    // 检查工具是否已安装
+    const isInstalled = await checkToolInstalled(toolInfo.checkCmd);
+    if (!isInstalled) {
+      // 自动安装工具
+      const installCmd = getPlatformInstallCmd(toolInfo.installCmd);
+      console.log(`[open_file] 正在安装 ${toolInfo.toolName}...`);
+      const installResult = await installTool(installCmd);
+      if (!installResult.success) {
+        // 安装失败，尝试用系统默认程序打开
+        return fallbackToSystemOpen(filePath, platform, installResult.message);
+      }
+    }
+  }
+
+  // 用系统默认程序打开
+  return fallbackToSystemOpen(filePath, platform);
+}
+
+// 回退到系统默认程序打开
+async function fallbackToSystemOpen(filePath: string, platform: string, extraMessage?: string): Promise<{ success: boolean; message: string }> {
+  return new Promise((resolve) => {
+    let command: string;
+    if (platform === 'darwin') {
+      command = `open "${filePath}"`;
+    } else if (platform === 'win32') {
+      command = `start "" "${filePath}"`;
+    } else {
+      command = `xdg-open "${filePath}"`;
+    }
+
+    exec(command, (error: any) => {
+      if (error) {
+        const msg = extraMessage
+          ? `${extraMessage}\n无法用系统默认程序打开文件: ${error.message}`
+          : `无法用系统默认程序打开文件: ${error.message}。请检查是否安装了相应的软件。`;
+        resolve({ success: false, message: msg });
+      } else {
+        const msg = extraMessage
+          ? `${extraMessage}\n已使用系统默认程序打开文件: ${filePath}`
+          : `已使用系统默认程序打开文件: ${filePath}`;
+        resolve({ success: true, message: msg });
+      }
+    });
+  });
 }

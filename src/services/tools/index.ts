@@ -74,17 +74,13 @@ export type { FastGlobOptions } from './fastSearch';
 
 // 多格式文件读取
 export {
-  readPdf,
-  readDocx,
-  readXlsx,
-  readXlsxAsJson,
-  writeXlsx,
   getImageInfo,
   resizeImage,
   imageToBase64,
-  readFileAuto
+  readFileAuto,
+  openWithSystemApp
 } from './fileReaders';
-export type { PdfResult, DocxResult, XlsxResult, ImageInfo, ImageResizeOptions } from './fileReaders';
+export type { ImageInfo, ImageResizeOptions } from './fileReaders';
 
 // Web 抓取
 export {

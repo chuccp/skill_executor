@@ -7,7 +7,7 @@ export const TOOLS = [
   // ========== 文件系统工具 ==========
   {
     name: 'read_file',
-    description: '读取文件内容。支持文本文件、图片、PDF、DOCX、Excel 等。对于大文件会自动截断。',
+    description: '读取文件内容。支持文本文件、图片、DOCX 等。对于 PDF、Excel 等无法直接读取的文件，请使用 open_file 工具。对于大文件会自动截断。',
     input_schema: {
       type: 'object',
       properties: {
@@ -199,6 +199,17 @@ export const TOOLS = [
         path: { type: 'string', description: '文件或目录路径' }
       },
       required: ['path']
+    }
+  },
+  {
+    name: 'open_file',
+    description: '使用系统默认程序打开文件。适用于 PDF、Excel、PPT、视频、音频等无法直接读取的文件。如果系统没有安装相应的软件，会提示用户下载。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '要打开的文件路径' }
+      },
+      required: ['file_path']
     }
   },
 

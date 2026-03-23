@@ -315,7 +315,7 @@ export function createApiRouter(
       audio: ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'],
       video: ['.mp4', '.webm', '.avi', '.mov', '.mkv', '.wmv', '.flv'],
       image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'],
-      document: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md'],
+      document: ['.doc', '.docx', '.ppt', '.pptx', '.txt', '.md'],
       code: ['.js', '.ts', '.py', '.java', '.c', '.cpp', '.h', '.css', '.html', '.json', '.xml']
     };
 

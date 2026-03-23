@@ -9,6 +9,7 @@ import { listDirectory, copyFile, moveFile, deleteFile, createDirectory, getFile
 import { ToolContext } from '../toolExecutor/context';
 import { getWorkingDir } from '../workingDir';
 import { formatBytes, resolveToWorkingDir } from './utils';
+import { openWithSystemApp } from '../tools/fileReaders';
 
 export async function handleFilesystemTool(
   tool: { name: string; input?: any },
@@ -347,7 +348,7 @@ export async function handleFilesystemTool(
           audio: ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.wma'],
           video: ['.mp4', '.webm', '.avi', '.mov', '.mkv', '.wmv', '.flv'],
           image: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico'],
-          document: ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.md'],
+          document: ['.doc', '.docx', '.ppt', '.pptx', '.txt', '.md'],
           code: ['.js', '.ts', '.py', '.java', '.c', '.cpp', '.h', '.css', '.html', '.json', '.xml']
         };
 
@@ -443,6 +444,32 @@ export async function handleFilesystemTool(
         return `${mediaUrl}`;
       } catch (e: any) {
         return `播放媒体失败: ${e.message}`;
+      }
+    }
+
+    case 'open_file': {
+      const rawPath = tool.input?.file_path;
+      const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
+
+      if (!filePath) return '错误：文件路径为空';
+
+      try {
+        if (!fs.existsSync(filePath)) {
+          return `错误：文件不存在: ${filePath}`;
+        }
+
+        // 使用系统默认程序打开文件
+        const result = await openWithSystemApp(filePath);
+
+        if (result.success) {
+          if (ws) {
+            ws.send(JSON.stringify({ type: 'file_opened', path: filePath }));
+          }
+        }
+
+        return result.message;
+      } catch (e: any) {
+        return `打开文件失败: ${e.message}`;
       }
     }
 
