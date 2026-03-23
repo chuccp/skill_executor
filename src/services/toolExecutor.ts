@@ -1164,14 +1164,12 @@ export async function executeTool(
         return `需要用户输入: ${question}`;
       }
 
-      // WebSocket 模式：等待用户回复
-      return new Promise((resolve) => {
-        const askId = `${conversationId}-${Date.now()}`;
-        pendingQuestions.set(askId, { resolve, ws });
-        // 发送 pause_stream 事件，让前端保存当前的 thinking 和 toolResults
-        ws.send(JSON.stringify({ type: 'pause_stream' }));
-        ws.send(JSON.stringify({ type: 'ask_user', askId, question, header, options: options || null }));
-      });
+      // WebSocket 模式：发送问题给前端，返回特殊标记结束当前轮
+      // 用户回答会通过前端发送新的 chat 消息
+      ws.send(JSON.stringify({ type: 'pause_stream' }));
+      ws.send(JSON.stringify({ type: 'ask_user', question, header, options: options || null }));
+      // 返回特殊标记，告诉后端结束当前轮
+      return JSON.stringify({ _endTurn: true });
     }
 
     // ========== 媒体文件工具 ==========

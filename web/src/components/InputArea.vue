@@ -16,10 +16,6 @@ const streaming = computed(() => conversationsStore.currentStreaming)
 const isStreaming = computed(() => streaming.value?.isStreaming && !configStore.state.askQuestion)
 
 const canSend = computed(() => {
-  // When waiting for answer to a question, allow sending even if streaming is active
-  if (configStore.state.askQuestion && configStore.state.askId) {
-    return configStore.state.selectedModel && inputText.value.trim()
-  }
   return configStore.state.selectedModel && inputText.value.trim()
 })
 
@@ -41,14 +37,21 @@ const sendMessage = async () => {
   const content = inputText.value.trim()
   if (!content || !convId) return
 
-  // 如果正在等待用户提问回答，将输入作为回答发送
-  if (configStore.state.askQuestion && configStore.state.askId) {
-    const askId = configStore.state.askId
-    const answerText = content
-    conversationsStore.actions.addMessage('user', '[回答] ' + answerText)
-    wsService.sendAskResponse(askId, { value: content, label: answerText })
+  // 如果正在等待用户提问回答，将输入作为回答发送（发送新的 chat 消息）
+  if (configStore.state.askQuestion) {
+    const answerContent = '[回答] ' + content
+
     // 清空询问状态
     configStore.actions.clearAskUser()
+
+    // 添加用户消息
+    conversationsStore.actions.addMessage('user', answerContent)
+    // 添加新的 AI 消息并开始流式
+    conversationsStore.actions.addMessage('assistant', '')
+    conversationsStore.actions.startStream()
+
+    // 发送新的 chat 消息，开启新一轮对话
+    wsService.sendChat(convId, answerContent)
     inputText.value = ''
     return
   }

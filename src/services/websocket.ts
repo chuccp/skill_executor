@@ -110,7 +110,6 @@ export function setupWebSocket(
   // 存储待回答的问题
   const pendingQuestions: Map<string, {
     resolve: (answer: any) => void;
-    ws: WebSocket;
   }> = new Map();
 
   // 存储被停止的会话
@@ -333,7 +332,20 @@ async function handleChat(
         const results = await Promise.all(group.map(executeToolWithCtx));
 
         // 处理结果
+        let shouldEndTurn = false;
         for (const { toolId, result } of results) {
+          // 检查是否是 ask_user 的 _endTurn 标记
+          try {
+            const parsed = JSON.parse(result);
+            if (parsed._endTurn) {
+              console.log('[WS] ask_user 返回，结束当前轮');
+              shouldEndTurn = true;
+              continue; // 跳过这个工具结果的处理
+            }
+          } catch {
+            // 不是 JSON，正常处理
+          }
+
           // 标记对应任务完成
           const currentTaskId = taskIds.get(toolId);
           if (currentTaskId) {
@@ -383,6 +395,18 @@ async function handleChat(
 
           // 将工具结果作为用户消息添加到对话
           conversationManager.addMessage(conversationId, 'user', `[工具结果] ${result}`);
+        }
+
+        // 如果检测到 _endTurn，结束当前轮
+        if (shouldEndTurn) {
+          // 保存当前 AI 消息（如果有内容的话）
+          if (fullResponse) {
+            conversationManager.addMessage(conversationId, 'assistant', fullResponse);
+          }
+          autoProgress.tasks.forEach(t => t.status = 'completed');
+          ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
+          ws.send(JSON.stringify({ type: 'done' }));
+          return; // 结束整个 handleChat 函数
         }
       }
     }
@@ -459,10 +483,6 @@ function handleAskResponse(
   }
 
   pendingQuestions.delete(askId);
-
-  // 发送 resume_stream 事件，让前端创建新的 AI 消息
-  pending.ws.send(JSON.stringify({ type: 'resume_stream' }));
-
   pending.resolve(answer);
 }
 

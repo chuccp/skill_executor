@@ -50,18 +50,27 @@ watch(() => configStore.state.askQuestion, (newVal) => {
   if (newVal) scrollToBottom()
 })
 
-// Send ask response
+// Send ask response - 用户回答后发送新的 chat 消息，开启新一轮对话
 const sendAskResponse = async (value: any) => {
   const option = configStore.state.askOptions.find(o => o.value === value)
   const answerText = option ? option.label : String(value)
-  conversationsStore.actions.addMessage('user', '[选择] ' + answerText)
-
-  // 通过 WebSocket 发送用户选择 - 不需要创建新的流式，后端会继续
-  const { wsService } = await import('../services/websocket')
-  wsService.sendAskResponse(configStore.state.askId, { value, label: answerText })
+  const answerContent = '[选择] ' + answerText
 
   // 清空询问状态
   configStore.actions.clearAskUser()
+
+  // 发送新的 chat 消息，开启新一轮对话
+  const { wsService } = await import('../services/websocket')
+  const conversationId = conversationsStore.currentConversationId
+  if (conversationId) {
+    // 添加用户消息
+    conversationsStore.actions.addMessage('user', answerContent)
+    // 添加新的 AI 消息并开始流式
+    conversationsStore.actions.addMessage('assistant', '')
+    conversationsStore.actions.startStream()
+    // 发送 chat 消息
+    wsService.sendChat(conversationId, answerContent)
+  }
 }
 </script>
 
