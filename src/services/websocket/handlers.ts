@@ -242,26 +242,26 @@ export async function handleChat(
       progressStats.totalTools += toolCalls.length;
       
       // P0 修复：检测循环停滞（相同工具重复调用）
-      const toolCallKey = toolCalls.map(t => `${t.name}:${JSON.stringify(t.input).substring(0, 20)}`).join('|');
-      toolCallHistory.push(toolCallKey);
-      if (toolCallHistory.length > 3) {
-        toolCallHistory.shift();
-      }
+      // const toolCallKey = toolCalls.map(t => `${t.name}:${JSON.stringify(t.input).substring(0, 20)}`).join('|');
+      // toolCallHistory.push(toolCallKey);
+      // if (toolCallHistory.length > 3) {
+      //   toolCallHistory.shift();
+      // }
       
-      // 如果最近 3 次工具调用都相同 => 死循环
-      if (toolCallHistory.length === 3 && 
-          toolCallHistory[0] === toolCallHistory[1] && 
-          toolCallHistory[1] === toolCallHistory[2]) {
-        console.warn('[WS] 检测到工具调用死循环！相同工具连续 3 次未改变');
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          content: 'LLM 陷入循环：相同工具调用重复 3 次未改变，已自动终止' 
-        }));
-        if (fullResponse) {
-          await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
-        }
-        break;
-      }
+      // // 如果最近 3 次工具调用都相同 => 死循环
+      // if (toolCallHistory.length === 3 &&
+      //     toolCallHistory[0] === toolCallHistory[1] &&
+      //     toolCallHistory[1] === toolCallHistory[2]) {
+      //   console.warn('[WS] 检测到工具调用死循环！相同工具连续 3 次未改变');
+      //   ws.send(JSON.stringify({
+      //     type: 'error',
+      //     content: 'LLM 陷入循环：相同工具调用重复 3 次未改变，已自动终止'
+      //   }));
+      //   if (fullResponse) {
+      //     await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
+      //   }
+      //   break;
+      // }
 
       // 并行执行优化：将工具调用分组
       const toolGroups = groupToolsForParallelExecution(toolCalls);
