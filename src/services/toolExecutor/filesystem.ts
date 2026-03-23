@@ -25,24 +25,34 @@ export async function handleFilesystemTool(
 
       try {
         const fileContent = fs.readFileSync(filePath, 'utf-8');
-        const offset = tool.input?.offset || 0;
-        const limit = tool.input?.limit;
+        const startLine = tool.input?.startLine || 1;
+        const endLine = tool.input?.endLine;
 
         let lines = fileContent.split('\n');
-        if (offset > 0 || limit) {
-          lines = lines.slice(offset, limit ? offset + limit : undefined);
-        }
+        // 转换为 0-based 索引
+        const startIndex = Math.max(0, startLine - 1);
+        const endIndex = endLine ? Math.min(lines.length, endLine) : lines.length;
 
-        const content = lines.join('\n');
-        const truncatedContent = content.length > 15000
-          ? content.substring(0, 15000) + '\n... (内容过长，已截断)'
-          : content;
+        // 提取指定行范围
+        const selectedLines = lines.slice(startIndex, endIndex);
+        const content = selectedLines.join('\n');
+
+        // 添加行号信息
+        const totalLines = lines.length;
+        const rangeInfo = endLine
+          ? `行 ${startLine}-${Math.min(endLine, totalLines)} (共 ${totalLines} 行)`
+          : `行 ${startLine}-${totalLines} (共 ${totalLines} 行)`;
 
         if (ws) {
-          ws.send(JSON.stringify({ type: 'file_read', path: filePath, content: truncatedContent }));
+          ws.send(JSON.stringify({
+            type: 'file_read',
+            path: filePath,
+            content: content,
+            range: rangeInfo
+          }));
         }
 
-        return `文件内容 (${filePath}):\n\`\`\`\n${truncatedContent}\n\`\`\``;
+        return `文件内容 (${filePath}) - ${rangeInfo}:\n\`\`\`\n${content}\n\`\`\``;
       } catch (e: any) {
         const errMsg = `读取文件失败: ${e.message}`;
         if (ws) ws.send(JSON.stringify({ type: 'error', content: errMsg }));

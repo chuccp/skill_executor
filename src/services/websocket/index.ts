@@ -13,6 +13,7 @@ import { CommandExecutor } from '../commandExecutor';
 import { AgentOrchestrator } from '../agentOrchestrator';
 import { WSMessage, PendingCommand, PendingQuestion } from './types';
 import { handleChat, handleConfirmCommand, handleAskResponse, handleConfig } from './handlers';
+import { LockManager } from './asyncLock'; // P1: 导入锁管理器
 
 /**
  * 设置 WebSocket 服务器
@@ -36,6 +37,9 @@ export function setupWebSocket(
   // 存储被停止的会话
   const stoppedConversations: Set<string> = new Set();
 
+  // P1 修复：为会话管理创建锁管理器，防止压缩与工具执行冲突
+  const lockManager = new LockManager();
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     console.log('WebSocket client connected');
 
@@ -56,7 +60,8 @@ export function setupWebSocket(
               pendingCommands,
               pendingQuestions,
               agentOrchestrator,
-              stoppedConversations
+              stoppedConversations,
+              lockManager // P1: 传递锁管理器
             );
             break;
           case 'confirm_command':

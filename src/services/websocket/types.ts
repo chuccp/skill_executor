@@ -1,6 +1,6 @@
 // WebSocket 消息类型
 export interface WSMessage {
-  type: 'chat' | 'config' | 'ping' | 'confirm_command' | 'ask_response' | 'stop';
+  type: 'chat' | 'config' | 'ping' | 'confirm_command' | 'ask_response' | 'stop' | 'progress';
   conversationId?: string;
   content?: string;
   skillName?: string;
@@ -10,6 +10,7 @@ export interface WSMessage {
   confirmId?: string;
   askId?: string;
   answer?: any;
+  progress?: ProgressInfo;
 }
 
 // 待确认命令
@@ -32,4 +33,14 @@ export interface PendingQuestion {
 export interface AutoProgress {
   tasks: import('../tools').TodoItem[];
   toolCount: number;
+}
+
+// 进度信息
+export interface ProgressInfo {
+  currentIteration: number;
+  maxIterations: number;
+  totalTools: number;
+  successfulTools: number;
+  failedTools: number;
+  isComplete: boolean;
 }

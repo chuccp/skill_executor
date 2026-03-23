@@ -207,7 +207,7 @@ Your system prompt content...
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `read_file` | Read file content (text, images, PDF, DOCX, Excel) | `file_path`, `offset?`, `limit?` |
+| `read_file` | Read file content (text, images, PDF, DOCX, Excel) | `file_path`, `startLine?`, `endLine?` |
 | `write_file` | Create/overwrite file | `file_path`, `content` |
 | `replace` | Exact string replacement (must be unique) | `file_path`, `old_string`, `new_string` |
 | `list_directory` | List directory contents | `path` |

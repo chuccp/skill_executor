@@ -7,13 +7,13 @@ export const TOOLS = [
   // ========== 文件系统工具 ==========
   {
     name: 'read_file',
-    description: '读取文件内容。支持文本文件、图片、DOCX 等。对于 PDF、Excel 等无法直接读取的文件，请使用 open_file 工具。对于大文件会自动截断。',
+    description: '读取文件内容。支持文本文件、图片、DOCX 等。对于 PDF、Excel 等无法直接读取的文件，请使用 open_file 工具。支持分段读取大文件。',
     input_schema: {
       type: 'object',
       properties: {
         file_path: { type: 'string', description: '文件路径（绝对路径，或相对当前工作目录）' },
-        offset: { type: 'number', description: '可选：起始行号（0-based）' },
-        limit: { type: 'number', description: '可选：读取的最大行数' }
+        startLine: { type: 'number', description: '可选：起始行号（1-based）' },
+        endLine: { type: 'number', description: '可选：结束行号（1-based）' }
       },
       required: ['file_path']
     }
