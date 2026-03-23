@@ -35,9 +35,15 @@ export function useWebSocketHandler() {
     },
 
     pause_stream: () => {
-      // 暂停流式但不结束 - 保存当前数据，保持 isStreaming 状态
-      // 只有 done 事件才真正结束流式
-      conversationsStore.actions.setProgress('等待用户回复...')
+      // 暂停流式，保存当前 AI 消息（thinking、toolResults 等）
+      // 后续用户回答后，AI 会开始新的消息
+      conversationsStore.actions.finishStream()
+    },
+
+    resume_stream: () => {
+      // 用户已回答，AI 继续响应，创建新的 AI 消息
+      conversationsStore.actions.addMessage('assistant', '')
+      conversationsStore.actions.startStream()
     },
 
     ask_user: (data: WSServerMessage) => {

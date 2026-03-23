@@ -21,6 +21,17 @@ const scrollToBottom = () => {
 // 获取当前流式状态 - computed to get reactive updates
 const streaming = computed(() => conversationsStore.currentStreaming)
 
+// 找到最后一条 AI 消息的索引（流式内容应该显示在 AI 消息上）
+const lastAssistantIndex = computed(() => {
+  const messages = conversationsStore.currentMessages
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === 'assistant') {
+      return i
+    }
+  }
+  return -1
+})
+
 // 只在流式输出时滚动到底部
 const scrollToBottomIfStreaming = () => {
   if (streaming.value?.isStreaming) {
@@ -63,11 +74,11 @@ const sendAskResponse = async (value: any) => {
           v-for="(msg, idx) in conversationsStore.currentMessages"
           :key="idx"
           :message="msg"
-          :isStreaming="!!(streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1)"
+          :isStreaming="!!(streaming?.isStreaming && idx === lastAssistantIndex)"
           :streamStatus="streaming?.progressText || ''"
-          :streamingThinking="streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1 ? streaming.thinkingContent : ''"
+          :streamingThinking="streaming?.isStreaming && idx === lastAssistantIndex ? streaming.thinkingContent : ''"
           :streamingTodos="streaming?.todos || []"
-          :contentBlocks="streaming?.isStreaming && idx === conversationsStore.currentMessages.length - 1 ? streaming.contentBlocks : []"
+          :contentBlocks="streaming?.isStreaming && idx === lastAssistantIndex ? streaming.contentBlocks : []"
         />
 
         <!-- Ask Dialog - 显示在 AI 对话框下方 -->

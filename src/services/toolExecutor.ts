@@ -1167,7 +1167,7 @@ export async function executeTool(
       // WebSocket 模式：等待用户回复
       return new Promise((resolve) => {
         const askId = `${conversationId}-${Date.now()}`;
-        pendingQuestions.set(askId, { resolve });
+        pendingQuestions.set(askId, { resolve, ws });
         // 发送 pause_stream 事件，让前端保存当前的 thinking 和 toolResults
         ws.send(JSON.stringify({ type: 'pause_stream' }));
         ws.send(JSON.stringify({ type: 'ask_user', askId, question, header, options: options || null }));

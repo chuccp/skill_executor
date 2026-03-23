@@ -110,6 +110,7 @@ export function setupWebSocket(
   // 存储待回答的问题
   const pendingQuestions: Map<string, {
     resolve: (answer: any) => void;
+    ws: WebSocket;
   }> = new Map();
 
   // 存储被停止的会话
@@ -458,6 +459,10 @@ function handleAskResponse(
   }
 
   pendingQuestions.delete(askId);
+
+  // 发送 resume_stream 事件，让前端创建新的 AI 消息
+  pending.ws.send(JSON.stringify({ type: 'resume_stream' }));
+
   pending.resolve(answer);
 }
 

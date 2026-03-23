@@ -129,6 +129,7 @@ export type WSServerMessageType =
   | 'todo'
   | 'ask_user'
   | 'pause_stream'
+  | 'resume_stream'
   | 'usage'
   | 'skill_created'
   | 'pong'
