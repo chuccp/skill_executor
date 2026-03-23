@@ -457,40 +457,25 @@ async function handleChat(
           if (toolCall) {
             console.log('[WS] Tool result for', toolCall.name, ':', result)
 
-            // 解析 play_media 结果，提取媒体信息
-            let display: any = undefined;
+            // play_media 直接追加 markdown 到 AI 消息
             if (toolCall.name === 'play_media') {
-              // 结果格式: "![type: name](url)" 或 "![type](url)"
-              const match = result.match(/!\[(image|audio|video)(?::\s*([^\]]+))?\]\(([^)]+)\)/);
-              console.log('[WS] play_media regex match:', match);
-              if (match) {
-                const mediaType = match[1];
-                const mediaName = match[2] || 'media';
-                const mediaUrl = match[3];
-                display = {
-                  type: 'media',
-                  data: {
-                    type: mediaType,
-                    url: mediaUrl,
-                    name: mediaName
-                  }
-                };
-                console.log('[WS] Parsed media display:', JSON.stringify(display));
-              }
+              // 直接通过前端追加媒体 markdown
+              ws.send(JSON.stringify({
+                type: 'media_result',
+                markdown: result
+              }));
             }
 
             const wsMsg = {
               type: 'tool_result',
               name: toolCall.name,
-              result: result,
-              data: display ? { display } : undefined
+              result: result
             };
-            console.log('[WS] Sending to frontend:', JSON.stringify(wsMsg));
             ws.send(JSON.stringify(wsMsg));
-          }
 
-          // 将工具结果作为用户消息添加到对话
-          conversationManager.addMessage(conversationId, 'user', `[工具结果] ${result}`);
+            // 将工具结果作为用户消息添加到对话
+            conversationManager.addMessage(conversationId, 'user', `[工具结果] ${result}`);
+          }
         }
 
         // 如果检测到 _endTurn，结束当前轮

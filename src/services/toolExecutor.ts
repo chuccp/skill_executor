@@ -1281,7 +1281,7 @@ export async function executeTool(
         // 使用安全的相对路径 URL
         const mediaUrl = `/api/media/${relativePath}`;
 
-        // 直接返回 markdown 格式，前端会自动渲染
+        // 直接返回 markdown 格式，会被追加到消息内容
         if (mediaType === 'image') {
           return `![${fileName}](${mediaUrl})`;
         } else if (mediaType === 'audio') {

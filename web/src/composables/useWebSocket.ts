@@ -29,8 +29,13 @@ export function useWebSocketHandler() {
     },
 
     tool_result: (msg: WSServerMessage) => {
-      if (msg.data && msg.data.display) {
-        conversationsStore.actions.addToolResult(msg.data.display)
+      // 不再处理 display，媒体通过 media_result 事件处理
+    },
+
+    // 媒体结果 - 直接追加 markdown
+    media_result: (msg: WSServerMessage) => {
+      if (msg.markdown) {
+        conversationsStore.actions.appendMediaMarkdown(msg.markdown)
       }
     },
 

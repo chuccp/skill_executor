@@ -42,3 +42,7 @@ temp/
 *.wav
 /media
 *.bat
+*.log
+*.pdf
+*.tex
+*.aux

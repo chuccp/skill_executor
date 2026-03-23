@@ -26,10 +26,12 @@ interface UsageState {
   contextTokens?: number
   contextLimit?: number
   contextPercent?: number
+  totalInputTokens: number   // 会话累计输入 tokens
+  totalOutputTokens: number  // 会话累计输出 tokens
 }
 
 // 当前 token 使用量
-const currentUsage = ref<UsageState>({ inputTokens: 0, outputTokens: 0 })
+const currentUsage = ref<UsageState>({ inputTokens: 0, outputTokens: 0, totalInputTokens: 0, totalOutputTokens: 0 })
 
 // 会话状态存储 - 使用 Map 实现会话级隔离 (wrapped in ref for reactivity)
 const conversationStates = ref<Map<string, ConversationState>>(new Map())
@@ -107,6 +109,9 @@ export const conversationsActions = {
       }
     }
 
+    // 重置 token 累计值（新会话从 0 开始）
+    currentUsage.value = { inputTokens: 0, outputTokens: 0, totalInputTokens: 0, totalOutputTokens: 0 }
+
     currentConversationId.value = id
     if (id) {
       localStorage.setItem('lastConversationId', id)
@@ -149,8 +154,12 @@ export const conversationsActions = {
     const id = conversationId || currentConversationId.value
     if (!id) return
 
-    // 清空 token 使用量
-    currentUsage.value = { inputTokens: 0, outputTokens: 0 }
+    // 重置当前请求的 tokens（保留累计值）
+    currentUsage.value.inputTokens = 0
+    currentUsage.value.outputTokens = 0
+    currentUsage.value.contextTokens = undefined
+    currentUsage.value.contextLimit = undefined
+    currentUsage.value.contextPercent = undefined
 
     const state = getOrCreateState(id)
     state.streaming.isStreaming = true
@@ -288,9 +297,21 @@ export const conversationsActions = {
   addToolResult(result: ToolResultDisplay) {
     const state = this.getCurrentState()
     if (state) {
-      // 只保存到 toolResults 数组，用于持久化
       state.streaming.toolResults.push(result)
-      // 不再添加到 contentBlocks，让 AI 的回复通过 markdown 渲染
+    }
+  },
+
+  // 追加媒体 markdown 到消息
+  appendMediaMarkdown(markdown: string) {
+    const state = this.getCurrentState()
+    if (state) {
+      const lastMsg = state.messages[state.messages.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant') {
+        // 检查是否已包含，避免重复
+        if (!lastMsg.content.includes(markdown)) {
+          lastMsg.content += '\n\n' + markdown + '\n'
+        }
+      }
     }
   },
 
@@ -457,9 +478,17 @@ export const conversationsActions = {
 
   // ========== Token 使用量管理 ==========
 
-  // 设置 token 使用量
+  // 设置 token 使用量（累加到会话总量）
   setUsage(usage: UsageState) {
-    currentUsage.value = usage
+    // 累加本次请求的 tokens
+    currentUsage.value.totalInputTokens += usage.inputTokens
+    currentUsage.value.totalOutputTokens += usage.outputTokens
+    // 更新当前请求的值和上下文信息
+    currentUsage.value.inputTokens = usage.inputTokens
+    currentUsage.value.outputTokens = usage.outputTokens
+    currentUsage.value.contextTokens = usage.contextTokens
+    currentUsage.value.contextLimit = usage.contextLimit
+    currentUsage.value.contextPercent = usage.contextPercent
   },
 
   // 获取 token 使用量
@@ -469,7 +498,13 @@ export const conversationsActions = {
 
   // 清空 token 使用量
   clearUsage() {
-    currentUsage.value = { inputTokens: 0, outputTokens: 0 }
+    currentUsage.value = { inputTokens: 0, outputTokens: 0, totalInputTokens: 0, totalOutputTokens: 0 }
+  },
+
+  // 重置当前请求的 tokens（保留累计值）
+  resetCurrentUsage() {
+    currentUsage.value.inputTokens = 0
+    currentUsage.value.outputTokens = 0
   },
 
   // 清理会话状态（删除会话时调用）

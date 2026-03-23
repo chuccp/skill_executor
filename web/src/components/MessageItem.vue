@@ -20,13 +20,17 @@ const isAssistant = computed(() => props.message.role === 'assistant')
 const isSystem = computed(() => props.message.role === 'system')
 const isUser = computed(() => props.message.role === 'user')
 
-// Token 使用量 - 优先显示消息中保存的，否则显示流式中的
+// Token 使用量 - 显示会话累计值
 const tokenUsage = computed(() => {
-  if (props.message.usage && (props.message.usage.inputTokens > 0 || props.message.usage.outputTokens > 0)) {
-    return props.message.usage
-  }
-  if (props.isStreaming) {
-    return conversationsStore.currentUsage
+  const usage = conversationsStore.currentUsage
+  if (usage && (usage.totalInputTokens > 0 || usage.totalOutputTokens > 0)) {
+    return {
+      inputTokens: usage.totalInputTokens,
+      outputTokens: usage.totalOutputTokens,
+      contextTokens: usage.contextTokens,
+      contextLimit: usage.contextLimit,
+      contextPercent: usage.contextPercent
+    }
   }
   return null
 })

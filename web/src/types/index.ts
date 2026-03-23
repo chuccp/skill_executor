@@ -140,6 +140,7 @@ export type WSServerMessageType =
   | 'config_updated'
   | 'progress'
   | 'play_media'
+  | 'media_result'
 
 export interface WSMessage {
   type: WSMessageType
@@ -178,6 +179,7 @@ export interface WSServerMessage {
     contextLimit?: number       // 模型上下文限制
     contextPercent?: number     // 上下文使用百分比
   }
+  markdown?: string  // 媒体 markdown
 }
 
 export type WSEventHandler = (event: WSServerMessage) => void

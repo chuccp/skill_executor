@@ -157,6 +157,10 @@ export class LLMService {
     // 用于聚合工具调用
     let currentToolCall: { id: string; name: string; inputJson: string; yielded: boolean } | null = null;
 
+    // 累积的 token 使用量
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+
     let doneSignal = false;
     while (true) {
       const { done, value } = await reader.read();
@@ -176,6 +180,25 @@ export class LLMService {
 
         try {
           const parsed = JSON.parse(data);
+
+          // 处理 message_start 事件（包含初始 usage）
+          if (parsed.type === 'message_start' && parsed.message?.usage) {
+            totalInputTokens = parsed.message.usage.input_tokens || 0;
+            if (totalInputTokens > 0) {
+              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: 0 } };
+            }
+          }
+
+          // 处理 message_delta 事件（包含最终 usage）
+          if (parsed.type === 'message_delta' && parsed.usage) {
+            if (parsed.usage.input_tokens) {
+              totalInputTokens = parsed.usage.input_tokens;
+            }
+            if (parsed.usage.output_tokens) {
+              totalOutputTokens = parsed.usage.output_tokens;
+            }
+            yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+          }
 
           if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
             currentToolCall = {
@@ -216,6 +239,10 @@ export class LLMService {
       }
     }
 
+    // 发送最终的 usage 信息
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+    }
     yield { type: 'done' };
   }
 
@@ -253,7 +280,8 @@ export class LLMService {
       model: this.config.model || 'gpt-4o',
       messages: messages,
       max_tokens: 4096,
-      stream: true
+      stream: true,
+      stream_options: { include_usage: true }
     };
 
     if (tools && tools.length > 0) {
@@ -285,6 +313,9 @@ export class LLMService {
     let buffer = '';
     const toolCallBuffers: Record<number, { id: string; name: string; args: string }> = {};
     let doneSignal = false;
+    // OpenAI usage tracking
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -305,6 +336,12 @@ export class LLMService {
         try {
           const parsed = JSON.parse(data);
           const delta = parsed.choices?.[0]?.delta || {};
+
+          // OpenAI usage (comes in final chunk with stream_options.include_usage)
+          if (parsed.usage) {
+            totalInputTokens = parsed.usage.prompt_tokens || 0;
+            totalOutputTokens = parsed.usage.completion_tokens || 0;
+          }
 
           if (delta.content) {
             yield { type: 'text', content: delta.content };
@@ -346,6 +383,11 @@ export class LLMService {
           console.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
         }
       }
+    }
+
+    // 发送 OpenAI usage 信息
+    if (totalInputTokens > 0 || totalOutputTokens > 0) {
+      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
     }
 
     yield { type: 'done' };
@@ -517,7 +559,20 @@ export class LLMService {
 
             // 处理 message_delta 事件（包含最终 usage）
             if (parsed.type === 'message_delta' && parsed.usage) {
-              totalOutputTokens = parsed.usage.output_tokens || 0;
+              // 有些 API 在 delta 中同时返回 input 和 output tokens
+              if (parsed.usage.input_tokens) {
+                totalInputTokens = parsed.usage.input_tokens;
+              }
+              if (parsed.usage.output_tokens) {
+                totalOutputTokens = parsed.usage.output_tokens;
+              }
+              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+            }
+
+            // 处理 message_stop 事件（有些 API 在这里返回最终 usage）
+            if (parsed.type === 'message_stop' && parsed.message?.usage) {
+              totalInputTokens = parsed.message.usage.input_tokens || totalInputTokens;
+              totalOutputTokens = parsed.message.usage.output_tokens || totalOutputTokens;
               yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
             }
 

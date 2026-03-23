@@ -127,7 +127,7 @@ export function buildSystemPrompt(): string {
 - get_files: 获取文件列表
 - play_media: 播放媒体文件
 
-**重要：工具返回的媒体 markdown 必须原样包含在回复中！**
+**媒体播放后会自动显示在界面上，无需在回复中再输出媒体链接或 markdown 格式。**
 
 ## 环境信息
 
