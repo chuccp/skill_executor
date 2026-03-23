@@ -172,6 +172,15 @@ export const conversationsActions = {
     state.streaming.abortController = new AbortController()
     updateStatusMessage(state.streaming)
 
+    // 创建一条空的 assistant 消息用于流式追加
+    const lastMsg = state.messages[state.messages.length - 1]
+    if (!lastMsg || lastMsg.role !== 'assistant') {
+      state.messages.push({ role: 'assistant', content: '' })
+    } else {
+      // 如果最后已经是 assistant 消息，清空内容（新的回复）
+      lastMsg.content = ''
+    }
+
     // 定时更新状态消息
     statusTimer = window.setInterval(() => {
       updateStatusMessage(state.streaming)
@@ -219,14 +228,13 @@ export const conversationsActions = {
         lastMsg.usage = { ...currentUsage.value }
       }
 
-      // 保存到后端
-      if (streaming.thinkingContent || streaming.toolResults.length || lastMsg.usage) {
-        api.updateMessage(id, state.messages.length - 1, {
-          thinking: streaming.thinkingContent || undefined,
-          toolResults: streaming.toolResults.length ? streaming.toolResults : undefined,
-          usage: lastMsg.usage
-        }).catch(err => console.error('Failed to save message extras:', err))
-      }
+      // 保存消息到后端（包括内容）
+      api.updateMessage(id, state.messages.length - 1, {
+        thinking: streaming.thinkingContent || undefined,
+        toolResults: streaming.toolResults.length ? streaming.toolResults : undefined,
+        usage: lastMsg.usage,
+        content: lastMsg.content
+      }).catch(err => console.error('Failed to save message:', err))
     }
 
     streaming.isStreaming = false
@@ -302,7 +310,7 @@ export const conversationsActions = {
   },
 
   // 追加媒体 markdown 到消息
-  appendMediaMarkdown(markdown: string) {
+  async appendMediaMarkdown(markdown: string) {
     const state = this.getCurrentState()
     if (state) {
       const lastMsg = state.messages[state.messages.length - 1]
@@ -310,6 +318,12 @@ export const conversationsActions = {
         // 检查是否已包含，避免重复
         if (!lastMsg.content.includes(markdown)) {
           lastMsg.content += '\n\n' + markdown + '\n'
+          // 保存到后端
+          const convId = this.getCurrentConversationId()
+          if (convId) {
+            const idx = state.messages.length - 1
+            await api.updateMessage(convId, idx, { content: lastMsg.content })
+          }
         }
       }
     }

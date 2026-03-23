@@ -93,7 +93,7 @@ export const api = {
     return result.success
   },
 
-  async updateMessage(conversationId: string, messageIndex: number, data: { thinking?: string; toolResults?: any[]; todos?: any[]; usage?: { inputTokens: number; outputTokens: number } }): Promise<boolean> {
+  async updateMessage(conversationId: string, messageIndex: number, data: { thinking?: string; toolResults?: any[]; todos?: any[]; usage?: { inputTokens: number; outputTokens: number }; content?: string }): Promise<boolean> {
     const res = await fetchWithLog(`${API_BASE}/conversations/${conversationId}/messages/${messageIndex}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },

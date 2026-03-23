@@ -144,10 +144,10 @@ export function createApiRouter(
 
   // 更新消息（保存 thinking 和 toolResults）
   router.patch('/conversations/:id/messages/:index', async (req: Request, res: Response) => {
-    const { thinking, toolResults, usage } = req.body;
+    const { thinking, toolResults, usage, content } = req.body;
     const { id, index } = req.params;
 
-    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults, usage });
+    const success = conversationManager.updateMessage(id, parseInt(index), { thinking, toolResults, usage, content });
     res.json({ success });
   });
 
