@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as iconv from 'iconv-lite';
 import { createModuleLogger } from './tools/logger';
+import { COMMAND_TIMEOUT_MS } from '../config/constants';
 
 const logger = createModuleLogger('cmd');
 
@@ -29,7 +30,7 @@ export class CommandExecutor {
   // 执行命令（流式输出）
   async execute(
     command: string,
-    timeout: number = 60000,
+    timeout: number = COMMAND_TIMEOUT_MS,
     callbacks?: StreamCallbacks
   ): Promise<CommandResult> {
     logger.info('[CMD] 执行命令:', command);

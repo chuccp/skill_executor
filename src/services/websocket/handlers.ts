@@ -12,7 +12,7 @@ import {AgentOrchestrator} from '../agentOrchestrator';
 import {TOOLS, executeTool, ToolContext} from '../toolExecutor';
 import {buildSystemPrompt, getDetailedTaskDescription} from '../systemPrompt';
 import {TodoItem} from '../tools';
-import {SUMMARIZE_THRESHOLD, CONTEXT_PERCENT_THRESHOLD} from '../../config/constants';
+import {SUMMARIZE_THRESHOLD, CONTEXT_PERCENT_THRESHOLD, LLM_MAX_ITERATIONS, TOOL_CONCURRENCY, TOOL_TEXT_BUFFER_MS, TOOL_WAIT_TIMEOUT_MS, PROCESSOR_COMPLETE_TIMEOUT_MS} from '../../config/constants';
 import {WSMessage, PendingCommand, PendingQuestion, AutoProgress} from './types';
 import {getContextLimit, groupToolsForParallelExecution} from './utils';
 import {LockManager} from './asyncLock';
@@ -102,7 +102,7 @@ export async function handleChat(
         toolCalls: [],
         progressStats: {
             currentIteration: 0,
-            maxIterations: 200000,
+            maxIterations: LLM_MAX_ITERATIONS,
             totalTools: 0,
             successfulTools: 0,
             failedTools: 0,
@@ -116,8 +116,8 @@ export async function handleChat(
 
     // 创建 RxJS 流处理器
     const processor = processorManager.get(actualConversationId, {
-        concurrency: 3,
-        textBufferTime: 50
+        concurrency: TOOL_CONCURRENCY,
+        textBufferTime: TOOL_TEXT_BUFFER_MS
     });
 
     // 注册处理器
@@ -181,7 +181,7 @@ export async function handleChat(
             processor.pushToolResult(ctx.toolCalls, ctx.iteration);
 
             // 等待工具执行完成（不停止处理器）
-            await processor.waitForTools(6000000);
+            await processor.waitForTools(TOOL_WAIT_TIMEOUT_MS);
 
             logger.info(`[WS] 第 ${ctx.iteration} 轮工具执行完成，准备下一轮`);
             // 更新进度
@@ -193,7 +193,7 @@ export async function handleChat(
             processor.pushDone('max_iterations');
         }
 
-        await processor.waitUntilComplete(50000);
+        await processor.waitUntilComplete(PROCESSOR_COMPLETE_TIMEOUT_MS);
 
     } catch (error: any) {
         logger.error('[WS] 异常:', error);
@@ -418,6 +418,7 @@ async function executeToolCalls(
                         const task = ctx.autoProgress.tasks.find(t => t.id === currentTaskId);
                         if (task) {
                             task.status = 'completed';
+                            logger.info(`[WS] 工具完成: ${tool.name}`);
                             ws.send(JSON.stringify({type: 'todo_updated', todos: ctx.autoProgress.tasks}));
                         }
                     }

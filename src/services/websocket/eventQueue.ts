@@ -16,6 +16,7 @@ import {
   map
 } from 'rxjs/operators';
 import { createModuleLogger } from '../tools/logger';
+import { TOOL_CONCURRENCY, TOOL_TEXT_BUFFER_MS } from '../../config/constants';
 
 const logger = createModuleLogger('stream');
 
@@ -51,8 +52,8 @@ export class StreamProcessor {
 
   constructor(options: StreamProcessorOptions = {}) {
     this.options = {
-      concurrency: options.concurrency ?? 3,
-      textBufferTime: options.textBufferTime ?? 50,
+      concurrency: options.concurrency ?? TOOL_CONCURRENCY,
+      textBufferTime: options.textBufferTime ?? TOOL_TEXT_BUFFER_MS,
       debug: options.debug ?? false
     };
 

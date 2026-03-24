@@ -9,6 +9,7 @@ import { CommandExecutor } from '../commandExecutor';
 import { SkillLoader } from '../skillLoader';
 import { TOOLS, executeTool, ToolContext } from '../toolExecutor';
 import { createModuleLogger } from '../tools/logger';
+import { AGENT_MAX_ITERATIONS, AGENT_COMPLETION_TIMEOUT_MS } from '../../config/constants';
 
 const logger = createModuleLogger('agent');
 import { AgentRole, SubTask, AgentPlan, ReflectionResult, MemoryEntry, SubAgent } from './types';
@@ -481,11 +482,10 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       await this.conversationManager.addMessage(agent.conversationId, 'user', agent.task);
 
       // 执行 LLM 调用循环
-      const MAX_ITERATIONS = 1000;
       let iteration = 0;
       let fullResponse = '';
 
-      while (iteration < MAX_ITERATIONS) {
+      while (iteration < AGENT_MAX_ITERATIONS) {
         iteration++;
 
         const contextMessages = await this.conversationManager.buildContextMessages(agent.conversationId, agent.task);
@@ -542,7 +542,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
   /**
    * 等待代理完成
    */
-  private async waitForCompletion(agentId: string, timeoutMs: number = 300000): Promise<SubAgent> {
+  private async waitForCompletion(agentId: string, timeoutMs: number = AGENT_COMPLETION_TIMEOUT_MS): Promise<SubAgent> {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeoutMs) {
