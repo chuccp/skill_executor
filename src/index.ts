@@ -88,11 +88,15 @@ let defaultConfig: LLMConfig = {
 
 if (presets.length > 0) {
   const firstPreset = presets[0];
+  const maxTokens = firstPreset.env.ANTHROPIC_MAX_TOKENS
+    ? parseInt(firstPreset.env.ANTHROPIC_MAX_TOKENS, 10)
+    : undefined;
   defaultConfig = {
     provider: 'anthropic',
     apiKey: firstPreset.env.ANTHROPIC_AUTH_TOKEN || '',
     baseUrl: firstPreset.env.ANTHROPIC_BASE_URL,
-    model: firstPreset.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
+    model: firstPreset.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+    maxTokens
   };
   logger.info(`Using preset: ${firstPreset.name}`);
 }

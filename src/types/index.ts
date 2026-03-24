@@ -51,6 +51,7 @@ export interface LLMConfig {
   apiKey: string;
   baseUrl?: string;
   model: string;
+  maxTokens?: number; // 可选：自定义最大输出 token 数，不设置则自动推断
 }
 
 // API 响应
@@ -84,6 +85,7 @@ export interface PresetConfig {
     ANTHROPIC_AUTH_TOKEN?: string;
     ANTHROPIC_BASE_URL?: string;
     ANTHROPIC_MODEL?: string;
+    ANTHROPIC_MAX_TOKENS?: string; // 最大输出 token 数
     API_TIMEOUT_MS?: string;
     [key: string]: string | undefined;
   };

@@ -3,6 +3,86 @@ import { createModuleLogger } from './tools/logger';
 
 const logger = createModuleLogger('llm');
 
+/**
+ * 根据模型名称获取 max_tokens
+ * 不同模型有不同的输出上限
+ * @param model 模型名称
+ * @param customMaxTokens 用户自定义的 maxTokens，优先使用
+ */
+function getMaxTokens(model?: string, customMaxTokens?: number): number {
+  // 用户自定义优先
+  if (customMaxTokens) {
+    return customMaxTokens;
+  }
+
+  if (!model) return 4096;
+
+  const modelLower = model.toLowerCase();
+
+  // GPT-4o - 支持 16384
+  if (modelLower.includes('gpt-4o')) {
+    return 16384;
+  }
+
+  // Claude 4 系列 - 支持 16384
+  if (modelLower.includes('claude-sonnet-4') || modelLower.includes('claude-opus-4')) {
+    return 16384;
+  }
+
+  // Claude 3.5 Sonnet - 支持 8192
+  if (modelLower.includes('claude-3.5') || modelLower.includes('claude-3-5')) {
+    return 8192;
+  }
+
+  // Claude 3 系列 - 支持 4096
+  if (modelLower.includes('claude-3')) {
+    return 4096;
+  }
+
+  // GPT-4-turbo - 支持 4096
+  if (modelLower.includes('gpt-4-turbo')) {
+    return 4096;
+  }
+
+  // GPT-4 - 支持 4096
+  if (modelLower.includes('gpt-4')) {
+    return 4096;
+  }
+
+  // GPT-3.5 - 支持 4096
+  if (modelLower.includes('gpt-3.5') || modelLower.includes('gpt-35')) {
+    return 4096;
+  }
+
+  // Qwen/通义千问 - 支持 6144+
+  if (modelLower.includes('qwen') || modelLower.includes('qianwen')) {
+    return 6144;
+  }
+
+  // DeepSeek V3 - 支持 8192
+  if (modelLower.includes('deepseek')) {
+    return 8192;
+  }
+
+  // GLM-4 - 支持 8192
+  if (modelLower.includes('glm-4')) {
+    return 8192;
+  }
+
+  // GLM / 智谱AI - 支持 4096
+  if (modelLower.includes('glm') || modelLower.includes('chatglm')) {
+    return 4096;
+  }
+
+  // 豆包 / 字节跳动 - 支持 4096
+  if (modelLower.includes('doubao') || modelLower.includes('豆包') || modelLower.includes('bytedance')) {
+    return 4096;
+  }
+
+  // 默认值
+  return 4096;
+}
+
 export class LLMService {
   private config: LLMConfig;
 
@@ -100,7 +180,7 @@ export class LLMService {
       },
       body: JSON.stringify({
         model: this.config.model || 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
+        max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
         system: systemMessage?.content,
         messages: otherMessages
       })
@@ -122,7 +202,7 @@ export class LLMService {
 
     const requestBody: any = {
       model: this.config.model || 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
       system: systemMessage?.content,
       messages: otherMessages,
       stream: true
@@ -153,6 +233,8 @@ export class LLMService {
       yield { type: 'error', content: 'No response body' };
       return;
     }
+
+    logger.info(`[WS] 开始 LLM 流式响应，上下文消息数: ${messages.length}`);
 
     const decoder = new TextDecoder();
     let buffer = '';
@@ -262,7 +344,7 @@ export class LLMService {
       body: JSON.stringify({
         model: this.config.model || 'gpt-4o',
         messages: messages,
-        max_tokens: 4096
+        max_tokens: getMaxTokens(this.config.model)
       })
     });
 
@@ -282,7 +364,7 @@ export class LLMService {
     const requestBody: any = {
       model: this.config.model || 'gpt-4o',
       messages: messages,
-      max_tokens: 4096,
+      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
       stream: true,
       stream_options: { include_usage: true }
     };
@@ -423,7 +505,7 @@ export class LLMService {
       },
       body: JSON.stringify({
         model: this.config.model,
-        max_tokens: 4096,
+        max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
         system: systemMessage?.content,
         messages: otherMessages
       })
@@ -483,7 +565,7 @@ export class LLMService {
 
     const requestBody: any = {
       model: this.config.model,
-      max_tokens: 4096,
+      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
       system: systemMessage?.content,
       messages: otherMessages,
       stream: true

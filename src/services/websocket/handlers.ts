@@ -162,7 +162,7 @@ export async function handleChat(
             const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
             const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
 
-            logger.info(`[WS] 开始 LLM 流式响应，上下文消息数: ${contextMessages.length}`);
+
 
             for await (const event of stream) {
                 if (stoppedConversations?.has(actualConversationId)) {

@@ -40,17 +40,18 @@ export class ConfigLoader {
   }
 
   // 获取用于前端显示的配置（包含 API key）
-  getAllForDisplay(): Array<{ name: string; model: string; baseUrl: string; apiKey: string }> {
+  getAllForDisplay(): Array<{ name: string; model: string; baseUrl: string; apiKey: string; maxTokens?: number }> {
     return this.presets.map(p => ({
       name: p.name,
       model: p.env.ANTHROPIC_MODEL || '',
       baseUrl: p.env.ANTHROPIC_BASE_URL || '',
-      apiKey: p.env.ANTHROPIC_AUTH_TOKEN || ''
+      apiKey: p.env.ANTHROPIC_AUTH_TOKEN || '',
+      maxTokens: p.env.ANTHROPIC_MAX_TOKENS ? parseInt(p.env.ANTHROPIC_MAX_TOKENS, 10) : undefined
     }));
   }
 
   // 添加或更新预设配置
-  save(name: string, config: { apiKey: string; baseUrl?: string; model: string; template?: string }): boolean {
+  save(name: string, config: { apiKey: string; baseUrl?: string; model: string; template?: string; maxTokens?: number }): boolean {
     const existingIndex = this.presets.findIndex(p => p.name === name);
     const preset: PresetConfig = {
       name,
@@ -58,7 +59,8 @@ export class ConfigLoader {
       env: {
         ANTHROPIC_AUTH_TOKEN: config.apiKey,
         ANTHROPIC_BASE_URL: config.baseUrl,
-        ANTHROPIC_MODEL: config.model
+        ANTHROPIC_MODEL: config.model,
+        ANTHROPIC_MAX_TOKENS: config.maxTokens?.toString()
       }
     };
 
@@ -88,7 +90,7 @@ export class ConfigLoader {
   }
 
   // 更新预设配置
-  update(oldName: string, config: { name: string; apiKey: string; baseUrl?: string; model: string; template?: string }): boolean {
+  update(oldName: string, config: { name: string; apiKey: string; baseUrl?: string; model: string; template?: string; maxTokens?: number }): boolean {
     const existingIndex = this.presets.findIndex(p => p.name === oldName);
     if (existingIndex < 0) {
       return false;
@@ -105,7 +107,8 @@ export class ConfigLoader {
       env: {
         ANTHROPIC_AUTH_TOKEN: config.apiKey,
         ANTHROPIC_BASE_URL: config.baseUrl,
-        ANTHROPIC_MODEL: config.model
+        ANTHROPIC_MODEL: config.model,
+        ANTHROPIC_MAX_TOKENS: config.maxTokens?.toString()
       }
     };
 
