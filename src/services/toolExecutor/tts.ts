@@ -14,8 +14,6 @@ export async function handleTtsTool(
   ctx: ToolContext
 ): Promise<string | null> {
   switch (tool.name) {
-    // 处理 tts 工具（别名，等同于 tts_convert）
-    case 'tts':
     case 'tts_convert': {
       const text = tool.input?.text;
       const voice = tool.input?.voice || 'zh-CN-XiaoxiaoNeural';

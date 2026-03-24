@@ -215,6 +215,29 @@ export const TOOLS = [
       required: ['file_path']
     }
   },
+  {
+    name: 'xml_escape',
+    description: '对文本进行 XML 转义。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: '要转义的文本' }
+      },
+      required: ['text']
+    }
+  },
+  {
+    name: 'get_files',
+    description: '获取目录中的文件列表，支持按类型过滤。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '目录路径' },
+        filter: { type: 'string', enum: ['audio', 'video', 'image', 'document', 'code'], description: '文件类型过滤' }
+      },
+      required: ['path']
+    }
+  },
 
   // ========== Shell 工具 ==========
   {
@@ -291,6 +314,100 @@ export const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {}
+    }
+  },
+  {
+    name: 'task_create',
+    description: '创建新任务。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subject: { type: 'string', description: '任务标题' },
+        description: { type: 'string', description: '任务描述' }
+      },
+      required: ['subject']
+    }
+  },
+  {
+    name: 'task_get',
+    description: '获取任务详情。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'task_list',
+    description: '列出所有任务。',
+    input_schema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'task_update',
+    description: '更新任务状态。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' },
+        status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: '任务状态' }
+      },
+      required: ['task_id', 'status']
+    }
+  },
+  {
+    name: 'task_stop',
+    description: '停止任务。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: '任务 ID' }
+      },
+      required: ['task_id']
+    }
+  },
+  {
+    name: 'plan_create',
+    description: '创建执行计划。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: '计划目标' },
+        steps: {
+          type: 'array',
+          description: '计划步骤',
+          items: { type: 'string' }
+        }
+      },
+      required: ['goal']
+    }
+  },
+  {
+    name: 'plan_get',
+    description: '获取计划详情。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: '计划 ID' }
+      },
+      required: ['plan_id']
+    }
+  },
+  {
+    name: 'plan_update_step',
+    description: '更新计划步骤状态。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: '计划 ID' },
+        step_index: { type: 'number', description: '步骤索引' },
+        status: { type: 'string', enum: ['pending', 'in_progress', 'completed'], description: '步骤状态' }
+      },
+      required: ['plan_id', 'step_index', 'status']
     }
   },
 
@@ -408,6 +525,43 @@ export const TOOLS = [
     }
   },
   {
+    name: 'git_branch',
+    description: '列出 Git 分支。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        remote: { type: 'boolean', description: '是否显示远程分支' }
+      }
+    }
+  },
+  {
+    name: 'git_checkout',
+    description: '切换 Git 分支。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        branch_name: { type: 'string', description: '分支名称' },
+        create_new: { type: 'boolean', description: '是否创建新分支' }
+      },
+      required: ['branch_name']
+    }
+  },
+  {
+    name: 'git_add',
+    description: '添加文件到 Git 暂存区。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          description: '文件路径列表',
+          items: { type: 'string' }
+        }
+      },
+      required: ['files']
+    }
+  },
+  {
     name: 'git_worktree_list',
     description: '列出 Git Worktree。',
     input_schema: {
@@ -453,15 +607,35 @@ export const TOOLS = [
     }
   },
   {
-    name: 'tts',
+    name: 'tts_convert',
     description: '文本转语音。',
     input_schema: {
       type: 'object',
       properties: {
         text: { type: 'string', description: '要朗读的文本' },
-        voice: { type: 'string', description: '语音（可选）' }
+        voice: { type: 'string', description: '语音（可选），默认 zh-CN-XiaoxiaoNeural' },
+        rate: { type: 'number', description: '语速调整（可选），-100 到 100' },
+        pitch: { type: 'number', description: '音调调整（可选），-100 到 100' }
       },
       required: ['text']
+    }
+  },
+  {
+    name: 'tts_list_voices',
+    description: '列出所有可用的 TTS 音色。',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'tts_get_recommended',
+    description: '获取推荐的 TTS 音色列表。',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
     }
   },
 
@@ -561,6 +735,75 @@ export const TOOLS = [
         limit: { type: 'number', description: '返回数量（可选）' }
       },
       required: ['query']
+    }
+  },
+
+  // ========== 项目分析工具 ==========
+  {
+    name: 'project_index',
+    description: '索引项目文件结构。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '项目路径' }
+      }
+    }
+  },
+  {
+    name: 'find_entry_points',
+    description: '查找项目入口文件。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '项目路径' }
+      }
+    }
+  },
+  {
+    name: 'analyze_dependencies',
+    description: '分析项目依赖关系。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '项目路径' }
+      }
+    }
+  },
+
+  // ========== 代码质量工具 ==========
+  {
+    name: 'format_code',
+    description: '格式化代码。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '文件路径' },
+        language: { type: 'string', description: '编程语言（可选）' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'analyze_code',
+    description: '分析代码质量和复杂度。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '文件路径' }
+      },
+      required: ['file_path']
+    }
+  },
+  {
+    name: 'lint_code',
+    description: '检查代码问题。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: '文件路径' },
+        fix: { type: 'boolean', description: '是否自动修复' }
+      },
+      required: ['file_path']
     }
   }
 ];

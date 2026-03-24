@@ -125,7 +125,7 @@ export async function handleFilesystemTool(
         : `编辑部分失败: ${result.message}`;
     }
 
-    case 'multi_edit': {
+    case 'edit_multiple': {
       const files = tool.input?.files;
 
       if (!files || !Array.isArray(files)) {
@@ -313,7 +313,7 @@ export async function handleFilesystemTool(
       return result.message;
     }
 
-    case 'file_info': {
+    case 'get_file_info': {
       const rawPath = tool.input?.file_path;
       const filePath = rawPath ? resolveToWorkingDir(rawPath) : '';
 

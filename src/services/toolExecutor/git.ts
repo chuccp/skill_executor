@@ -170,7 +170,7 @@ export async function handleGitTool(
       }
     }
 
-    case 'worktree_list': {
+    case 'git_worktree_list': {
       const repoPath = resolveToWorkingDir(tool.input?.repo_path);
 
       const worktrees = await listWorktrees(repoPath);
@@ -186,7 +186,7 @@ export async function handleGitTool(
       return `Git 工作树 (${worktrees.length} 个):\n\n${output}`;
     }
 
-    case 'worktree_create': {
+    case 'git_worktree_create': {
       const repoPath = resolveToWorkingDir(tool.input?.repo_path);
       const branchName = tool.input?.branch_name;
       const worktreePath = tool.input?.worktree_path;
@@ -202,7 +202,7 @@ export async function handleGitTool(
       return result.message;
     }
 
-    case 'worktree_remove': {
+    case 'git_worktree_remove': {
       const repoPath = resolveToWorkingDir(tool.input?.repo_path);
       const worktreePath = tool.input?.worktree_path;
 
