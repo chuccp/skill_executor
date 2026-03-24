@@ -180,9 +180,10 @@ export async function handleChat(
       // 推送工具执行任务
       processor.pushToolResult(ctx.toolCalls, ctx.iteration);
 
-      // 等待工具执行完成
-      await processor.waitUntilComplete(600000);
+      // 等待工具执行完成（不停止处理器）
+      await processor.waitForTools(6000000);
 
+      logger.info(`[WS] 第 ${ctx.iteration} 轮工具执行完成，准备下一轮`);
       // 更新进度
       ws.send(JSON.stringify({ type: 'progress', progress: ctx.progressStats }));
     }
@@ -338,6 +339,7 @@ async function executeToolCalls(
 
   // 获取锁
   const conversationLock = lockManager?.getLock(ctx.conversationId);
+  logger.info('[WS] 等待获取锁，当前状态:', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
   await conversationLock?.acquire();
   logger.info('[WS] 锁已获取');
 

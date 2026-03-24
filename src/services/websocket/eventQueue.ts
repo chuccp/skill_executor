@@ -22,7 +22,7 @@ const logger = createModuleLogger('stream');
 // ==================== 类型定义 ====================
 
 export interface StreamEvent {
-  type: 'text' | 'thinking' | 'tool_use' | 'usage' | 'error' | 'done' | 'tool_result';
+  type: 'text' | 'thinking' | 'tool_use' | 'usage' | 'error' | 'done' | 'tool_result' | 'tools_done';
   payload: any;
   timestamp: number;
 }
@@ -43,6 +43,7 @@ export type EventHandler = (event: StreamEvent) => Promise<void> | void;
 export class StreamProcessor {
   private event$ = new Subject<StreamEvent>();
   private stop$ = new Subject<void>();
+  private toolsDone$ = new Subject<void>();
   private subscription: Subscription;
   private options: Required<StreamProcessorOptions>;
   private handlers: Map<string, EventHandler[]> = new Map();
@@ -109,7 +110,12 @@ export class StreamProcessor {
     // 工具执行流 -> 并发执行
     const tool$ = this.event$.pipe(
       filter(e => e.type === 'tool_result'),
-      mergeMap(event => from(this.executeToolBatch(event)), this.options.concurrency)
+      mergeMap(async (event) => {
+        await this.executeToolBatch(event);
+        // 工具执行完成后发出 tools_done 信号
+        this.toolsDone$.next();
+        return event;
+      }, this.options.concurrency)
     );
 
     // 合并所有流
@@ -244,11 +250,36 @@ export class StreamProcessor {
     this.isStopped = true;
     this.stop$.next();
     this.event$.complete();
+    this.toolsDone$.complete();
     logger.info('[StreamProcessor] 已停止');
   }
 
   /**
-   * 等待完成
+   * 等待工具执行完成（不停止处理器）
+   */
+  async waitForTools(timeout: number = 60000): Promise<boolean> {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        logger.warn('[StreamProcessor] 等待工具执行超时');
+        resolve(false);
+      }, timeout);
+
+      const subscription = this.toolsDone$.subscribe({
+        next: () => {
+          clearTimeout(timer);
+          subscription.unsubscribe();
+          resolve(true);
+        },
+        complete: () => {
+          clearTimeout(timer);
+          resolve(true);
+        }
+      });
+    });
+  }
+
+  /**
+   * 等待处理器完全停止
    */
   async waitUntilComplete(timeout: number = 60000): Promise<boolean> {
     return new Promise(resolve => {
