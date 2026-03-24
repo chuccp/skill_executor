@@ -162,6 +162,8 @@ export async function handleChat(
             const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
             const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
 
+            logger.info(`[WS] 开始 LLM 流式响应，上下文消息数: ${contextMessages.length}`);
+
             for await (const event of stream) {
                 if (stoppedConversations?.has(actualConversationId)) {
                     processor.pushDone('stopped');
@@ -204,7 +206,7 @@ export async function handleChat(
         logger.error('[WS] 异常:', error);
         processor.pushError(error.message);
     } finally {
-        processorManager.stop(actualConversationId);
+        await processorManager.stop(actualConversationId);
     }
 }
 

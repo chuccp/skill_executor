@@ -499,12 +499,35 @@ async def generate_audio(text, output_file):
 - 预览时用 `-pql`（480p 15fps）
 - 减少复杂动画
 - 使用 `self.skip_animations()` 测试逻辑
-
-### 问题 5：中文字体问题
+### 问题 5：中文字体问题
 **解决方案**：Manim 会自动使用系统中文字体
 - macOS: 自动使用苹方字体
 - Windows: 自动使用微软雅黑
 - Linux: 安装 `fonts-noto-cjk`
+
+### 问题 6：FFmpeg 未找到（Windows）
+**问题**：运行 `manim` 或 `ffmpeg` 命令时提示"不是内部或外部命令"
+**解决方案**：
+- **方法 1：使用 conda 安装（推荐）**
+  ```bash
+  conda install -c conda-forge ffmpeg
+  ```
+- **方法 2：使用 pip 安装**
+  ```bash
+  pip install ffmpeg-python
+  ```
+- **方法 3：手动安装**
+  1. 访问 https://ffmpeg.org/download.html
+  2. 下载 Windows 版本（选择 gyan.dev 或 BtbN 版本）
+  3. 解压到 `C:\ffmpeg`
+  4. 将 `C:\ffmpeg\bin` 添加到系统 PATH 环境变量
+  5. 重启命令行窗口
+- **验证安装**：
+  ```bash
+  ffmpeg -version
+  ffprobe -version
+  ```
+**注意**：Manim 必须依赖 FFmpeg 才能渲染视频和合成音频
 
 ## 最佳实践
 
@@ -515,12 +538,14 @@ async def generate_audio(text, output_file):
 5. **命名规范**：场景类名使用 PascalCase，如 `KineticEnergyScene`
 
 ## 环境依赖
-
-### 必需
+### 必需
 - Python 3.7+
 - manim: `pip install manim`
 - edge-tts: `pip install edge-tts`
-- FFmpeg: 系统包管理器安装
+- FFmpeg: 
+  - Windows: `conda install -c conda-forge ffmpeg` 或手动安装
+  - macOS: `brew install ffmpeg`
+  - Linux: `sudo apt install ffmpeg`
 
 ### 可选
 - LaTeX: 用于数学公式渲染（MathTex）

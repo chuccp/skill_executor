@@ -3,6 +3,8 @@
  */
 
 import * as fs from 'fs';
+// @ts-ignore
+import DiffMatchPatch from 'diff-match-patch';
 
 // ==================== Edit 文件编辑 ====================
 
@@ -17,6 +19,117 @@ export interface EditResult {
   appliedEdits: number;
   totalEdits: number;
   failedEdits?: { index: number; reason: string; oldText: string }[];
+}
+
+const dmp = new DiffMatchPatch();
+
+/**
+ * 使用 diff-match-patch 查找最佳匹配
+ * 支持换行符差异和小范围的字符差异
+ */
+function findBestMatch(content: string, search: string): { matchedText: string; confidence: number } | null {
+  // 先尝试精确匹配
+  if (content.includes(search)) {
+    return { matchedText: search, confidence: 1 };
+  }
+
+  // 规范化换行符后匹配
+  const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const normalizedSearch = search.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  if (normalizedContent.includes(normalizedSearch)) {
+    // 找到规范化后的匹配，提取原始文本
+    const startIdx = normalizedContent.indexOf(normalizedSearch);
+    let normIdx = 0;
+    let origStart = 0;
+    let foundStart = false;
+
+    for (let i = 0; i <= content.length; i++) {
+      if (!foundStart && normIdx === startIdx) {
+        origStart = i;
+        foundStart = true;
+      }
+
+      if (foundStart && normIdx === startIdx + normalizedSearch.length) {
+        return { matchedText: content.substring(origStart, i), confidence: 0.95 };
+      }
+
+      if (i < content.length) {
+        if (content[i] === '\r') {
+          normIdx++;
+        } else if (content[i] === '\n' && (i === 0 || content[i - 1] !== '\r')) {
+          normIdx++;
+        } else if (content[i] !== '\n') {
+          normIdx++;
+        }
+      }
+    }
+  }
+
+  // 使用 diff-match-patch 进行模糊匹配
+  const halfMatch = dmp.diff_main(search, normalizedContent);
+  dmp.diff_cleanupSemantic(halfMatch);
+
+  // 查找连续匹配的最长片段
+  let bestMatch = '';
+  let matchStart = -1;
+  let currentMatch = '';
+  let currentStart = -1;
+
+  let searchPos = 0;
+  let contentPos = 0;
+
+  for (const [op, text] of halfMatch) {
+    if (op === 0) { // DIFF_EQUAL
+      if (currentStart === -1) currentStart = contentPos;
+      currentMatch += text;
+    } else {
+      if (currentMatch.length > bestMatch.length) {
+        bestMatch = currentMatch;
+        matchStart = currentStart;
+      }
+      currentMatch = '';
+      currentStart = -1;
+    }
+    contentPos += text.length;
+  }
+
+  if (currentMatch.length > bestMatch.length) {
+    bestMatch = currentMatch;
+    matchStart = currentStart;
+  }
+
+  // 如果匹配度足够高
+  const confidence = bestMatch.length / search.length;
+  if (confidence > 0.8 && matchStart >= 0) {
+    // 找到在原始内容中的对应位置
+    let normIdx = 0;
+    let origStart = 0;
+    let foundStart = false;
+
+    for (let i = 0; i <= content.length; i++) {
+      if (!foundStart && normIdx === matchStart) {
+        origStart = i;
+        foundStart = true;
+      }
+
+      if (foundStart && normIdx === matchStart + bestMatch.length) {
+        return { matchedText: content.substring(origStart, i), confidence };
+      }
+
+      if (i < content.length) {
+        if (content[i] === '\r') {
+          normIdx++;
+        } else if (content[i] === '\n' && (i === 0 || content[i - 1] !== '\r')) {
+          normIdx++;
+        } else if (content[i] !== '\n') {
+          normIdx++;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 export function editFile(filePath: string, edits: EditOperation[], createIfNotExists?: boolean): EditResult {
@@ -55,8 +168,10 @@ export function editFile(filePath: string, edits: EditOperation[], createIfNotEx
         continue;
       }
 
-      // 检查是否存在匹配
-      if (!content.includes(edit.oldText)) {
+      // 使用 diff-match-patch 查找最佳匹配
+      const match = findBestMatch(content, edit.oldText);
+
+      if (!match) {
         failedEdits.push({
           index: i,
           reason: `未找到要替换的文本 (长度: ${edit.oldText.length} 字符)`,
@@ -65,8 +180,11 @@ export function editFile(filePath: string, edits: EditOperation[], createIfNotEx
         continue;
       }
 
-      // 检查是否唯一匹配
-      const matches = content.split(edit.oldText).length - 1;
+      // 检查是否唯一匹配（使用规范化后的内容）
+      const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const normalizedSearch = edit.oldText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const matches = normalizedContent.split(normalizedSearch).length - 1;
+
       if (matches > 1) {
         failedEdits.push({
           index: i,
@@ -77,7 +195,7 @@ export function editFile(filePath: string, edits: EditOperation[], createIfNotEx
       }
 
       // 执行替换
-      content = content.replace(edit.oldText, edit.newText);
+      content = content.replace(match.matchedText, edit.newText);
       appliedEdits++;
     }
 

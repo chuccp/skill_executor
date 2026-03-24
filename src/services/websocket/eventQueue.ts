@@ -100,13 +100,13 @@ export class StreamProcessor {
       })
     );
 
-    // 完成流 -> 通知并停止
+    // 完成流 -> 仅通知，不停止（让调用方控制停止时机）
     const done$ = this.event$.pipe(
       filter(e => e.type === 'done'),
       tap(event => {
         logger.info('[StreamProcessor] 完成:', event.payload);
         this.executeHandlers('done', event);
-        this.stop();
+        // 不在这里停止，让缓冲区的事件有时间处理完
       })
     );
 
@@ -250,12 +250,19 @@ export class StreamProcessor {
   /**
    * 停止处理器
    */
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.isStopped) return;
-    this.isStopped = true;
-    this.stop$.next();
+
+    // 先完成 Subject，让缓冲区的事件处理完
     this.event$.complete();
     this.toolsDone$.complete();
+
+    // 等待缓冲区刷新
+    await this.flush();
+
+    // 最后标记停止
+    this.isStopped = true;
+    this.stop$.next();
     logger.info('[StreamProcessor] 已停止');
   }
 
@@ -307,9 +314,20 @@ export class StreamProcessor {
   }
 
   /**
+   * 等待缓冲区刷新（用于停止前确保所有事件处理完）
+   */
+  async flush(timeout: number = 200): Promise<void> {
+    // 等待至少一个 bufferTime 周期，让缓冲的文本事件处理完
+    await new Promise(resolve => setTimeout(resolve, timeout));
+  }
+
+  /**
    * 等待处理器完全停止
    */
   async waitUntilComplete(timeout: number = 60000): Promise<boolean> {
+    // 先刷新缓冲区
+    await this.flush();
+
     return new Promise(resolve => {
       const timer = setTimeout(() => {
         resolve(false);
@@ -364,10 +382,10 @@ export class ProcessorManager {
   /**
    * 停止并移除处理器
    */
-  stop(id: string): boolean {
+  async stop(id: string): Promise<boolean> {
     const processor = this.processors.get(id);
     if (processor) {
-      processor.stop();
+      await processor.stop();
       this.processors.delete(id);
       return true;
     }
@@ -377,9 +395,9 @@ export class ProcessorManager {
   /**
    * 停止所有处理器
    */
-  stopAll(): void {
+  async stopAll(): Promise<void> {
     for (const [id, processor] of this.processors) {
-      processor.stop();
+      await processor.stop();
       this.processors.delete(id);
     }
   }
