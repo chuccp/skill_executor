@@ -481,7 +481,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       await this.conversationManager.addMessage(agent.conversationId, 'user', agent.task);
 
       // 执行 LLM 调用循环
-      const MAX_ITERATIONS = 10;
+      const MAX_ITERATIONS = 1000;
       let iteration = 0;
       let fullResponse = '';
 
