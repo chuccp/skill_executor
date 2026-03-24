@@ -110,6 +110,9 @@ let agentOrchestrator: AgentOrchestrator;
 const loadedSkills = skillLoader.loadAll();
 logger.info(`Loaded ${loadedSkills.length} skills`);
 
+// 启动技能文件监听（实时加载）
+// skillLoader.startWatch();
+
 // 创建 Express 应用
 const app = express();
 const server = createServer(app);

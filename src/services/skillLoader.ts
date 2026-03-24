@@ -10,11 +10,79 @@ export class SkillLoader {
   private systemSkillsDir?: string;  // 系统技能目录（可选，默认不加载）
   private loadSystemSkills: boolean;  // 是否加载系统技能
   private skills: Map<string, Skill> = new Map();
+  private watchers: fs.FSWatcher[] = [];
 
   constructor(skillsDir: string, systemSkillsDir?: string, loadSystemSkills: boolean = false) {
     this.skillsDir = skillsDir;
     this.systemSkillsDir = systemSkillsDir;
     this.loadSystemSkills = loadSystemSkills;
+  }
+
+  // 启动文件监听，实现实时加载
+  startWatch(): void {
+    // 监听用户技能目录
+    if (fs.existsSync(this.skillsDir)) {
+      const userWatcher = fs.watch(this.skillsDir, (eventType, filename) => {
+        if (filename && filename.endsWith('.md')) {
+          const filePath = path.join(this.skillsDir, filename);
+          logger.info(`[Skill] 检测到文件变化: ${filename} (${eventType})`);
+
+          if (eventType === 'rename') {
+            // 文件被删除或新建
+            if (!fs.existsSync(filePath)) {
+              // 文件被删除，移除对应的 skill
+              for (const [name, skill] of this.skills) {
+                if (skill.path === filePath) {
+                  this.skills.delete(name);
+                  logger.info(`[Skill] 已移除: ${name}`);
+                  break;
+                }
+              }
+            } else {
+              // 新建文件，加载
+              this.load(filePath);
+            }
+          } else if (eventType === 'change') {
+            // 文件被修改，重新加载
+            this.load(filePath);
+          }
+        }
+      });
+      this.watchers.push(userWatcher);
+      logger.info(`[Skill] 开始监听用户技能目录: ${this.skillsDir}`);
+    }
+
+    // 监听系统技能目录
+    if (this.loadSystemSkills && this.systemSkillsDir && fs.existsSync(this.systemSkillsDir)) {
+      const systemSkillsDir = this.systemSkillsDir;
+      const systemWatcher = fs.watch(systemSkillsDir, (eventType, filename) => {
+        if (filename && filename.endsWith('.md')) {
+          const filePath = path.join(systemSkillsDir, filename);
+          logger.info(`[Skill] 检测到系统技能变化: ${filename} (${eventType})`);
+
+          if (eventType === 'change' || (eventType === 'rename' && fs.existsSync(filePath))) {
+            this.load(filePath);
+          }
+        }
+      });
+      this.watchers.push(systemWatcher);
+      logger.info(`[Skill] 开始监听系统技能目录: ${systemSkillsDir}`);
+    }
+  }
+
+  // 停止文件监听
+  stopWatch(): void {
+    for (const watcher of this.watchers) {
+      watcher.close();
+    }
+    this.watchers = [];
+    logger.info('[Skill] 已停止文件监听');
+  }
+
+  // 重新加载所有技能
+  reload(): Skill[] {
+    this.skills.clear();
+    return this.loadAll();
   }
 
   // 加载所有 skills（默认只加载用户技能）
@@ -66,7 +134,14 @@ export class SkillLoader {
   load(filePath: string): Skill | null {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      return this.parse(content, filePath);
+      const skill = this.parse(content, filePath);
+      if (skill && skill.name) {
+        const isUpdate = this.skills.has(skill.name);
+        this.skills.set(skill.name, skill);
+        logger.info(`[Skill] ${isUpdate ? '更新' : '加载'}: ${skill.name}`);
+        return skill;
+      }
+      return skill;
     } catch (error) {
       logger.error(`Failed to load skill: ${filePath}`, error);
       return null;
@@ -88,7 +163,9 @@ export class SkillLoader {
     let triggerWhen: string[] = [];
     let triggerNotWhen: string[] = [];
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
       // 解析标题作为名称（只取第一个标题）
       if (line.startsWith('# ') && !skill.name) {
         skill.name = line.slice(2).trim();
@@ -101,8 +178,14 @@ export class SkillLoader {
         continue;
       }
 
-      // 解析 PROMPT 部分
+      // 解析 PROMPT 部分（传统格式）
       if (line.startsWith('PROMPT:')) {
+        currentSection = 'prompt';
+        continue;
+      }
+
+      // 解析 ## 提示词 部分（新格式）
+      if (line.startsWith('## 提示词')) {
         currentSection = 'prompt';
         continue;
       }
@@ -110,6 +193,32 @@ export class SkillLoader {
       // 解析描述（标题后的第一行非空内容，且不在任何section中）
       if (!skill.description && line.trim() && !line.startsWith('#') && !line.startsWith('TRIGGER') && !line.startsWith('PROMPT') && !currentSection) {
         skill.description = line.trim();
+        continue;
+      }
+
+      // 解析新格式中的元数据（**名称**: xxx, **描述**: xxx, **触发词**: xxx）
+      if (line.includes('**名称**:')) {
+        const match = line.match(/\*\*名称\*\*:\s*(.+)/);
+        if (match) {
+          skill.name = match[1].trim();
+        }
+        continue;
+      }
+
+      if (line.includes('**描述**:')) {
+        const match = line.match(/\*\*描述\*\*:\s*(.+)/);
+        if (match) {
+          skill.description = match[1].trim();
+        }
+        continue;
+      }
+
+      if (line.includes('**触发词**:')) {
+        const match = line.match(/\*\*触发词\*\*:\s*(.+)/);
+        if (match) {
+          const keywords = match[1].split(',').map(k => k.trim()).filter(k => k);
+          triggerWhen.push(...keywords);
+        }
         continue;
       }
 
@@ -126,6 +235,11 @@ export class SkillLoader {
 
       // 解析 prompt
       if (currentSection === 'prompt') {
+        // 遇到新的 ## 标题，结束 prompt 部分
+        if (line.startsWith('## ') && currentSection === 'prompt') {
+          currentSection = '';
+          continue;
+        }
         promptLines.push(line);
       }
     }
