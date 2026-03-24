@@ -126,7 +126,6 @@ export class StreamProcessor {
     return merge(text$, thinking$, usage$, error$, done$, tool$)
       .pipe(
         takeUntil(this.stop$),
-        takeWhile(() => !this.isStopped),
         catchError(err => {
           logger.error('[StreamProcessor] 管道错误:', err);
           throw err;
@@ -177,11 +176,8 @@ export class StreamProcessor {
    * 推送事件
    */
   push(event: Omit<StreamEvent, 'timestamp'>): boolean {
-    if (this.isStopped) {
-      logger.warn('[StreamProcessor] 已停止，拒绝事件:', event.type);
-      return false;
-    }
-
+    // 不检查 isStopped，让事件进入管道
+    // 管道会用 takeUntil 和 takeWhile 控制是否处理
     this.event$.next({
       ...event,
       timestamp: Date.now()
@@ -253,16 +249,18 @@ export class StreamProcessor {
   async stop(): Promise<void> {
     if (this.isStopped) return;
 
-    // 先完成 Subject，让缓冲区的事件处理完
+    // 完成 event$，阻止新事件进入，同时触发缓冲区刷新
     this.event$.complete();
-    this.toolsDone$.complete();
 
-    // 等待缓冲区刷新
+    // 等待缓冲区刷新（bufferTime 缓存的事件会被处理）
     await this.flush();
+
+    // 发出停止信号，结束管道
+    this.stop$.next();
+    this.toolsDone$.complete();
 
     // 最后标记停止
     this.isStopped = true;
-    this.stop$.next();
     logger.info('[StreamProcessor] 已停止');
   }
 
