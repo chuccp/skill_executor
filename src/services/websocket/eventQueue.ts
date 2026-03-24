@@ -348,6 +348,27 @@ export class StreamProcessor {
   }
 
   /**
+   * 重置处理器状态（用于重用前）
+   */
+  reset(): void {
+    // 重新创建 Subject
+    this.event$ = new Subject<StreamEvent>();
+    this.stop$ = new Subject<void>();
+    this.toolsDone$ = new Subject<void>();
+
+    // 重新设置管道
+    this.subscription.unsubscribe();
+    this.subscription = this.setupPipeline();
+
+    // 重置状态
+    this.isStopped = false;
+    this.pendingToolCount = 0;
+    this.completedToolCount = 0;
+
+    logger.info('[StreamProcessor] 已重置');
+  }
+
+  /**
    * 获取状态
    */
   getStatus(): { isStopped: boolean; hasHandlers: boolean } {
@@ -370,8 +391,9 @@ export class ProcessorManager {
   get(id: string, options?: StreamProcessorOptions): StreamProcessor {
     const existing = this.processors.get(id);
 
-    // 如果存在且未停止，直接返回
+    // 如果存在且未停止，重置后返回
     if (existing && !existing.getStatus().isStopped) {
+      existing.reset();
       return existing;
     }
 
