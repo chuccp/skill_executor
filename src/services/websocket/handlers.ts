@@ -102,7 +102,7 @@ export async function handleChat(
         toolCalls: [],
         progressStats: {
             currentIteration: 0,
-            maxIterations: 2000,
+            maxIterations: 200000,
             totalTools: 0,
             successfulTools: 0,
             failedTools: 0,
