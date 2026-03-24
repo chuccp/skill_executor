@@ -479,7 +479,7 @@ export class LLMService {
     const url = this.buildApiUrl();
     logger.info('[LLM Stream] 请求 URL:', url);
     logger.info('[LLM Stream] Model:', this.config.model);
-    if (tools) logger.info('[LLM Stream] Tools:', tools.map((t: any) => t.name).join(', '));
+    if (tools) logger.info('[LLM Stream]提交的 Tools 数量 :', tools.length);
 
     const requestBody: any = {
       model: this.config.model,
