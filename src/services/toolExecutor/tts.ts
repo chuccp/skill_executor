@@ -14,26 +14,8 @@ export async function handleTtsTool(
   ctx: ToolContext
 ): Promise<string | null> {
   switch (tool.name) {
-    case 'tts_list_voices': {
-      try {
-        const result = execSync('edge-tts --list-voices', {
-          encoding: 'utf-8',
-          cwd: process.cwd()
-        });
-        return result;
-      } catch (e: any) {
-        try {
-          const result = execSync('tsx src/utils/tts-runner.ts --list-voices', {
-            encoding: 'utf-8',
-            cwd: process.cwd()
-          });
-          return result;
-        } catch (e2: any) {
-          return '获取音色列表失败：' + e2.message + '\n请安装 edge-tts: pip install edge-tts';
-        }
-      }
-    }
-
+    // 处理 tts 工具（别名，等同于 tts_convert）
+    case 'tts':
     case 'tts_convert': {
       const text = tool.input?.text;
       const voice = tool.input?.voice || 'zh-CN-XiaoxiaoNeural';
@@ -119,6 +101,26 @@ export async function handleTtsTool(
       }
     }
 
+    case 'tts_list_voices': {
+      try {
+        const result = execSync('edge-tts --list-voices', {
+          encoding: 'utf-8',
+          cwd: process.cwd()
+        });
+        return result;
+      } catch (e: any) {
+        try {
+          const result = execSync('tsx src/utils/tts-runner.ts --list-voices', {
+            encoding: 'utf-8',
+            cwd: process.cwd()
+          });
+          return result;
+        } catch (e2: any) {
+          return '获取音色列表失败：' + e2.message + '\n请安装 edge-tts: pip install edge-tts';
+        }
+      }
+    }
+
     case 'tts_get_recommended': {
       const recommended = {
         '中文女声': { name: 'zh-CN-XiaoxiaoNeural', desc: '温暖、亲切，适合日常对话' },
@@ -134,7 +136,7 @@ export async function handleTtsTool(
       ).join('\n\n');
 
       return '推荐音色:\n\n' + summary +
-        '\n\n使用 tts_convert 工具时，可通过 voice 参数指定这些音色';
+        '\n\n使用 tts 或 tts_convert 工具时，可通过 voice 参数指定这些音色';
     }
 
     default:
