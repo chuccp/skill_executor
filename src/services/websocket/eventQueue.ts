@@ -49,6 +49,8 @@ export class StreamProcessor {
   private options: Required<StreamProcessorOptions>;
   private handlers: Map<string, EventHandler[]> = new Map();
   private isStopped = false;
+  private pendingToolCount = 0; // 跟踪待完成的工具数
+  private completedToolCount = 0; // 跟踪已完成的工具数
 
   constructor(options: StreamProcessorOptions = {}) {
     this.options = {
@@ -114,6 +116,7 @@ export class StreamProcessor {
       mergeMap(async (event) => {
         await this.executeToolBatch(event);
         // 工具执行完成后发出 tools_done 信号
+        this.completedToolCount++;
         this.toolsDone$.next();
         return event;
       }, this.options.concurrency)
@@ -205,6 +208,7 @@ export class StreamProcessor {
    * 推送工具结果
    */
   pushToolResult(toolCalls: any[], iteration?: number): void {
+    this.pendingToolCount += toolCalls.length;
     this.push({ type: 'tool_result', payload: { toolCalls, iteration } });
   }
 
@@ -257,19 +261,34 @@ export class StreamProcessor {
 
   /**
    * 等待工具执行完成（不停止处理器）
+   * @param count 需要等待完成的工具数量
+   * @param timeout 超时时间
    */
-  async waitForTools(timeout: number = 60000): Promise<boolean> {
+  async waitForTools(count: number = 1, timeout: number = 60000): Promise<boolean> {
+    if (count <= 0) return true;
+
+    // 检查是否已经全部完成
+    if (this.completedToolCount >= this.pendingToolCount) {
+      return true;
+    }
+
+    const startCompleted = this.completedToolCount;
+    const targetCompleted = startCompleted + count;
+
     return new Promise(resolve => {
       const timer = setTimeout(() => {
-        logger.warn('[StreamProcessor] 等待工具执行超时');
+        subscription.unsubscribe();
+        logger.warn(`[StreamProcessor] 工具等待超时 (完成 ${this.completedToolCount - startCompleted}/${count})`);
         resolve(false);
       }, timeout);
 
       const subscription = this.toolsDone$.subscribe({
         next: () => {
-          clearTimeout(timer);
-          subscription.unsubscribe();
-          resolve(true);
+          if (this.completedToolCount >= targetCompleted) {
+            clearTimeout(timer);
+            subscription.unsubscribe();
+            resolve(true);
+          }
         },
         complete: () => {
           clearTimeout(timer);
@@ -277,6 +296,14 @@ export class StreamProcessor {
         }
       });
     });
+  }
+
+  /**
+   * 重置工具计数器（新迭代开始时调用）
+   */
+  resetToolCounters(): void {
+    this.pendingToolCount = 0;
+    this.completedToolCount = 0;
   }
 
   /**

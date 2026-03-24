@@ -27,6 +27,7 @@ interface StreamContext {
     conversationId: string;
     fullResponse: string;
     toolCalls: any[];
+    pendingToolsCount: number; // 正在执行的工具数
     progressStats: {
         currentIteration: number;
         maxIterations: number;
@@ -100,6 +101,7 @@ export async function handleChat(
         conversationId: actualConversationId,
         fullResponse: '',
         toolCalls: [],
+        pendingToolsCount: 0,
         progressStats: {
             currentIteration: 0,
             maxIterations: LLM_MAX_ITERATIONS,
@@ -153,6 +155,8 @@ export async function handleChat(
             // 重置本轮状态
             ctx.fullResponse = '';
             ctx.toolCalls = [];
+            ctx.pendingToolsCount = 0;
+            processor.resetToolCounters();
 
             // 收集流式事件
             const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
@@ -165,7 +169,7 @@ export async function handleChat(
                 }
 
                 // 将流事件推入 RxJS 处理器
-                const shouldContinue = processStreamEvent(event, processor, ctx);
+                const shouldContinue = processStreamEvent(event, processor, ctx, ctx.iteration);
                 if (!shouldContinue) break;
             }
 
@@ -177,13 +181,14 @@ export async function handleChat(
                 break;
             }
 
-            // 推送工具执行任务
-            processor.pushToolResult(ctx.toolCalls, ctx.iteration);
+            // 流结束后检查是否还有未完成的工具
+            // 如果有，等待完成（此时工具可能已经执行完了，会立即返回）
+            if (ctx.pendingToolsCount > 0) {
+                await processor.waitForTools(ctx.pendingToolsCount, TOOL_WAIT_TIMEOUT_MS);
+                ctx.pendingToolsCount = 0;
+            }
 
-            // 等待工具执行完成（不停止处理器）
-            await processor.waitForTools(TOOL_WAIT_TIMEOUT_MS);
-
-            logger.info(`[WS] 第 ${ctx.iteration} 轮工具执行完成，准备下一轮`);
+            logger.info(`[WS] 第 ${ctx.iteration} 轮完成，准备下一轮`);
             // 更新进度
             ws.send(JSON.stringify({type: 'progress', progress: ctx.progressStats}));
         }
@@ -275,7 +280,7 @@ function setupProcessors(
 
 // ==================== 流事件处理 ====================
 
-function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamContext): boolean {
+function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamContext, iteration: number): boolean {
     if (event.type === 'text' && event.content) {
         ctx.fullResponse += event.content;
         processor.pushText(event.content);
@@ -288,11 +293,17 @@ function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamC
     }
 
     if (event.type === 'tool_use') {
-        ctx.toolCalls.push({
+        const toolCall = {
             id: event.toolId,
             name: event.toolName,
             input: event.toolInput
-        });
+        };
+        ctx.toolCalls.push(toolCall);
+        ctx.pendingToolsCount++;
+
+        // 立即推送到队列执行，实现边输出边执行
+        logger.info(`[WS] 工具入队: ${toolCall.name} (iteration: ${iteration})`);
+        processor.pushToolResult([toolCall], iteration);
         return true;
     }
 
