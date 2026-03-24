@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Skill } from '../types';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('skill');
 
 export class SkillLoader {
   private skillsDir: string;
@@ -31,7 +34,7 @@ export class SkillLoader {
           }
         }
       }
-      console.log(`Loaded ${loadedSkills.length} system skills`);
+      logger.info(`Loaded ${loadedSkills.length} system skills`);
     }
 
     // 加载用户技能（优先级高）
@@ -50,12 +53,12 @@ export class SkillLoader {
         loadedSkills.push(skill);
         userSkillCount++;
         if (isUpdate) {
-          console.log(`Overridden system skill: ${skill.name}`);
+          logger.info(`Overridden system skill: ${skill.name}`);
         }
       }
     }
 
-    console.log(`Loaded ${userSkillCount} user skills`);
+    logger.info(`Loaded ${userSkillCount} user skills`);
     return loadedSkills;
   }
 
@@ -65,7 +68,7 @@ export class SkillLoader {
       const content = fs.readFileSync(filePath, 'utf-8');
       return this.parse(content, filePath);
     } catch (error) {
-      console.error(`Failed to load skill: ${filePath}`, error);
+      logger.error(`Failed to load skill: ${filePath}`, error);
       return null;
     }
   }

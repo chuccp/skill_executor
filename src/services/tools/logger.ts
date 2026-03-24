@@ -43,24 +43,65 @@ export const logger = createLogger({
   pretty: true
 });
 
-// ==================== 便捷方法 ====================
-
-export const log = {
-  trace: (msg: string, ...args: any[]) => logger.trace(msg, ...args),
-  debug: (msg: string, ...args: any[]) => logger.debug(msg, ...args),
-  info: (msg: string, ...args: any[]) => logger.info(msg, ...args),
-  warn: (msg: string, ...args: any[]) => logger.warn(msg, ...args),
-  error: (msg: string, ...args: any[]) => logger.error(msg, ...args),
-  fatal: (msg: string, ...args: any[]) => logger.fatal(msg, ...args),
-
-  // 带上下文的日志
-  child: (bindings: Record<string, any>) => logger.child(bindings)
-};
-
 // ==================== 模块日志器 ====================
 
+/**
+ * 创建模块日志器
+ * 返回一个兼容 console 调用方式的日志对象
+ */
 export function createModuleLogger(moduleName: string) {
-  return logger.child({ module: moduleName });
+  const childLogger = logger.child({ module: moduleName });
+
+  // 创建兼容 console 调用方式的包装器
+  const formatMessage = (args: any[]): [string, any?] => {
+    if (args.length === 0) return ['', undefined];
+    if (args.length === 1) {
+      const first = args[0];
+      if (typeof first === 'string') return [first, undefined];
+      return ['', first];
+    }
+
+    // 多个参数时，格式化为字符串
+    const msg = args.map(arg => {
+      if (typeof arg === 'string') return arg;
+      if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
+      try {
+        return JSON.stringify(arg);
+      } catch {
+        return String(arg);
+      }
+    }).join(' ');
+
+    return [msg, undefined];
+  };
+
+  return {
+    trace: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.trace(obj, msg) : childLogger.trace(msg);
+    },
+    debug: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.debug(obj, msg) : childLogger.debug(msg);
+    },
+    info: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.info(obj, msg) : childLogger.info(msg);
+    },
+    warn: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.warn(obj, msg) : childLogger.warn(msg);
+    },
+    error: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.error(obj, msg) : childLogger.error(msg);
+    },
+    fatal: (...args: any[]) => {
+      const [msg, obj] = formatMessage(args);
+      return obj !== undefined ? childLogger.fatal(obj, msg) : childLogger.fatal(msg);
+    },
+    child: (bindings: Record<string, any>) => childLogger.child(bindings)
+  };
 }
 
 export default logger;

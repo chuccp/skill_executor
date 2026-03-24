@@ -15,6 +15,9 @@ import { SUMMARIZE_THRESHOLD, CONTEXT_PERCENT_THRESHOLD } from '../../config/con
 import { WSMessage, PendingCommand, PendingQuestion, AutoProgress } from './types';
 import { getContextLimit, groupToolsForParallelExecution } from './utils';
 import { LockManager } from './asyncLock'; // P1: 导入锁管理器
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('ws');
 
 /**
  * 处理聊天消息
@@ -34,7 +37,7 @@ export async function handleChat(
   lockManager?: any // P1: 添加锁管理器参数
 ) {
   const { conversationId, content, skillName } = message;
-  console.log('[WS] 收到聊天消息:', { conversationId, content: content?.substring(0, 50), skillName });
+  logger.info('[WS] 收到聊天消息:', { conversationId, content: content?.substring(0, 50), skillName });
 
   if (!conversationId || !content) {
     ws.send(JSON.stringify({ type: 'error', content: 'Missing conversationId or content' }));
@@ -49,7 +52,7 @@ export async function handleChat(
 
   if (!conversation) {
     // 会话不存在，自动创建新会话
-    console.log('[WS] 会话不存在，自动创建新会话:', conversationId);
+    logger.info('[WS] 会话不存在，自动创建新会话:', conversationId);
     conversation = await conversationManager.create();
     actualConversationId = conversation.id;
     // 通知前端新会话已创建
@@ -61,7 +64,7 @@ export async function handleChat(
 
   // 检查锁状态（调试日志）
   const conversationLock = lockManager?.getLock(actualConversationId);
-  console.log('[WS] 锁状态:', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
+  logger.info('[WS] 锁状态:', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
 
   // 添加用户消息
   await conversationManager.addMessage(actualConversationId, 'user', content);
@@ -74,7 +77,7 @@ export async function handleChat(
     const skill = skillLoader.get(skillName);
     if (skill && skill.prompt) {
       systemPrompt = `${skill.prompt}\n\n${basePrompt}`;
-      console.log('[WS] 使用技能:', skillName);
+      logger.info('[WS] 使用技能:', skillName);
     }
   }
 
@@ -123,9 +126,9 @@ export async function handleChat(
       if (lockAcquired) {
         try {
           if (needCompressByPercent) {
-            console.log(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
+            logger.info(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
           } else {
-            console.log(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
+            logger.info(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
           }
           const compressed = await conversationManager.compress(actualConversationId, llmService);
           if (compressed) {
@@ -140,7 +143,7 @@ export async function handleChat(
           conversationLock?.release();
         }
       } else {
-        console.log(`[WS] 工具执行在进行中，跳过上下文压缩检查`);
+        logger.info(`[WS] 工具执行在进行中，跳过上下文压缩检查`);
       }
     }
   }
@@ -151,37 +154,37 @@ export async function handleChat(
     while (iteration < MAX_ITERATIONS) {
       // 检查是否被停止
       if (stoppedConversations?.has(actualConversationId)) {
-        console.log('[WS] 会话被停止:', actualConversationId);
+        logger.info('[WS] 会话被停止:', actualConversationId);
         return;
       }
 
       iteration++;
       progressStats.currentIteration = iteration; // P1: 更新当前迭代
-      console.log(`[WS] 第 ${iteration} 轮调用...`);
+      logger.info(`[WS] 第 ${iteration} 轮调用...`);
 
       let fullResponse = '';
       let toolCalls: any[] = [];
 
       // 流式响应 + P0 超时保护 (5 分钟)
-      const streamTimeout = 300000; // 5 分钟毫秒
+      // const streamTimeout = 300000; // 5 分钟毫秒
       const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
       const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
       
-      let streamAborted = false;
-      const timeoutId = setTimeout(() => {
-        streamAborted = true;
-        console.warn('[WS] LLM 流超时（5分钟），强制终止迭代');
-        ws.send(JSON.stringify({ 
-          type: 'error', 
-          content: 'LLM 流式处理超时（>5分钟），已终止此轮对话' 
-        }));
-      }, streamTimeout);
+      // let streamAborted = false;
+      // const timeoutId = setTimeout(() => {
+      //   streamAborted = true;
+      //   logger.warn('[WS] LLM 流超时（5分钟），强制终止迭代');
+      //   ws.send(JSON.stringify({
+      //     type: 'error',
+      //     content: 'LLM 流式处理超时（>5分钟），已终止此轮对话'
+      //   }));
+      // }, streamTimeout);
 
       for await (const event of stream) {
-        if (streamAborted) break;
+        // if (streamAborted) break;
         // 检查是否被停止
         if (stoppedConversations?.has(actualConversationId)) {
-          console.log('[WS] 会话被停止:', actualConversationId);
+          logger.info('[WS] 会话被停止:', actualConversationId);
           return;
         }
 
@@ -214,18 +217,18 @@ export async function handleChat(
             }
           }));
         } else if (event.type === 'error') {
-          console.error('[WS] 流式错误:', event.content);
+          logger.error('[WS] 流式错误:', event.content);
           ws.send(JSON.stringify({ type: 'error', content: event.content }));
           return;
         }
       }
 
-      // 清除超时计时器
-      clearTimeout(timeoutId);
-      if (streamAborted) break; // 如果超时，终止迭代
+      // // 清除超时计时器
+      // clearTimeout(timeoutId);
+      // if (streamAborted) break; // 如果超时，终止迭代
       
-      console.log('[WS] AI完整响应:', fullResponse);
-      console.log('[WS] 响应长度:', fullResponse.length, '工具调用:', toolCalls.length);
+      logger.info('[WS] AI完整响应:', fullResponse);
+      logger.info('[WS] 响应长度:', fullResponse.length, '工具调用:', toolCalls.length);
 
       // 如果没有工具调用，结束循环
       if (toolCalls.length === 0) {
@@ -242,7 +245,7 @@ export async function handleChat(
       progressStats.totalTools += toolCalls.length;
 
       // toolCalls.forEach((toolCall)=>{
-      //   console.log(`[WS] 工具调用: ${toolCall.name}:${JSON.stringify(toolCall.input).substring(0, 50)}`);
+      //   logger.info(`[WS] 工具调用: ${toolCall.name}:${JSON.stringify(toolCall.input).substring(0, 50)}`);
       // })
       
       // P0 修复：检测循环停滞（相同工具重复调用）
@@ -256,7 +259,7 @@ export async function handleChat(
       // if (toolCallHistory.length === 3 &&
       //     toolCallHistory[0] === toolCallHistory[1] &&
       //     toolCallHistory[1] === toolCallHistory[2]) {
-      //   console.warn('[WS] 检测到工具调用死循环！相同工具连续 3 次未改变');
+      //   logger.warn('[WS] 检测到工具调用死循环！相同工具连续 3 次未改变');
       //   ws.send(JSON.stringify({
       //     type: 'error',
       //     content: 'LLM 陷入循环：相同工具调用重复 3 次未改变，已自动终止'
@@ -269,24 +272,24 @@ export async function handleChat(
 
       // 并行执行优化：将工具调用分组
       const toolGroups = groupToolsForParallelExecution(toolCalls);
-      console.log(`[WS] 工具分组：${toolGroups.length} 组`);
+      logger.info(`[WS] 工具分组：${toolGroups.length} 组`);
 
       // P1 修复：在工具执行期间获取锁，防止上下文压缩干扰
       const conversationLock = lockManager?.getLock(actualConversationId);
-      console.log('[WS] 等待获取锁...', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
+      logger.info('[WS] 等待获取锁...', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
       await conversationLock?.acquire();
-      console.log('[WS] 锁已获取，开始执行工具');
+      logger.info('[WS] 锁已获取，开始执行工具');
 
       try {
         // 按组执行工具（组内并行，组间串行）
         for (const [groupIndex, group] of toolGroups.entries()) {
-          console.log(`[WS] 执行第 ${groupIndex + 1} 组，共 ${group.length} 个工具`);
+          logger.info(`[WS] 执行第 ${groupIndex + 1} 组，共 ${group.length} 个工具`);
 
         // 为组内每个工具创建任务跟踪
         const taskIds: Map<string, string> = new Map();
 
         for (const tool of group) {
-          console.log('[WS] 工具:', tool.name, JSON.stringify(tool.input).substring(0, 100));
+          logger.info('[WS] 工具:', tool.name, JSON.stringify(tool.input).substring(0, 100));
 
           if (tool.name === 'todo_write') {
             const todos = tool.input?.todos as TodoItem[];
@@ -335,7 +338,7 @@ export async function handleChat(
               const result = await executeTool(tool, ctx);
               return { toolId: tool.id, result };
             } catch (error: any) {
-              console.error(`[WS] 工具 ${tool.name} 执行异常:`, error.message);
+              logger.error(`[WS] 工具 ${tool.name} 执行异常:`, error.message);
               return { 
                 toolId: tool.id, 
                 result: `[failed] ${error.message}`,
@@ -355,7 +358,7 @@ export async function handleChat(
             if (settled.status === 'fulfilled') {
               results.push(settled.value);
             } else {
-              console.error(`[WS] 工具 ${tool.name} Promise 被拒绝:`, settled.reason);
+              logger.error(`[WS] 工具 ${tool.name} Promise 被拒绝:`, settled.reason);
               results.push({
                 toolId: tool.id,
                 result: `[failed] ${settled.reason?.message || 'unknown error'}`,
@@ -382,11 +385,11 @@ export async function handleChat(
             // P1: 更新失败工具计数
             progressStats.failedTools += 1;
             
-            console.warn(`[WS] 工具 ${toolName} 失败 (累计 ${failureInfo.count} 次)`);
+            logger.warn(`[WS] 工具 ${toolName} 失败 (累计 ${failureInfo.count} 次)`);
             
             // 如果同一工具连续失败 3 次，停止使用这个工具
             if (failureInfo.count >= FAILURE_THRESHOLD) {
-              console.error(`[WS] 工具 ${toolName} 连续失败 ${FAILURE_THRESHOLD} 次，自动终止迭代`);
+              logger.error(`[WS] 工具 ${toolName} 连续失败 ${FAILURE_THRESHOLD} 次，自动终止迭代`);
               ws.send(JSON.stringify({ 
                 type: 'error', 
                 content: `工具 ${toolName} 连续失败 ${FAILURE_THRESHOLD} 次，已自动终止此轮对话` 
@@ -407,7 +410,7 @@ export async function handleChat(
           try {
             const parsed = JSON.parse(result);
             if (parsed._endTurn) {
-              console.log('[WS] ask_user 返回，结束当前轮');
+              logger.info('[WS] ask_user 返回，结束当前轮');
               shouldEndTurn = true;
               continue; // 跳过这个工具结果的处理
             }
@@ -428,9 +431,9 @@ export async function handleChat(
           // 发送 tool_result 事件给前端
           if (toolCall) {
             if (error) {
-              console.error('[WS] Tool result for', toolCall.name, ': FAILED -', error);
+              logger.error('[WS] Tool result for', toolCall.name, ': FAILED -', error);
             } else {
-              console.log('[WS] Tool result for', toolCall.name, ': SUCCESS');
+              logger.info('[WS] Tool result for', toolCall.name, ': SUCCESS');
             }
 
             // play_media 直接追加 markdown 到 AI 消息
@@ -473,9 +476,9 @@ export async function handleChat(
       }
       } finally {
         // P1 修复：释放锁，允许下一次压缩
-        console.log('[WS] finally 块执行，释放锁');
+        logger.info('[WS] finally 块执行，释放锁');
         conversationLock?.release();
-        console.log('[WS] 锁已释放，状态:', { locked: conversationLock?.isLocked() });
+        logger.info('[WS] 锁已释放，状态:', { locked: conversationLock?.isLocked() });
       }
       
       // P1: 每次迭代结束时发送进度更新
@@ -492,7 +495,7 @@ export async function handleChat(
 
     ws.send(JSON.stringify({ type: 'done' }));
   } catch (error: any) {
-    console.error('[WS] 异常:', error);
+    logger.error('[WS] 异常:', error);
     ws.send(JSON.stringify({ type: 'error', content: error.message }));
   }
 }
@@ -564,7 +567,7 @@ export function handleAskResponse(
 ) {
   const { askId, answer } = message;
 
-  console.log('[handleAskResponse] 收到用户回答:', { askId, answer });
+  logger.info('[handleAskResponse] 收到用户回答:', { askId, answer });
 
   if (!askId) {
     ws.send(JSON.stringify({ type: 'error', content: '缺少问题ID' }));
@@ -573,12 +576,12 @@ export function handleAskResponse(
 
   const pending = pendingQuestions.get(askId);
   if (!pending) {
-    console.warn('[handleAskResponse] 未找到对应的问题:', askId);
+    logger.warn('[handleAskResponse] 未找到对应的问题:', askId);
     ws.send(JSON.stringify({ type: 'error', content: '问题已过期' }));
     return;
   }
 
-  console.log('[handleAskResponse] resolve Promise, askId:', askId);
+  logger.info('[handleAskResponse] resolve Promise, askId:', askId);
   pendingQuestions.delete(askId);
   pending.resolve(answer);
 }

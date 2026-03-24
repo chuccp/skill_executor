@@ -8,6 +8,9 @@ import * as path from 'path';
 import { WebSocket } from 'ws';
 import { CommandExecutor } from './commandExecutor';
 import { SkillLoader } from './skillLoader';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('tool');
 import { ConversationManager } from './conversation';
 import {
   globFiles,
@@ -129,7 +132,7 @@ export async function executeTool(
     return `未知工具: ${tool.name}`;
   } catch (error: any) {
     const errMsg = `工具执行错误 (${tool.name}): ${error.message || error}`;
-    console.error('[ToolExecutor] Error:', errMsg);
+    logger.error('[ToolExecutor] Error:', errMsg);
     if (ws) {
       ws.send(JSON.stringify({ type: 'error', content: errMsg }));
     }

@@ -6,6 +6,9 @@
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'edge-tts-node';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createModuleLogger } from '../services/tools/logger';
+
+const logger = createModuleLogger('tts');
 
 interface TTSOptions {
   text: string;
@@ -44,7 +47,7 @@ async function main() {
   }
 
   if (!options.text) {
-    console.error('错误：缺少 --text 参数');
+    logger.error('错误：缺少 --text 参数');
     printHelp();
     process.exit(1);
   }
@@ -57,8 +60,8 @@ async function listVoices() {
     const tts = new MsEdgeTTS({});
     const voices = await tts.getVoices();
     
-    console.log('可用音色列表:\n');
-    console.log('='.repeat(80));
+    logger.info('可用音色列表:\n');
+    logger.info('='.repeat(80));
     
     // 按语言分组显示
     const byLocale: Record<string, any[]> = {};
@@ -69,22 +72,22 @@ async function listVoices() {
     }
 
     for (const [locale, localeVoices] of Object.entries(byLocale)) {
-      console.log(`\n${locale} (${localeVoices.length} 个音色):`);
-      console.log('-'.repeat(60));
+      logger.info(`\n${locale} (${localeVoices.length} 个音色):`);
+      logger.info('-'.repeat(60));
       for (const voice of localeVoices) {
         const gender = voice.Gender === 'Female' ? '♀' : '♂';
-        console.log(`  ${voice.ShortName}`);
-        console.log(`    ${gender} ${voice.FriendlyName}`);
+        logger.info(`  ${voice.ShortName}`);
+        logger.info(`    ${gender} ${voice.FriendlyName}`);
       }
     }
 
-    console.log('\n推荐音色:');
-    console.log('  中文女声：zh-CN-XiaoxiaoNeural');
-    console.log('  中文男声：zh-CN-YunxiNeural');
-    console.log('  英文女声：en-US-JennyNeural');
-    console.log('  英文男声：en-US-GuyNeural');
+    logger.info('\n推荐音色:');
+    logger.info('  中文女声：zh-CN-XiaoxiaoNeural');
+    logger.info('  中文男声：zh-CN-YunxiNeural');
+    logger.info('  英文女声：en-US-JennyNeural');
+    logger.info('  英文男声：en-US-GuyNeural');
   } catch (error: any) {
-    console.error('获取音色列表失败:', error.message);
+    logger.error('获取音色列表失败:', error.message);
     process.exit(1);
   }
 }
@@ -108,21 +111,21 @@ async function convertToSpeech(options: TTSOptions) {
       outputPath = path.join(mediaDir, `tts_${timestamp}.mp3`);
     }
 
-    console.log(`开始转换 "${options.text.substring(0, 50)}${options.text.length > 50 ? '...' : ''}"`);
-    console.log(`音色：${voice}`);
-    console.log(`输出：${outputPath}`);
+    logger.info(`开始转换 "${options.text.substring(0, 50)}${options.text.length > 50 ? '...' : ''}"`);
+    logger.info(`音色：${voice}`);
+    logger.info(`输出：${outputPath}`);
 
     // 写入文件
     await tts.toFile(options.text, outputPath);
 
-    console.log(`\n转换完成：${outputPath}`);
-    console.log(`文件大小：${formatBytes(fs.statSync(outputPath).size)}`);
+    logger.info(`\n转换完成：${outputPath}`);
+    logger.info(`文件大小：${formatBytes(fs.statSync(outputPath).size)}`);
     
     // 输出路径供调用者使用
-    console.log(`OUTPUT_PATH=${outputPath}`);
+    logger.info(`OUTPUT_PATH=${outputPath}`);
   } catch (error: any) {
-    console.error('转换失败:', error.message || error);
-    console.error('详细错误:', error);
+    logger.error('转换失败:', error.message || error);
+    logger.error('详细错误:', error);
     process.exit(1);
   }
 }
@@ -136,7 +139,7 @@ function formatBytes(bytes: number): string {
 }
 
 function printHelp() {
-  console.log(`
+  logger.info(`
 Edge TTS - 文字转语音工具
 
 用法：tsx src/utils/tts-runner.ts [选项]
@@ -173,6 +176,6 @@ Edge TTS - 文字转语音工具
 }
 
 main().catch(err => {
-  console.error('发生错误:', err.message);
+  logger.error('发生错误:', err.message);
   process.exit(1);
 });

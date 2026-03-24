@@ -10,6 +10,9 @@ import {
   MAX_MEMORY_CHUNKS,
   MEMORY_TTL_DAYS
 } from '../config/constants';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('conversation');
 
 // 内存中的记忆缓存
 interface MemoryChunk {
@@ -53,7 +56,7 @@ export class ConversationManager {
           // 忽略解析错误
         }
       }
-      console.log(`[Conversation] 已加载 ${this.memoryChunkMap.size} 个会话的记忆索引`);
+      logger.info(`[Conversation] 已加载 ${this.memoryChunkMap.size} 个会话的记忆索引`);
     } catch {
       // 表可能不存在，忽略
     }
@@ -351,7 +354,7 @@ export class ConversationManager {
 
     await this.saveMemoryChunks(conversationId, trimmedChunks);
 
-    console.log(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩：${oldMessages.length} 条消息已总结`);
+    logger.info(`[Conversation] 会话 ${conversationId.slice(0, 8)} 已压缩：${oldMessages.length} 条消息已总结`);
     return true;
   }
 
@@ -385,7 +388,7 @@ export class ConversationManager {
       const summary = await llmService.chat(chatMessages, systemPrompt);
       return summary || this.generateSimpleSummary(messages);
     } catch (error) {
-      console.error('[Conversation] LLM 摘要生成失败:', error);
+      logger.error('[Conversation] LLM 摘要生成失败:', error);
       return this.generateSimpleSummary(messages);
     }
   }
@@ -627,7 +630,7 @@ export class ConversationManager {
       await this.delete(meta.id);
     }
 
-    console.log(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
+    logger.info(`[Conversation] 已清理 ${toDelete.length} 个旧会话`);
     return toDelete.length;
   }
 

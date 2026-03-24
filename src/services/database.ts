@@ -1,6 +1,9 @@
 import initSqlJs, { Database as SqlJsDatabase } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('db');
 
 /**
  * SQLite 数据库服务 (使用 sql.js - 纯 JavaScript 实现)
@@ -38,13 +41,13 @@ export class DatabaseService {
         this.db = new SQL.Database();
       }
     } catch (error) {
-      console.error('[Database] 加载数据库失败，创建新数据库:', error);
+      logger.error('[Database] 加载数据库失败，创建新数据库:', error);
       this.db = new SQL.Database();
     }
 
     // 初始化表结构
     this.initTables();
-    console.log(`[Database] 数据库初始化完成：${this.dbPath}`);
+    logger.info(`[Database] 数据库初始化完成：${this.dbPath}`);
   }
 
   /**
@@ -262,7 +265,7 @@ export class DatabaseService {
       await this.saveToFile();
       this.db.close();
       this.db = null;
-      console.log('[Database] 数据库已关闭');
+      logger.info('[Database] 数据库已关闭');
     }
   }
 
@@ -274,7 +277,7 @@ export class DatabaseService {
     const data = db.export();
     const buffer = Buffer.from(data);
     fs.writeFileSync(backupPath, buffer);
-    console.log(`[Database] 数据库已备份到：${backupPath}`);
+    logger.info(`[Database] 数据库已备份到：${backupPath}`);
   }
 
   /**
@@ -321,7 +324,7 @@ export class DatabaseService {
       WHERE created_at < ? AND importance < 0.3 AND access_count < 2
     `, [cutoffTime]);
 
-    console.log(`[Database] 清理完成：${conversationsResult.changes} 个会话，${memoriesResult.changes} 条记忆`);
+    logger.info(`[Database] 清理完成：${conversationsResult.changes} 个会话，${memoriesResult.changes} 条记忆`);
 
     return {
       conversations: conversationsResult.changes,

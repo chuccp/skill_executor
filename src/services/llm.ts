@@ -1,4 +1,7 @@
 import { LLMConfig, ChatMessage, StreamEvent } from '../types';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('llm');
 
 export class LLMService {
   private config: LLMConfig;
@@ -230,7 +233,7 @@ export class LLMService {
                 currentToolCall.yielded = true;
                 yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
               } catch (e) {
-                console.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
+                logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
               }
             }
             currentToolCall = null;
@@ -380,7 +383,7 @@ export class LLMService {
           const input = call.args ? JSON.parse(call.args) : {};
           yield { type: 'tool_use', toolId: call.id, toolName: call.name, toolInput: input };
         } catch (e) {
-          console.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
+          logger.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
         }
       }
     }
@@ -408,8 +411,8 @@ export class LLMService {
     const otherMessages = messages.filter(m => m.role !== 'system');
 
     const url = this.buildApiUrl();
-    console.log('[LLM] 请求 URL:', url);
-    console.log('[LLM] Model:', this.config.model);
+    logger.info('[LLM] 请求 URL:', url);
+    logger.info('[LLM] Model:', this.config.model);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -428,12 +431,12 @@ export class LLMService {
 
     if (!response.ok) {
       const error = await response.text();
-      console.error('[LLM] API 错误:', error);
+      logger.error('[LLM] API 错误:', error);
       throw new Error(`API error: ${error}`);
     }
 
     const data = await response.json();
-    console.log('[LLM] 响应数据:', JSON.stringify(data).substring(0, 200));
+    logger.info('[LLM] 响应数据:', JSON.stringify(data).substring(0, 200));
 
     // 处理阿里云格式的响应：content 可能包含 thinking 和 text 两种类型
     if (data.content && Array.isArray(data.content)) {
@@ -474,9 +477,9 @@ export class LLMService {
     const otherMessages = messages.filter(m => m.role !== 'system');
 
     const url = this.buildApiUrl();
-    console.log('[LLM Stream] 请求 URL:', url);
-    console.log('[LLM Stream] Model:', this.config.model);
-    if (tools) console.log('[LLM Stream] Tools:', tools.length);
+    logger.info('[LLM Stream] 请求 URL:', url);
+    logger.info('[LLM Stream] Model:', this.config.model);
+    if (tools) logger.info('[LLM Stream] Tools:', tools.length);
 
     const requestBody: any = {
       model: this.config.model,
@@ -503,7 +506,7 @@ export class LLMService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[LLM Stream] API 错误:', errorText);
+      logger.error('[LLM Stream] API 错误:', errorText);
       yield { type: 'error', content: errorText };
       return;
     }
@@ -626,7 +629,7 @@ export class LLMService {
                   currentToolCall.yielded = true;
                   yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
                 } catch (e) {
-                  console.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
+                  logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
                 }
               }
               currentToolCall = null;

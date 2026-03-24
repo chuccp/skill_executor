@@ -7,6 +7,9 @@ import * as path from 'path';
 import { WebSocket } from 'ws';
 import { ToolContext } from '../toolExecutor/context';
 import { resolveToWorkingDir } from './utils';
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('skill');
 
 export async function handleSkillTool(
   tool: { name: string; input?: any },
@@ -64,23 +67,23 @@ export async function handleSkillTool(
       const header = tool.input?.header || '问题';
       const options = tool.input?.options;
 
-      console.log('[ask_user] 工具被调用:', { question, header, options });
+      logger.info('[ask_user] 工具被调用:', { question, header, options });
 
       if (!question) return '错误：问题为空';
 
       // SSE 模式：不支持实时交互
       if (!ws) {
-        console.log('[ask_user] 不支持实时交互（SSE 模式）');
+        logger.info('[ask_user] 不支持实时交互（SSE 模式）');
         return `需要用户输入: ${question}`;
       }
 
       // WebSocket 模式：发送问题给前端，立即返回
       const askId = `${conversationId}-${Date.now()}`;
-      console.log('[ask_user] 发送问题给前端, askId:', askId);
+      logger.info('[ask_user] 发送问题给前端, askId:', askId);
 
       // 发送问题给前端
       const message = JSON.stringify({ type: 'ask_user', askId, question, header, options: options || null });
-      console.log('[ask_user] 发送消息:', message);
+      logger.info('[ask_user] 发送消息:', message);
       ws.send(message);
 
       // 返回特殊标记，告诉 handleChat 结束当前轮

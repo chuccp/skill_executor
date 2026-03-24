@@ -8,6 +8,9 @@ import { LLMService } from '../llm';
 import { CommandExecutor } from '../commandExecutor';
 import { SkillLoader } from '../skillLoader';
 import { TOOLS, executeTool, ToolContext } from '../toolExecutor';
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('agent');
 import { AgentRole, SubTask, AgentPlan, ReflectionResult, MemoryEntry, SubAgent } from './types';
 import { VectorStore } from './vectorStore';
 import { getRolePrompt } from './prompts';
@@ -435,11 +438,11 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
     };
 
     this.agents.set(agent.id, agent);
-    console.log(`[Agent] 创建子代理：${agent.id}, 角色：${agent.role}, 任务：${agent.task.substring(0, 50)}...`);
+    logger.info(`[Agent] 创建子代理：${agent.id}, 角色：${agent.role}, 任务：${agent.task.substring(0, 50)}...`);
 
     // 异步执行代理任务
     this.executeAgent(agent).catch(err => {
-      console.error(`[Agent] ${agent.id} 执行失败:`, err);
+      logger.error(`[Agent] ${agent.id} 执行失败:`, err);
       agent.status = 'failed';
       agent.result = `执行失败：${err.message}`;
       agent.completedAt = Date.now();
@@ -453,7 +456,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
    */
   private async executeAgent(agent: SubAgent) {
     agent.status = 'running';
-    console.log(`[Agent] ${agent.id} 开始执行任务...`);
+    logger.info(`[Agent] ${agent.id} 开始执行任务...`);
 
     try {
       // 为子代理创建独立的对话
@@ -527,7 +530,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
       agent.result = fullResponse || '任务执行完成，无具体输出';
       agent.completedAt = Date.now();
 
-      console.log(`[Agent] ${agent.id} 任务完成`);
+      logger.info(`[Agent] ${agent.id} 任务完成`);
     } catch (error: any) {
       agent.status = 'failed';
       agent.result = `执行失败：${error.message}`;
@@ -639,7 +642,7 @@ ${review.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join('\n')}
     }
 
     if (cleaned > 0) {
-      console.log(`[Agent] 清理了 ${cleaned} 个过期代理`);
+      logger.info(`[Agent] 清理了 ${cleaned} 个过期代理`);
     }
 
     return cleaned;

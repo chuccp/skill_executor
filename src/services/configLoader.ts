@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PresetConfig } from '../types';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('config');
 
 export class ConfigLoader {
   private settingsPath: string;
@@ -16,13 +19,13 @@ export class ConfigLoader {
       if (fs.existsSync(this.settingsPath)) {
         const content = fs.readFileSync(this.settingsPath, 'utf-8');
         this.presets = JSON.parse(content);
-        console.log(`Loaded ${this.presets.length} preset configs`);
+        logger.info(`Loaded ${this.presets.length} preset configs`);
       } else {
-        console.log('Settings file not found, using empty presets');
+        logger.info('Settings file not found, using empty presets');
         this.presets = [];
       }
     } catch (error) {
-      console.error('Failed to load settings:', error);
+      logger.error('Failed to load settings:', error);
       this.presets = [];
     }
     return this.presets;
@@ -76,10 +79,10 @@ export class ConfigLoader {
         fs.mkdirSync(dir, { recursive: true });
       }
       fs.writeFileSync(this.settingsPath, JSON.stringify(this.presets, null, 2), 'utf-8');
-      console.log('Settings saved to', this.settingsPath);
+      logger.info('Settings saved to', this.settingsPath);
       return true;
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      logger.error('Failed to save settings:', error);
       return false;
     }
   }

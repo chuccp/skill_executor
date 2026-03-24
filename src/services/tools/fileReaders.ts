@@ -8,6 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import sharp from 'sharp';
+import { createModuleLogger } from './logger';
+
+const logger = createModuleLogger('file');
 
 // ==================== 图片处理 ====================
 
@@ -258,7 +261,7 @@ export async function openWithSystemApp(filePath: string): Promise<{ success: bo
     if (!isInstalled) {
       // 自动安装工具
       const installCmd = getPlatformInstallCmd(toolInfo.installCmd);
-      console.log(`[open_file] 正在安装 ${toolInfo.toolName}...`);
+      logger.info(`[open_file] 正在安装 ${toolInfo.toolName}...`);
       const installResult = await installTool(installCmd);
       if (!installResult.success) {
         // 安装失败，尝试用系统默认程序打开

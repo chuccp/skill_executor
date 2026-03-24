@@ -6,6 +6,10 @@
  * - 确保会话数据一致性
  */
 
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('lock');
+
 export class AsyncLock {
   private locked = false;
   private queue: Array<() => void> = [];
@@ -36,7 +40,7 @@ export class AsyncLock {
    * 释放锁，允许下一个等待者继续
    */
   release(): void {
-    console.log('[AsyncLock] release() called, queue length:', this.queue.length, 'holder:', this.lockHolder);
+    logger.info('[AsyncLock] release() called, queue length:', this.queue.length, 'holder:', this.lockHolder);
     if (this.queue.length > 0) {
       const next = this.queue.shift();
       next?.();
@@ -89,7 +93,7 @@ export class AsyncLock {
    * 强制重置锁（用于异常恢复）
    */
   forceReset(): void {
-    console.log('[AsyncLock] forceReset() called, was locked:', this.locked, 'holder:', this.lockHolder);
+    logger.info('[AsyncLock] forceReset() called, was locked:', this.locked, 'holder:', this.lockHolder);
     this.locked = false;
     this.lockHolder = null;
     // 清空等待队列，通知所有等待者

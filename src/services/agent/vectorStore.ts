@@ -5,6 +5,9 @@
 
 import { getDatabase } from '../database';
 import { MemoryEntry } from './types';
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('vector');
 
 /**
  * 向量存储类
@@ -57,9 +60,9 @@ export class VectorStore {
           lastAccessed: row.last_accessed
         });
       }
-      console.log(`[VectorStore] 已从 SQLite 加载 ${this.cache.size} 条记忆`);
+      logger.info(`[VectorStore] 已从 SQLite 加载 ${this.cache.size} 条记忆`);
     } catch (e) {
-      console.error('[VectorStore] 加载记忆失败:', e);
+      logger.error('[VectorStore] 加载记忆失败:', e);
     }
   }
 

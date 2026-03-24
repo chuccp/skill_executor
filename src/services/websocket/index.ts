@@ -13,6 +13,9 @@ import { CommandExecutor } from '../commandExecutor';
 import { AgentOrchestrator } from '../agentOrchestrator';
 import { WSMessage, PendingCommand, PendingQuestion } from './types';
 import { handleChat, handleConfirmCommand, handleAskResponse, handleConfig } from './handlers';
+import { createModuleLogger } from '../tools/logger';
+
+const logger = createModuleLogger('ws');
 import { LockManager } from './asyncLock'; // P1: 导入锁管理器
 
 /**
@@ -41,7 +44,7 @@ export function setupWebSocket(
   const lockManager = new LockManager();
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    console.log('WebSocket client connected');
+    logger.info('WebSocket client connected');
 
     ws.on('message', async (data: Buffer) => {
       try {
@@ -89,7 +92,7 @@ export function setupWebSocket(
     });
 
     ws.on('close', () => {
-      console.log('WebSocket client disconnected');
+      logger.info('WebSocket client disconnected');
 
       // 清理与该连接相关的待确认命令
       for (const [confirmId, pending] of pendingCommands.entries()) {

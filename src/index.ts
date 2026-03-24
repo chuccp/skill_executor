@@ -15,6 +15,7 @@ import { setWorkingDir } from './services/workingDir';
 import { createApiRouter } from './routes/api';
 import { setupWebSocket } from './services/websocket';
 import { LLMConfig } from './types';
+import { logger } from './services/tools/logger';
 
 const execAsync = promisify(exec);
 
@@ -34,12 +35,12 @@ async function checkAndFreePort(port: number): Promise<void> {
         const pid = parts[parts.length - 1];
         if (pid && pid !== '0' && !killedPids.has(pid)) {
           killedPids.add(pid);
-          console.log(`Port ${port} is in use by PID ${pid}, killing process...`);
+          logger.info(`Port ${port} is in use by PID ${pid}, killing process...`);
           try {
             await execAsync(`taskkill /F /PID ${pid}`);
-            console.log(`Process ${pid} killed successfully`);
+            logger.info(`Process ${pid} killed successfully`);
           } catch (e) {
-            console.log(`Failed to kill process ${pid}`);
+            logger.warn(`Failed to kill process ${pid}`);
           }
         }
       }
@@ -51,12 +52,12 @@ async function checkAndFreePort(port: number): Promise<void> {
       for (const pid of pids) {
         if (!killedPids.has(pid)) {
           killedPids.add(pid);
-          console.log(`Port ${port} is in use by PID ${pid}, killing process...`);
+          logger.info(`Port ${port} is in use by PID ${pid}, killing process...`);
           try {
             await execAsync(`kill -9 ${pid}`);
-            console.log(`Process ${pid} killed successfully`);
+            logger.info(`Process ${pid} killed successfully`);
           } catch (e) {
-            console.log(`Failed to kill process ${pid}`);
+            logger.warn(`Failed to kill process ${pid}`);
           }
         }
       }
@@ -93,7 +94,7 @@ if (presets.length > 0) {
     baseUrl: firstPreset.env.ANTHROPIC_BASE_URL,
     model: firstPreset.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514'
   };
-  console.log(`Using preset: ${firstPreset.name}`);
+  logger.info(`Using preset: ${firstPreset.name}`);
 }
 
 const llmService = new LLMService(defaultConfig);
@@ -103,7 +104,7 @@ let agentOrchestrator: AgentOrchestrator;
 
 // 加载 skills
 const loadedSkills = skillLoader.loadAll();
-console.log(`Loaded ${loadedSkills.length} skills`);
+logger.info(`Loaded ${loadedSkills.length} skills`);
 
 // 创建 Express 应用
 const app = express();
@@ -153,9 +154,9 @@ async function startServer() {
   await setupApp();
 
   server.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`WebSocket server running at ws://localhost:${PORT}`);
+    logger.info(`Server running at http://localhost:${PORT}`);
+    logger.info(`WebSocket server running at ws://localhost:${PORT}`);
   });
 }
 
-startServer().catch(console.error);
+startServer().catch(err => logger.error('Server startup failed:', err));

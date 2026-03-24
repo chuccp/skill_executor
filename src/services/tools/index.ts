@@ -142,7 +142,7 @@ export {
 export type { ParsedMarkdown, MarkdownFile, SkillFile } from './markdown';
 
 // 日志工具
-export { createLogger, logger, log, createModuleLogger } from './logger';
+export { createLogger, logger, createModuleLogger } from './logger';
 
 // 参数验证
 export {

@@ -7,6 +7,9 @@ import { getWorkingDir } from '../services/workingDir';
 import { ChatMessage, LLMConfig } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
+import { createModuleLogger } from '../services/tools/logger';
+
+const logger = createModuleLogger('api');
 
 export function createApiRouter(
   conversationManager: ConversationManager,
@@ -128,7 +131,7 @@ export function createApiRouter(
   // 发送消息（非流式）- 仅添加用户消息，不调用 LLM
   router.post('/conversations/:id/messages', async (req: Request, res: Response) => {
     const { content } = req.body;
-    console.log('[API] 添加用户消息:', { content: content?.substring(0, 50) });
+    logger.info('[API] 添加用户消息:', { content: content?.substring(0, 50) });
 
     const conversation = await conversationManager.get(req.params.id);
 
@@ -171,7 +174,7 @@ export function createApiRouter(
         }
       }
     } catch (e) {
-      console.error('Failed to read system skills:', e);
+      logger.error('Failed to read system skills:', e);
     }
     
     const skillsWithSource = skills.map(skill => ({

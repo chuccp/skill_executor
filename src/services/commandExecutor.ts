@@ -1,5 +1,8 @@
 import { spawn } from 'child_process';
 import * as iconv from 'iconv-lite';
+import { createModuleLogger } from './tools/logger';
+
+const logger = createModuleLogger('cmd');
 
 export interface CommandResult {
   success: boolean;
@@ -29,7 +32,7 @@ export class CommandExecutor {
     timeout: number = 60000,
     callbacks?: StreamCallbacks
   ): Promise<CommandResult> {
-    console.log('[CMD] 执行命令:', command);
+    logger.info('[CMD] 执行命令:', command);
 
     return new Promise((resolve) => {
       const isWindows = process.platform === 'win32';
@@ -78,14 +81,14 @@ export class CommandExecutor {
       child.on('close', (code) => {
         clearTimeout(timer);
         const success = code === 0 && !timedOut;
-        console.log('[CMD] 执行完成, exit code:', code);
+        logger.info('[CMD] 执行完成, exit code:', code);
         resolve({ success, stdout, stderr });
       });
 
       // 处理错误
       child.on('error', (err) => {
         clearTimeout(timer);
-        console.error('[CMD] 执行失败:', err.message);
+        logger.error('[CMD] 执行失败:', err.message);
         resolve({ success: false, stdout, stderr: err.message });
       });
     });
