@@ -315,13 +315,23 @@ export class ProcessorManager {
 
   /**
    * 创建或获取处理器
+   * 如果处理器已停止，会创建新的
    */
   get(id: string, options?: StreamProcessorOptions): StreamProcessor {
-    if (!this.processors.has(id)) {
-      const processor = new StreamProcessor(options);
-      this.processors.set(id, processor);
+    const existing = this.processors.get(id);
+
+    // 如果存在且未停止，直接返回
+    if (existing && !existing.getStatus().isStopped) {
+      return existing;
     }
-    return this.processors.get(id)!;
+
+    // 否则创建新的
+    if (existing) {
+      logger.info(`[ProcessorManager] 处理器 ${id} 已停止，创建新的`);
+    }
+    const processor = new StreamProcessor(options);
+    this.processors.set(id, processor);
+    return processor;
   }
 
   /**
