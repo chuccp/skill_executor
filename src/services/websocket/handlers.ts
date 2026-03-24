@@ -1,5 +1,6 @@
 /**
  * WebSocket 消息处理器
+ * 使用 RxJS 处理流式响应
  */
 
 import { WebSocket } from 'ws';
@@ -14,14 +15,34 @@ import { TodoItem } from '../tools';
 import { SUMMARIZE_THRESHOLD, CONTEXT_PERCENT_THRESHOLD } from '../../config/constants';
 import { WSMessage, PendingCommand, PendingQuestion, AutoProgress } from './types';
 import { getContextLimit, groupToolsForParallelExecution } from './utils';
-import { LockManager } from './asyncLock'; // P1: 导入锁管理器
+import { LockManager } from './asyncLock';
 import { createModuleLogger } from '../tools/logger';
+import { StreamProcessor, processorManager } from './eventQueue';
 
 const logger = createModuleLogger('ws');
 
-/**
- * 处理聊天消息
- */
+// ==================== 流处理上下文 ====================
+
+interface StreamContext {
+  conversationId: string;
+  fullResponse: string;
+  toolCalls: any[];
+  progressStats: {
+    currentIteration: number;
+    maxIterations: number;
+    totalTools: number;
+    successfulTools: number;
+    failedTools: number;
+    isComplete: boolean;
+  };
+  autoProgress: AutoProgress;
+  failedToolPatterns: Map<string, { count: number; lastIteration: number }>;
+  iteration: number;
+  systemPrompt: string;
+}
+
+// ==================== 处理聊天消息 ====================
+
 export async function handleChat(
   ws: WebSocket,
   message: WSMessage,
@@ -34,7 +55,7 @@ export async function handleChat(
   pendingQuestions: Map<string, PendingQuestion>,
   agentOrchestrator?: AgentOrchestrator,
   stoppedConversations?: Set<string>,
-  lockManager?: any // P1: 添加锁管理器参数
+  lockManager?: any
 ) {
   const { conversationId, content, skillName } = message;
   logger.info('[WS] 收到聊天消息:', { conversationId, content: content?.substring(0, 50), skillName });
@@ -44,33 +65,26 @@ export async function handleChat(
     return;
   }
 
-  // 清除停止标记
   stoppedConversations?.delete(conversationId);
 
   let actualConversationId = conversationId;
   let conversation = await conversationManager.get(conversationId);
 
   if (!conversation) {
-    // 会话不存在，自动创建新会话
     logger.info('[WS] 会话不存在，自动创建新会话:', conversationId);
     conversation = await conversationManager.create();
     actualConversationId = conversation.id;
-    // 通知前端新会话已创建
     ws.send(JSON.stringify({
       type: 'conversation_created',
       conversationId: actualConversationId
     }));
   }
 
-  // 检查锁状态（调试日志）
-  const conversationLock = lockManager?.getLock(actualConversationId);
-  logger.info('[WS] 锁状态:', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
-
   // 添加用户消息
   await conversationManager.addMessage(actualConversationId, 'user', content);
   ws.send(JSON.stringify({ type: 'user_message', content }));
 
-  // 获取 skill 的 prompt
+  // 获取系统提示
   const basePrompt = buildSystemPrompt();
   let systemPrompt = basePrompt;
   if (skillName) {
@@ -81,428 +95,418 @@ export async function handleChat(
     }
   }
 
-  const MAX_ITERATIONS = 20;
-  const autoProgress: AutoProgress = { tasks: [], toolCount: 0 };
-  
-  // P1 修复：详细进度报告统计
-  let progressStats = {
-    currentIteration: 0,
-    maxIterations: MAX_ITERATIONS,
-    totalTools: 0,
-    successfulTools: 0,
-    failedTools: 0,
-    isComplete: false
+  // 初始化上下文
+  const ctx: StreamContext = {
+    conversationId: actualConversationId,
+    fullResponse: '',
+    toolCalls: [],
+    progressStats: {
+      currentIteration: 0,
+      maxIterations: 20,
+      totalTools: 0,
+      successfulTools: 0,
+      failedTools: 0,
+      isComplete: false
+    },
+    autoProgress: { tasks: [], toolCount: 0 },
+    failedToolPatterns: new Map(),
+    iteration: 0,
+    systemPrompt
   };
-  
-  // P0 修复：跟踪工具失败模式以检测死循环
-  const failedToolPatterns = new Map<string, { count: number; lastIteration: number }>();
-  const toolCallHistory: string[] = []; // 记录最近的工具调用，检测重复
-  const FAILURE_THRESHOLD = 3; // 同一工具连续失败 3 次则终止
-  const MAX_LOOP_STALL_ITERATIONS = 3; // 相同工具调用重复 3 次则终止
 
-  // 在请求前检查是否需要压缩上下文
-  const convData = await conversationManager.get(actualConversationId);
+  // 创建 RxJS 流处理器
+  const processor = processorManager.get(actualConversationId, {
+    concurrency: 3,
+    textBufferTime: 50
+  });
+
+  // 注册处理器
+  setupProcessors(processor, ws, ctx, {
+    conversationManager,
+    skillLoader,
+    llmService,
+    commandExecutor,
+    skillsDir,
+    pendingCommands,
+    pendingQuestions,
+    agentOrchestrator,
+    stoppedConversations,
+    lockManager
+  });
+
+  try {
+    // 检查并压缩上下文
+    await checkAndCompressContext(actualConversationId, conversationManager, llmService, ws, lockManager);
+
+    // 主循环
+    while (ctx.iteration < ctx.progressStats.maxIterations) {
+      if (stoppedConversations?.has(actualConversationId)) {
+        logger.info('[WS] 会话被停止:', actualConversationId);
+        processor.pushDone('stopped');
+        break;
+      }
+
+      ctx.iteration++;
+      ctx.progressStats.currentIteration = ctx.iteration;
+      logger.info(`[WS] 第 ${ctx.iteration} 轮调用...`);
+
+      // 重置本轮状态
+      ctx.fullResponse = '';
+      ctx.toolCalls = [];
+
+      // 收集流式事件
+      const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
+      const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
+
+      for await (const event of stream) {
+        if (stoppedConversations?.has(actualConversationId)) {
+          processor.pushDone('stopped');
+          break;
+        }
+
+        // 将流事件推入 RxJS 处理器
+        const shouldContinue = processStreamEvent(event, processor, ctx);
+        if (!shouldContinue) break;
+      }
+
+      // 如果没有工具调用，结束循环
+      if (ctx.toolCalls.length === 0) {
+        await conversationManager.addMessage(actualConversationId, 'assistant', ctx.fullResponse);
+        ctx.progressStats.isComplete = true;
+        processor.pushDone('complete');
+        break;
+      }
+
+      // 推送工具执行任务
+      processor.pushToolResult(ctx.toolCalls, ctx.iteration);
+
+      // 等待工具执行完成
+      await processor.waitUntilComplete(60000);
+
+      // 更新进度
+      ws.send(JSON.stringify({ type: 'progress', progress: ctx.progressStats }));
+    }
+
+    // 确保处理器完成
+    if (!ctx.progressStats.isComplete) {
+      processor.pushDone('max_iterations');
+    }
+
+    await processor.waitUntilComplete(5000);
+
+  } catch (error: any) {
+    logger.error('[WS] 异常:', error);
+    processor.pushError(error.message);
+  } finally {
+    processorManager.stop(actualConversationId);
+  }
+}
+
+// ==================== 设置处理器 ====================
+
+function setupProcessors(
+  processor: StreamProcessor,
+  ws: WebSocket,
+  ctx: StreamContext,
+  deps: {
+    conversationManager: ConversationManager;
+    skillLoader: SkillLoader;
+    llmService: LLMService;
+    commandExecutor: CommandExecutor;
+    skillsDir: string;
+    pendingCommands: Map<string, PendingCommand>;
+    pendingQuestions: Map<string, PendingQuestion>;
+    agentOrchestrator?: AgentOrchestrator;
+    stoppedConversations?: Set<string>;
+    lockManager?: any;
+  }
+) {
+  // 文本处理
+  processor.on('text', (event) => {
+    ws.send(JSON.stringify({ type: 'text', content: event.payload }));
+  });
+
+  // 思考处理
+  processor.on('thinking', (event) => {
+    ws.send(JSON.stringify({ type: 'thinking', content: event.payload }));
+  });
+
+  // Usage 处理
+  processor.on('usage', (event) => {
+    const config = deps.llmService.getConfig();
+    const model = config.model || 'unknown';
+    const contextLimit = getContextLimit(model);
+    const contextTokens = event.payload.inputTokens;
+    const contextPercent = Math.round((contextTokens / contextLimit) * 100);
+
+    ws.send(JSON.stringify({
+      type: 'usage',
+      usage: {
+        ...event.payload,
+        contextTokens,
+        contextLimit,
+        contextPercent
+      }
+    }));
+  });
+
+  // 错误处理
+  processor.on('error', (event) => {
+    ws.send(JSON.stringify({ type: 'error', content: event.payload }));
+  });
+
+  // 完成处理
+  processor.on('done', (event) => {
+    ctx.autoProgress.tasks.forEach(t => t.status = 'completed');
+    ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
+
+    ctx.progressStats.isComplete = true;
+    ws.send(JSON.stringify({ type: 'progress', progress: ctx.progressStats }));
+    ws.send(JSON.stringify({ type: 'done' }));
+  });
+
+  // 工具执行处理
+  processor.on('tool_result', async (event) => {
+    const { toolCalls, iteration } = event.payload;
+    await executeToolCalls(ws, ctx, toolCalls, iteration, deps);
+  });
+}
+
+// ==================== 流事件处理 ====================
+
+function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamContext): boolean {
+  if (event.type === 'text' && event.content) {
+    ctx.fullResponse += event.content;
+    processor.pushText(event.content);
+    return true;
+  }
+
+  if (event.type === 'thinking' && event.content) {
+    processor.pushThinking(event.content);
+    return true;
+  }
+
+  if (event.type === 'tool_use') {
+    ctx.toolCalls.push({
+      id: event.toolId,
+      name: event.toolName,
+      input: event.toolInput
+    });
+    return true;
+  }
+
+  if (event.type === 'usage' && event.usage) {
+    processor.pushUsage(event.usage);
+    return true;
+  }
+
+  if (event.type === 'error') {
+    processor.pushError(event.content);
+    return false;
+  }
+
+  return true;
+}
+
+// ==================== 工具执行 ====================
+
+async function executeToolCalls(
+  ws: WebSocket,
+  ctx: StreamContext,
+  toolCalls: any[],
+  iteration: number,
+  deps: {
+    conversationManager: ConversationManager;
+    skillLoader: SkillLoader;
+    llmService: LLMService;
+    commandExecutor: CommandExecutor;
+    skillsDir: string;
+    pendingCommands: Map<string, PendingCommand>;
+    pendingQuestions: Map<string, PendingQuestion>;
+    agentOrchestrator?: AgentOrchestrator;
+    stoppedConversations?: Set<string>;
+    lockManager?: any;
+  }
+) {
+  const { conversationManager, commandExecutor, skillsDir, skillLoader, pendingCommands, pendingQuestions, agentOrchestrator, lockManager } = deps;
+
+  ctx.progressStats.totalTools += toolCalls.length;
+
+  // 工具分组
+  const toolGroups = groupToolsForParallelExecution(toolCalls);
+  logger.info(`[WS] 工具分组：${toolGroups.length} 组`);
+
+  // 获取锁
+  const conversationLock = lockManager?.getLock(ctx.conversationId);
+  await conversationLock?.acquire();
+  logger.info('[WS] 锁已获取');
+
+  try {
+    for (const [groupIndex, group] of toolGroups.entries()) {
+      logger.info(`[WS] 执行第 ${groupIndex + 1} 组，共 ${group.length} 个工具`);
+
+      const taskIds: Map<string, string> = new Map();
+
+      // 创建任务
+      for (const tool of group) {
+        logger.info('[WS] 工具:', tool.name);
+
+        if (tool.name === 'todo_write') {
+          const todos = tool.input?.todos as TodoItem[];
+          if (todos && Array.isArray(todos)) {
+            ctx.autoProgress.tasks = todos;
+            ws.send(JSON.stringify({ type: 'todo_updated', todos }));
+          }
+        } else {
+          const detailedTask = getDetailedTaskDescription(tool.name, tool.input);
+          const currentTaskId = `auto-${Date.now()}-${ctx.autoProgress.toolCount}`;
+          taskIds.set(tool.id, currentTaskId);
+
+          ctx.autoProgress.tasks.push({
+            id: currentTaskId,
+            task: detailedTask,
+            status: 'in_progress'
+          });
+          ctx.autoProgress.toolCount++;
+        }
+      }
+
+      if (ctx.autoProgress.tasks.length > 10) {
+        ctx.autoProgress.tasks = ctx.autoProgress.tasks.filter(t => t.status === 'in_progress');
+      }
+
+      ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
+
+      // 执行工具
+      const executeToolWithCtx = async (tool: any): Promise<{ toolId: string; result: string; error?: string }> => {
+        try {
+          const toolCtx: ToolContext = {
+            conversationId: ctx.conversationId,
+            commandExecutor,
+            skillsDir,
+            skillLoader,
+            conversationManager,
+            ws,
+            pendingCommands,
+            pendingQuestions,
+            agentOrchestrator
+          };
+          const result = await executeTool(tool, toolCtx);
+          return { toolId: tool.id, result };
+        } catch (error: any) {
+          logger.error(`[WS] 工具 ${tool.name} 异常:`, error.message);
+          return { toolId: tool.id, result: `[failed] ${error.message}`, error: error.message };
+        }
+      };
+
+      const settledResults = await Promise.allSettled(group.map(executeToolWithCtx));
+      const results: { toolId: string; result: string; error?: string }[] = [];
+
+      for (let i = 0; i < settledResults.length; i++) {
+        const settled = settledResults[i];
+        const tool = group[i];
+
+        if (settled.status === 'fulfilled') {
+          results.push(settled.value);
+        } else {
+          results.push({
+            toolId: tool.id,
+            result: `[failed] ${settled.reason?.message || 'unknown error'}`,
+            error: settled.reason?.message || 'unknown error'
+          });
+        }
+      }
+
+      // 处理结果
+      for (const { toolId, result, error } of results) {
+        const toolCall = group.find(t => t.id === toolId);
+
+        if (error) {
+          const toolName = toolCall?.name || 'unknown';
+          const failureInfo = ctx.failedToolPatterns.get(toolName) || { count: 0, lastIteration: iteration };
+          failureInfo.count += 1;
+          ctx.failedToolPatterns.set(toolName, failureInfo);
+          ctx.progressStats.failedTools += 1;
+
+          logger.warn(`[WS] 工具 ${toolName} 失败 (累计 ${failureInfo.count} 次)`);
+        } else {
+          ctx.failedToolPatterns.delete(toolCall?.name || 'unknown');
+          ctx.progressStats.successfulTools += 1;
+        }
+
+        // 更新任务
+        const currentTaskId = taskIds.get(toolId);
+        if (currentTaskId) {
+          const task = ctx.autoProgress.tasks.find(t => t.id === currentTaskId);
+          if (task) {
+            task.status = error ? 'failed' : 'completed';
+            ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
+          }
+        }
+
+        // 发送结果
+        if (toolCall) {
+          if (toolCall.name === 'play_media') {
+            ws.send(JSON.stringify({ type: 'media_result', markdown: result }));
+          }
+          ws.send(JSON.stringify({ type: 'tool_result', name: toolCall.name, result }));
+          await conversationManager.addMessage(ctx.conversationId, 'user', `[工具结果] ${result}`);
+        }
+      }
+    }
+  } finally {
+    conversationLock?.release();
+    logger.info('[WS] 锁已释放');
+  }
+}
+
+// ==================== 上下文压缩 ====================
+
+async function checkAndCompressContext(
+  conversationId: string,
+  conversationManager: ConversationManager,
+  llmService: LLMService,
+  ws: WebSocket,
+  lockManager?: any
+) {
+  const convData = await conversationManager.get(conversationId);
   const config = llmService.getConfig();
   const model = config.model || 'unknown';
   const contextLimit = getContextLimit(model);
 
-  if (convData) {
-    const messages = convData.messages;
+  if (!convData) return;
 
-    // 估算当前上下文的 token 数量（约 1 token ≈ 4 字符）
-    const totalChars = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
-    const estimatedTokens = Math.round(totalChars / 4);
-    const contextPercent = Math.round((estimatedTokens / contextLimit) * 100);
+  const messages = convData.messages;
+  const totalChars = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+  const estimatedTokens = Math.round(totalChars / 4);
+  const contextPercent = Math.round((estimatedTokens / contextLimit) * 100);
 
-    // 检查是否需要压缩
-    const needCompressByPercent = contextPercent > CONTEXT_PERCENT_THRESHOLD;
-    const needCompressByCount = messages.length > SUMMARIZE_THRESHOLD;
+  const needCompressByPercent = contextPercent > CONTEXT_PERCENT_THRESHOLD;
+  const needCompressByCount = messages.length > SUMMARIZE_THRESHOLD;
 
-    if (needCompressByPercent || needCompressByCount) {
-      // P1 修复：只有需要压缩时才获取锁
-      const conversationLock = lockManager?.getLock(actualConversationId);
-      const lockAcquired = conversationLock?.tryAcquire() ?? true;
+  if (needCompressByPercent || needCompressByCount) {
+    const conversationLock = lockManager?.getLock(conversationId);
+    const lockAcquired = conversationLock?.tryAcquire() ?? true;
 
-      if (lockAcquired) {
-        try {
-          if (needCompressByPercent) {
-            logger.info(`[WS] 上下文使用 ${contextPercent}% (${estimatedTokens} tokens) 超过阈值 ${CONTEXT_PERCENT_THRESHOLD}%，触发压缩`);
-          } else {
-            logger.info(`[WS] 消息数量 ${messages.length} 超过阈值 ${SUMMARIZE_THRESHOLD}，触发压缩`);
-          }
-          const compressed = await conversationManager.compress(actualConversationId, llmService);
-          if (compressed) {
-            ws.send(JSON.stringify({
-              type: 'context_compressed',
-              content: needCompressByPercent
-                ? `上下文已压缩（${contextPercent}% → 约${Math.round(contextPercent * 0.3)}%）`
-                : `上下文已压缩（${messages.length} 条消息 → 约 20 条）`
-            }));
-          }
-        } finally {
-          conversationLock?.release();
-        }
-      } else {
-        logger.info(`[WS] 工具执行在进行中，跳过上下文压缩检查`);
-      }
-    }
-  }
-
-  try {
-    let iteration = 0;
-
-    while (iteration < MAX_ITERATIONS) {
-      // 检查是否被停止
-      if (stoppedConversations?.has(actualConversationId)) {
-        logger.info('[WS] 会话被停止:', actualConversationId);
-        return;
-      }
-
-      iteration++;
-      progressStats.currentIteration = iteration; // P1: 更新当前迭代
-      logger.info(`[WS] 第 ${iteration} 轮调用...`);
-
-      let fullResponse = '';
-      let toolCalls: any[] = [];
-
-      // 流式响应 + P0 超时保护 (5 分钟)
-      // const streamTimeout = 300000; // 5 分钟毫秒
-      const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
-      const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
-      
-      // let streamAborted = false;
-      // const timeoutId = setTimeout(() => {
-      //   streamAborted = true;
-      //   logger.warn('[WS] LLM 流超时（5分钟），强制终止迭代');
-      //   ws.send(JSON.stringify({
-      //     type: 'error',
-      //     content: 'LLM 流式处理超时（>5分钟），已终止此轮对话'
-      //   }));
-      // }, streamTimeout);
-
-      for await (const event of stream) {
-        // if (streamAborted) break;
-        // 检查是否被停止
-        if (stoppedConversations?.has(actualConversationId)) {
-          logger.info('[WS] 会话被停止:', actualConversationId);
-          return;
-        }
-
-        if (event.type === 'text' && event.content) {
-          fullResponse += event.content;
-          ws.send(JSON.stringify({ type: 'text', content: event.content }));
-        } else if (event.type === 'thinking' && event.content) {
-          ws.send(JSON.stringify({ type: 'thinking', content: event.content }));
-        } else if (event.type === 'tool_use') {
-          toolCalls.push({
-            id: event.toolId,
-            name: event.toolName,
-            input: event.toolInput
-          });
-        } else if (event.type === 'usage' && event.usage) {
-          // 添加上下文信息
-          const config = llmService.getConfig();
-          const model = config.model || 'unknown';
-          const contextLimit = getContextLimit(model);
-          const contextTokens = event.usage.inputTokens;
-          const contextPercent = Math.round((contextTokens / contextLimit) * 100);
-
-          ws.send(JSON.stringify({
-            type: 'usage',
-            usage: {
-              ...event.usage,
-              contextTokens,
-              contextLimit,
-              contextPercent
-            }
-          }));
-        } else if (event.type === 'error') {
-          logger.error('[WS] 流式错误:', event.content);
-          ws.send(JSON.stringify({ type: 'error', content: event.content }));
-          return;
-        }
-      }
-
-      // // 清除超时计时器
-      // clearTimeout(timeoutId);
-      // if (streamAborted) break; // 如果超时，终止迭代
-      
-      logger.info('[WS] AI完整响应:', fullResponse);
-      logger.info('[WS] 响应长度:', fullResponse.length, '工具调用:', toolCalls.length);
-
-      // 如果没有工具调用，结束循环
-      if (toolCalls.length === 0) {
-        await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
-        
-        // P1: 发送最终进度报告
-        progressStats.isComplete = true;
-        ws.send(JSON.stringify({ type: 'progress', progress: progressStats }));
-        
-        break;
-      }
-      
-      // P1: 更新总工具数量
-      progressStats.totalTools += toolCalls.length;
-
-      // toolCalls.forEach((toolCall)=>{
-      //   logger.info(`[WS] 工具调用: ${toolCall.name}:${JSON.stringify(toolCall.input).substring(0, 50)}`);
-      // })
-      
-      // P0 修复：检测循环停滞（相同工具重复调用）
-      // const toolCallKey = toolCalls.map(t => `${t.name}:${JSON.stringify(t.input).substring(0, 20)}`).join('|');
-      // toolCallHistory.push(toolCallKey);
-      // if (toolCallHistory.length > 3) {
-      //   toolCallHistory.shift();
-      // }
-      
-      // // 如果最近 3 次工具调用都相同 => 死循环
-      // if (toolCallHistory.length === 3 &&
-      //     toolCallHistory[0] === toolCallHistory[1] &&
-      //     toolCallHistory[1] === toolCallHistory[2]) {
-      //   logger.warn('[WS] 检测到工具调用死循环！相同工具连续 3 次未改变');
-      //   ws.send(JSON.stringify({
-      //     type: 'error',
-      //     content: 'LLM 陷入循环：相同工具调用重复 3 次未改变，已自动终止'
-      //   }));
-      //   if (fullResponse) {
-      //     await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
-      //   }
-      //   break;
-      // }
-
-      // 并行执行优化：将工具调用分组
-      const toolGroups = groupToolsForParallelExecution(toolCalls);
-      logger.info(`[WS] 工具分组：${toolGroups.length} 组`);
-
-      // P1 修复：在工具执行期间获取锁，防止上下文压缩干扰
-      const conversationLock = lockManager?.getLock(actualConversationId);
-      logger.info('[WS] 等待获取锁...', { locked: conversationLock?.isLocked(), waiting: conversationLock?.getWaitingCount() });
-      await conversationLock?.acquire();
-      logger.info('[WS] 锁已获取，开始执行工具');
-
+    if (lockAcquired) {
       try {
-        // 按组执行工具（组内并行，组间串行）
-        for (const [groupIndex, group] of toolGroups.entries()) {
-          logger.info(`[WS] 执行第 ${groupIndex + 1} 组，共 ${group.length} 个工具`);
-
-        // 为组内每个工具创建任务跟踪
-        const taskIds: Map<string, string> = new Map();
-
-        for (const tool of group) {
-          logger.info('[WS] 工具:', tool.name, JSON.stringify(tool.input).substring(0, 100));
-
-          if (tool.name === 'todo_write') {
-            const todos = tool.input?.todos as TodoItem[];
-            if (todos && Array.isArray(todos)) {
-              autoProgress.tasks = todos;
-              ws.send(JSON.stringify({ type: 'todo_updated', todos }));
-            }
-          } else {
-            // 自动添加进度任务
-            const detailedTask = getDetailedTaskDescription(tool.name, tool.input);
-            const currentTaskId = `auto-${Date.now()}-${autoProgress.toolCount}`;
-            taskIds.set(tool.id, currentTaskId);
-
-            // 添加新任务（并行执行时不标记上一个任务完成，等结果返回时再标记）
-            autoProgress.tasks.push({
-              id: currentTaskId,
-              task: detailedTask,
-              status: 'in_progress'
-            });
-            autoProgress.toolCount++;
-          }
+        logger.info(`[WS] 触发上下文压缩 (${contextPercent}%, ${messages.length} 条)`);
+        const compressed = await conversationManager.compress(conversationId, llmService);
+        if (compressed) {
+          ws.send(JSON.stringify({
+            type: 'context_compressed',
+            content: `上下文已压缩（${contextPercent}% → 约${Math.round(contextPercent * 0.3)}%）`
+          }));
         }
-
-        // 清理过多的已完成任务（保留 in_progress 的）
-        if (autoProgress.tasks.length > 10) {
-          autoProgress.tasks = autoProgress.tasks.filter(t => t.status === 'in_progress');
-        }
-
-        // 发送任务更新
-        ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
-
-        // 并行执行组内所有工具 - P0 修复：添加单个工具的异常处理
-        const executeToolWithCtx = async (tool: any): Promise<{ toolId: string; result: string; error?: string }> => {
-            try {
-              const ctx: ToolContext = {
-                conversationId: actualConversationId,
-                commandExecutor,
-                skillsDir,
-                skillLoader,
-                conversationManager,
-                ws,
-                pendingCommands,
-                pendingQuestions,
-                agentOrchestrator
-              };
-              const result = await executeTool(tool, ctx);
-              return { toolId: tool.id, result };
-            } catch (error: any) {
-              logger.error(`[WS] 工具 ${tool.name} 执行异常:`, error.message);
-              return { 
-                toolId: tool.id, 
-                result: `[failed] ${error.message}`,
-                error: error.message
-              };
-            }
-          };
-
-          // P0 修复：改用 Promise.allSettled 避免单个失败导致整组工具无法执行
-          const settledResults = await Promise.allSettled(group.map(executeToolWithCtx));
-          const results: { toolId: string; result: string; error?: string }[] = [];
-          
-          for (let i = 0; i < settledResults.length; i++) {
-            const settled = settledResults[i];
-            const tool = group[i];
-            
-            if (settled.status === 'fulfilled') {
-              results.push(settled.value);
-            } else {
-              logger.error(`[WS] 工具 ${tool.name} Promise 被拒绝:`, settled.reason);
-              results.push({
-                toolId: tool.id,
-                result: `[failed] ${settled.reason?.message || 'unknown error'}`,
-                error: settled.reason?.message || 'unknown error'
-              });
-            }
-          }
-
-          // 处理结果
-          let shouldEndTurn = false;
-          let failureCount = 0;
-          
-          for (const { toolId, result, error } of results) {
-          // P0 修复：跟踪工具失败模式
-          const toolCall = group.find(t => t.id === toolId);
-          if (error) {
-            const toolName = toolCall?.name || 'unknown';
-            const failureInfo = failedToolPatterns.get(toolName) || { count: 0, lastIteration: iteration };
-            failureInfo.count += 1;
-            failureInfo.lastIteration = iteration;
-            failedToolPatterns.set(toolName, failureInfo);
-            failureCount += 1;
-            
-            // P1: 更新失败工具计数
-            progressStats.failedTools += 1;
-            
-            logger.warn(`[WS] 工具 ${toolName} 失败 (累计 ${failureInfo.count} 次)`);
-            
-            // 如果同一工具连续失败 3 次，停止使用这个工具
-            if (failureInfo.count >= FAILURE_THRESHOLD) {
-              logger.error(`[WS] 工具 ${toolName} 连续失败 ${FAILURE_THRESHOLD} 次，自动终止迭代`);
-              ws.send(JSON.stringify({ 
-                type: 'error', 
-                content: `工具 ${toolName} 连续失败 ${FAILURE_THRESHOLD} 次，已自动终止此轮对话` 
-              }));
-              shouldEndTurn = true;
-              break;
-            }
-          } else {
-            // 工具成功，重置失败计数
-            const toolName = toolCall?.name || 'unknown';
-            failedToolPatterns.delete(toolName);
-            
-            // P1: 更新成功工具计数
-            progressStats.successfulTools += 1;
-          }
-          
-          // 检查是否是 ask_user 的 _endTurn 标记
-          try {
-            const parsed = JSON.parse(result);
-            if (parsed._endTurn) {
-              logger.info('[WS] ask_user 返回，结束当前轮');
-              shouldEndTurn = true;
-              continue; // 跳过这个工具结果的处理
-            }
-          } catch {
-            // 不是 JSON，正常处理
-          }
-
-          // 标记对应任务完成
-          const currentTaskId = taskIds.get(toolId);
-          if (currentTaskId) {
-            const currentTask = autoProgress.tasks.find(t => t.id === currentTaskId);
-            if (currentTask) {
-              currentTask.status = error ? 'failed' : 'completed';
-              ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
-            }
-          }
-
-          // 发送 tool_result 事件给前端
-          if (toolCall) {
-            if (error) {
-              logger.error('[WS] Tool result for', toolCall.name, ': FAILED -', error);
-            } else {
-              logger.info('[WS] Tool result for', toolCall.name, ': SUCCESS');
-            }
-
-            // play_media 直接追加 markdown 到 AI 消息
-            if (toolCall.name === 'play_media') {
-              // 直接通过前端追加媒体 markdown
-              ws.send(JSON.stringify({
-                type: 'media_result',
-                markdown: result
-              }));
-            }
-
-            const wsMsg = {
-              type: 'tool_result',
-              name: toolCall.name,
-              result: result
-            };
-            ws.send(JSON.stringify(wsMsg));
-
-            // 将工具结果作为用户消息添加到对话
-            await conversationManager.addMessage(actualConversationId, 'user', `[工具结果] ${result}`);
-          }
-        }
-
-        // 如果检测到 _endTurn，结束当前轮
-        if (shouldEndTurn) {
-          // 保存当前 AI 消息（如果有内容的话）
-          if (fullResponse) {
-            await conversationManager.addMessage(actualConversationId, 'assistant', fullResponse);
-          }
-          autoProgress.tasks.forEach(t => t.status = 'completed');
-          ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
-          
-          // P1: 发送最终进度报告
-          progressStats.isComplete = true;
-          ws.send(JSON.stringify({ type: 'progress', progress: progressStats }));
-          
-          ws.send(JSON.stringify({ type: 'done' }));
-          return; // 结束整个 handleChat 函数
-        }
-      }
       } finally {
-        // P1 修复：释放锁，允许下一次压缩
-        logger.info('[WS] finally 块执行，释放锁');
         conversationLock?.release();
-        logger.info('[WS] 锁已释放，状态:', { locked: conversationLock?.isLocked() });
       }
-      
-      // P1: 每次迭代结束时发送进度更新
-      ws.send(JSON.stringify({ type: 'progress', progress: progressStats }));
     }
-
-    // 标记所有任务完成
-    autoProgress.tasks.forEach(t => t.status = 'completed');
-    ws.send(JSON.stringify({ type: 'todo_updated', todos: autoProgress.tasks }));
-
-    // P1: 发送最终进度报告
-    progressStats.isComplete = true;
-    ws.send(JSON.stringify({ type: 'progress', progress: progressStats }));
-
-    ws.send(JSON.stringify({ type: 'done' }));
-  } catch (error: any) {
-    logger.error('[WS] 异常:', error);
-    ws.send(JSON.stringify({ type: 'error', content: error.message }));
   }
 }
 
-/**
- * 处理命令确认
- */
+// ==================== 其他处理器 ====================
+
 export async function handleConfirmCommand(
   ws: WebSocket,
   message: WSMessage,
@@ -524,7 +528,6 @@ export async function handleConfirmCommand(
 
   pendingCommands.delete(confirmId);
 
-  // 对于需要特殊处理的操作（如 delete, git_commit），直接传递确认结果
   if (pending.action === 'delete' || pending.action === 'git_commit') {
     pending.resolve(approved ?? false);
     if (approved) {
@@ -535,7 +538,6 @@ export async function handleConfirmCommand(
     return;
   }
 
-  // 普通的 bash 命令确认，执行命令并返回结果
   if (approved) {
     ws.send(JSON.stringify({ type: 'command_start', command: pending.command }));
     const result = await commandExecutor.execute(pending.command);
@@ -547,9 +549,7 @@ export async function handleConfirmCommand(
       stderr: result.stderr
     }));
 
-    const output = result.success
-      ? (result.stdout || '(无输出)')
-      : `错误: ${result.stderr || result.stdout}`;
+    const output = result.success ? (result.stdout || '(无输出)') : `错误: ${result.stderr || result.stdout}`;
     pending.resolve(`命令: ${pending.command}\n${output}`);
   } else {
     ws.send(JSON.stringify({ type: 'command_cancelled', command: pending.command }));
@@ -557,9 +557,6 @@ export async function handleConfirmCommand(
   }
 }
 
-/**
- * 处理用户回答
- */
 export function handleAskResponse(
   ws: WebSocket,
   message: WSMessage,
@@ -581,14 +578,10 @@ export function handleAskResponse(
     return;
   }
 
-  logger.info('[handleAskResponse] resolve Promise, askId:', askId);
   pendingQuestions.delete(askId);
   pending.resolve(answer);
 }
 
-/**
- * 处理配置更新
- */
 export function handleConfig(ws: WebSocket, message: WSMessage, llmService: LLMService) {
   if (message.config) {
     llmService.updateConfig(message.config);
