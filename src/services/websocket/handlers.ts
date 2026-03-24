@@ -379,8 +379,10 @@ async function executeToolCalls(
 
       ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
 
-      // 执行工具
+      // 执行工具（并行执行，但逐个更新状态）
       const executeToolWithCtx = async (tool: any): Promise<{ toolId: string; result: string; error?: string }> => {
+        const currentTaskId = taskIds.get(tool.id);
+
         try {
           const toolCtx: ToolContext = {
             conversationId: ctx.conversationId,
@@ -394,13 +396,34 @@ async function executeToolCalls(
             agentOrchestrator
           };
           const result = await executeTool(tool, toolCtx);
+
+          // 执行成功，立即更新任务状态
+          if (currentTaskId) {
+            const task = ctx.autoProgress.tasks.find(t => t.id === currentTaskId);
+            if (task) {
+              task.status = 'completed';
+              ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
+            }
+          }
+
           return { toolId: tool.id, result };
         } catch (error: any) {
           logger.error(`[WS] 工具 ${tool.name} 异常:`, error.message);
+
+          // 执行失败，立即更新任务状态
+          if (currentTaskId) {
+            const task = ctx.autoProgress.tasks.find(t => t.id === currentTaskId);
+            if (task) {
+              task.status = 'failed';
+              ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
+            }
+          }
+
           return { toolId: tool.id, result: `[failed] ${error.message}`, error: error.message };
         }
       };
 
+      // 并行执行，每个工具完成后会自动推送状态更新
       const settledResults = await Promise.allSettled(group.map(executeToolWithCtx));
       const results: { toolId: string; result: string; error?: string }[] = [];
 
@@ -434,16 +457,6 @@ async function executeToolCalls(
         } else {
           ctx.failedToolPatterns.delete(toolCall?.name || 'unknown');
           ctx.progressStats.successfulTools += 1;
-        }
-
-        // 更新任务
-        const currentTaskId = taskIds.get(toolId);
-        if (currentTaskId) {
-          const task = ctx.autoProgress.tasks.find(t => t.id === currentTaskId);
-          if (task) {
-            task.status = error ? 'failed' : 'completed';
-            ws.send(JSON.stringify({ type: 'todo_updated', todos: ctx.autoProgress.tasks }));
-          }
         }
 
         // 发送结果
