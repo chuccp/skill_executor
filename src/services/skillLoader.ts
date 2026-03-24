@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Skill } from '../types';
 import { createModuleLogger } from './tools/logger';
+import { SkillParser } from './skill/skillParser';
 
 const logger = createModuleLogger('skill');
 
@@ -11,11 +12,13 @@ export class SkillLoader {
   private loadSystemSkills: boolean;  // 是否加载系统技能
   private skills: Map<string, Skill> = new Map();
   private watchers: fs.FSWatcher[] = [];
+  private parser: SkillParser;
 
   constructor(skillsDir: string, systemSkillsDir?: string, loadSystemSkills: boolean = false) {
     this.skillsDir = skillsDir;
     this.systemSkillsDir = systemSkillsDir;
     this.loadSystemSkills = loadSystemSkills;
+    this.parser = new SkillParser();
   }
 
   // 启动文件监听，实现实时加载
@@ -134,131 +137,24 @@ export class SkillLoader {
   load(filePath: string): Skill | null {
     try {
       const content = fs.readFileSync(filePath, 'utf-8');
-      const skill = this.parse(content, filePath);
-      if (skill && skill.name) {
+      const { skill, warnings } = this.parser.parse(content, filePath);
+
+      // 打印警告
+      for (const warning of warnings) {
+        logger.warn(`[Skill] ${filePath}: ${warning}`);
+      }
+
+      if (skill.name) {
         const isUpdate = this.skills.has(skill.name);
         this.skills.set(skill.name, skill);
         logger.info(`[Skill] ${isUpdate ? '更新' : '加载'}: ${skill.name}`);
         return skill;
       }
-      return skill;
+      return null;
     } catch (error) {
       logger.error(`Failed to load skill: ${filePath}`, error);
       return null;
     }
-  }
-
-  // 解析 skill 文件
-  parse(content: string, filePath: string): Skill {
-    const lines = content.split('\n');
-    const skill: Skill = {
-      name: '',
-      description: '',
-      prompt: '',
-      path: filePath
-    };
-
-    let currentSection = '';
-    let promptLines: string[] = [];
-    let triggerWhen: string[] = [];
-    let triggerNotWhen: string[] = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // 解析标题作为名称（只取第一个标题）
-      if (line.startsWith('# ') && !skill.name) {
-        skill.name = line.slice(2).trim();
-        continue;
-      }
-
-      // 解析 TRIGGER 部分
-      if (line.startsWith('TRIGGER')) {
-        currentSection = 'trigger';
-        continue;
-      }
-
-      // 解析 PROMPT 部分（传统格式）
-      if (line.startsWith('PROMPT:')) {
-        currentSection = 'prompt';
-        continue;
-      }
-
-      // 解析 ## 提示词 部分（新格式）
-      if (line.startsWith('## 提示词')) {
-        currentSection = 'prompt';
-        continue;
-      }
-
-      // 解析描述（标题后的第一行非空内容，且不在任何section中）
-      if (!skill.description && line.trim() && !line.startsWith('#') && !line.startsWith('TRIGGER') && !line.startsWith('PROMPT') && !currentSection) {
-        skill.description = line.trim();
-        continue;
-      }
-
-      // 解析新格式中的元数据（**名称**: xxx, **描述**: xxx, **触发词**: xxx）
-      if (line.includes('**名称**:')) {
-        const match = line.match(/\*\*名称\*\*:\s*(.+)/);
-        if (match) {
-          skill.name = match[1].trim();
-        }
-        continue;
-      }
-
-      if (line.includes('**描述**:')) {
-        const match = line.match(/\*\*描述\*\*:\s*(.+)/);
-        if (match) {
-          skill.description = match[1].trim();
-        }
-        continue;
-      }
-
-      if (line.includes('**触发词**:')) {
-        const match = line.match(/\*\*触发词\*\*:\s*(.+)/);
-        if (match) {
-          const keywords = match[1].split(',').map(k => k.trim()).filter(k => k);
-          triggerWhen.push(...keywords);
-        }
-        continue;
-      }
-
-      // 解析 trigger 条件
-      if (currentSection === 'trigger') {
-        if (line.startsWith('when:')) {
-          triggerWhen.push(line.slice(5).trim());
-        } else if (line.startsWith('- not when:')) {
-          triggerNotWhen.push(line.slice(11).trim());
-        } else if (line.startsWith('- ')) {
-          triggerWhen.push(line.slice(2).trim());
-        }
-      }
-
-      // 解析 prompt
-      if (currentSection === 'prompt') {
-        // 遇到新的 ## 标题，结束 prompt 部分
-        if (line.startsWith('## ') && currentSection === 'prompt') {
-          currentSection = '';
-          continue;
-        }
-        promptLines.push(line);
-      }
-    }
-
-    skill.prompt = promptLines.join('\n').trim();
-
-    if (triggerWhen.length > 0 || triggerNotWhen.length > 0) {
-      skill.trigger = {
-        when: triggerWhen,
-        notWhen: triggerNotWhen
-      };
-    }
-
-    // 如果没有解析到名称，使用文件名
-    if (!skill.name) {
-      skill.name = path.basename(filePath, '.md');
-    }
-
-    return skill;
   }
 
   // 获取所有 skills
