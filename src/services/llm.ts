@@ -1,5 +1,5 @@
-import { LLMConfig, ChatMessage, StreamEvent } from '../types';
-import { createModuleLogger } from './tools/logger';
+import {LLMConfig, ChatMessage, StreamEvent} from '../types';
+import {createModuleLogger} from './tools/logger';
 
 const logger = createModuleLogger('llm');
 
@@ -10,738 +10,713 @@ const logger = createModuleLogger('llm');
  * @param customMaxTokens 用户自定义的 maxTokens，优先使用
  */
 function getMaxTokens(model?: string, customMaxTokens?: number): number {
-  // 用户自定义优先
-  if (customMaxTokens) {
-    return customMaxTokens;
-  }
+    // 用户自定义优先
+    if (customMaxTokens) {
+        return customMaxTokens;
+    }
 
-  if (!model) return 4096;
+    if (!model) return 4096;
 
-  const modelLower = model.toLowerCase();
+    const modelLower = model.toLowerCase();
 
-  // GPT-4o - 支持 16384
-  if (modelLower.includes('gpt-4o')) {
-    return 16384;
-  }
-
-  // Claude 4 系列 - 支持 16384
-  if (modelLower.includes('claude-sonnet-4') || modelLower.includes('claude-opus-4')) {
-    return 16384;
-  }
-
-  // Claude 3.5 Sonnet - 支持 8192
-  if (modelLower.includes('claude-3.5') || modelLower.includes('claude-3-5')) {
+    // GLM-5
+    if (modelLower.includes('glm-5')) {
+        return 128000;
+    }
+    // 默认值
     return 8192;
-  }
-
-  // Claude 3 系列 - 支持 4096
-  if (modelLower.includes('claude-3')) {
-    return 4096;
-  }
-
-  // GPT-4-turbo - 支持 4096
-  if (modelLower.includes('gpt-4-turbo')) {
-    return 4096;
-  }
-
-  // GPT-4 - 支持 4096
-  if (modelLower.includes('gpt-4')) {
-    return 4096;
-  }
-
-  // GPT-3.5 - 支持 4096
-  if (modelLower.includes('gpt-3.5') || modelLower.includes('gpt-35')) {
-    return 4096;
-  }
-
-  // Qwen/通义千问 - 支持 6144+
-  if (modelLower.includes('qwen') || modelLower.includes('qianwen')) {
-    return 6144;
-  }
-
-  // DeepSeek V3 - 支持 8192
-  if (modelLower.includes('deepseek')) {
-    return 8192;
-  }
-
-  // GLM-4 - 支持 8192
-  if (modelLower.includes('glm-4')) {
-    return 8192;
-  }
-
-  // GLM / 智谱AI - 支持 4096
-  if (modelLower.includes('glm') || modelLower.includes('chatglm')) {
-    return 4096;
-  }
-
-  // 豆包 / 字节跳动 - 支持 4096
-  if (modelLower.includes('doubao') || modelLower.includes('豆包') || modelLower.includes('bytedance')) {
-    return 4096;
-  }
-
-  // 默认值
-  return 4096;
 }
 
 export class LLMService {
-  private config: LLMConfig;
+    private config: LLMConfig;
 
-  constructor(config: LLMConfig) {
-    this.config = config;
-  }
-
-  // 更新配置
-  updateConfig(config: Partial<LLMConfig>) {
-    this.config = { ...this.config, ...config };
-  }
-
-  // 获取当前配置
-  getConfig(): LLMConfig {
-    return { ...this.config };
-  }
-
-  // 发送聊天请求（非流式）
-  async chat(messages: ChatMessage[], systemPrompt?: string): Promise<string> {
-    const formattedMessages = this.formatMessages(messages, systemPrompt);
-
-    // 如果有 baseUrl，使用自定义 API
-    if (this.config.baseUrl) {
-      return this.anthropicCompatibleChat(formattedMessages);
+    constructor(config: LLMConfig) {
+        this.config = config;
     }
 
-    switch (this.config.provider) {
-      case 'anthropic':
-        return this.anthropicChat(formattedMessages);
-      case 'openai':
-        return this.openaiChat(formattedMessages);
-      case 'custom':
-        return this.customChat(formattedMessages);
-      default:
-        throw new Error(`Unsupported provider: ${this.config.provider}`);
-    }
-  }
-
-  // 流式聊天
-  async *chatStream(messages: ChatMessage[], systemPrompt?: string, tools?: any[]): AsyncGenerator<StreamEvent> {
-    const formattedMessages = this.formatMessages(messages, systemPrompt);
-
-    // 如果有 baseUrl，使用自定义 API
-    if (this.config.baseUrl) {
-      yield* this.anthropicCompatibleChatStream(formattedMessages, tools);
-      return;
+    // 更新配置
+    updateConfig(config: Partial<LLMConfig>) {
+        this.config = {...this.config, ...config};
     }
 
-    switch (this.config.provider) {
-      case 'anthropic':
-        yield* this.anthropicChatStream(formattedMessages, tools);
-        break;
-      case 'openai':
-        yield* this.openaiChatStream(formattedMessages, tools);
-        break;
-      case 'custom':
-        yield* this.customChatStream(formattedMessages, tools);
-        break;
-      default:
-        yield { type: 'error', content: `Unsupported provider: ${this.config.provider}` };
-    }
-  }
-
-  private formatMessages(messages: ChatMessage[], systemPrompt?: string): any[] {
-    const formatted: any[] = [];
-
-    // 添加系统提示
-    if (systemPrompt) {
-      formatted.push({ role: 'system', content: systemPrompt });
+    // 获取当前配置
+    getConfig(): LLMConfig {
+        return {...this.config};
     }
 
-    // 转换消息格式
-    for (const msg of messages) {
-      formatted.push({
-        role: msg.role,
-        content: msg.content
-      });
-    }
+    // 发送聊天请求（非流式）
+    async chat(messages: ChatMessage[], systemPrompt?: string): Promise<string> {
+        const formattedMessages = this.formatMessages(messages, systemPrompt);
 
-    return formatted;
-  }
-
-  // Anthropic API
-  private async anthropicChat(messages: any[]): Promise<string> {
-    const systemMessage = messages.find(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: this.config.model || 'claude-sonnet-4-20250514',
-        max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
-        system: systemMessage?.content,
-        messages: otherMessages
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic API error: ${error}`);
-    }
-
-    const data = await response.json();
-    return data.content[0].text;
-  }
-
-  // Anthropic 流式（支持工具调用）
-  private async *anthropicChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
-    const systemMessage = messages.find(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
-
-    const requestBody: any = {
-      model: this.config.model || 'claude-sonnet-4-20250514',
-      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
-      system: systemMessage?.content,
-      messages: otherMessages,
-      stream: true
-    };
-
-    if (tools && tools.length > 0) {
-      requestBody.tools = tools;
-    }
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      yield { type: 'error', content: await response.text() };
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: 'error', content: 'No response body' };
-      return;
-    }
-
-    logger.info(`[WS] 开始 LLM 流式响应，上下文消息数: ${messages.length}`);
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    // 用于聚合工具调用
-    let currentToolCall: { id: string; name: string; inputJson: string; yielded: boolean } | null = null;
-
-    // 累积的 token 使用量
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-
-    let doneSignal = false;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') {
-          yield { type: 'done' };
-          return;
+        // 如果有 baseUrl，使用自定义 API
+        if (this.config.baseUrl) {
+            return this.anthropicCompatibleChat(formattedMessages);
         }
 
-        try {
-          const parsed = JSON.parse(data);
-
-          // 处理 message_start 事件（包含初始 usage）
-          if (parsed.type === 'message_start' && parsed.message?.usage) {
-            totalInputTokens = parsed.message.usage.input_tokens || 0;
-            if (totalInputTokens > 0) {
-              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: 0 } };
-            }
-          }
-
-          // 处理 message_delta 事件（包含最终 usage）
-          if (parsed.type === 'message_delta' && parsed.usage) {
-            if (parsed.usage.input_tokens) {
-              totalInputTokens = parsed.usage.input_tokens;
-            }
-            if (parsed.usage.output_tokens) {
-              totalOutputTokens = parsed.usage.output_tokens;
-            }
-            yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-          }
-
-          if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
-            currentToolCall = {
-              id: parsed.index?.toString() || '0',
-              name: parsed.content_block.name,
-              inputJson: '',
-              yielded: false
-            };
-          }
-
-          if (parsed.type === 'content_block_delta' && parsed.delta) {
-            if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
-              yield { type: 'text', content: parsed.delta.text };
-            } else if (parsed.delta.type === 'text' && parsed.delta.text) {
-              yield { type: 'text', content: parsed.delta.text };
-            } else if (parsed.delta.text && !parsed.delta.type) {
-              yield { type: 'text', content: parsed.delta.text };
-            }
-
-            if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json && currentToolCall) {
-              currentToolCall.inputJson += parsed.delta.partial_json;
-            }
-          }
-
-          if (parsed.type === 'content_block_stop') {
-            if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
-              try {
-                const input = JSON.parse(currentToolCall.inputJson);
-                currentToolCall.yielded = true;
-                yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
-              } catch (e) {
-                logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
-              }
-            }
-            currentToolCall = null;
-          }
-        } catch {}
-      }
-    }
-
-    // 发送最终的 usage 信息
-    if (totalInputTokens > 0 || totalOutputTokens > 0) {
-      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-    }
-    yield { type: 'done' };
-  }
-
-  // OpenAI 兼容 API
-  private async openaiChat(messages: any[]): Promise<string> {
-    const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
-
-    const body: any = {
-      model: this.config.model || 'gpt-4o',
-      messages: messages
-    };
-
-    // OpenAI 不强制设置 max_tokens，使用模型默认值
-    // 如果用户自定义了则使用
-    if (this.config.maxTokens) {
-      body.max_tokens = this.config.maxTokens;
-    }
-
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`OpenAI API error: ${error}`);
-    }
-
-    const data = await response.json();
-    return data.choices[0].message.content;
-  }
-
-  // OpenAI 流式（支持工具调用）
-  private async *openaiChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
-    const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
-
-    const requestBody: any = {
-      model: this.config.model || 'gpt-4o',
-      messages: messages,
-      stream: true,
-      stream_options: { include_usage: true }
-    };
-
-    // OpenAI 不强制设置 max_tokens，使用模型默认值
-    // 如果用户自定义了则使用
-    if (this.config.maxTokens) {
-      requestBody.max_tokens = this.config.maxTokens;
-    }
-
-    if (tools && tools.length > 0) {
-      requestBody.tools = tools;
-      requestBody.tool_choice = 'auto';
-    }
-    
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      yield { type: 'error', content: await response.text() };
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: 'error', content: 'No response body' };
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-    const toolCallBuffers: Record<number, { id: string; name: string; args: string }> = {};
-    let doneSignal = false;
-    // OpenAI usage tracking
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const data = line.slice(5).trim();
-        if (data === '[DONE]') {
-          doneSignal = true;
-          break;
+        switch (this.config.provider) {
+            case 'anthropic':
+                return this.anthropicChat(formattedMessages);
+            case 'openai':
+                return this.openaiChat(formattedMessages);
+            case 'custom':
+                return this.customChat(formattedMessages);
+            default:
+                throw new Error(`Unsupported provider: ${this.config.provider}`);
         }
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta || {};
-
-          // OpenAI usage (comes in final chunk with stream_options.include_usage)
-          if (parsed.usage) {
-            totalInputTokens = parsed.usage.prompt_tokens || 0;
-            totalOutputTokens = parsed.usage.completion_tokens || 0;
-          }
-
-          if (delta.content) {
-            yield { type: 'text', content: delta.content };
-          }
-
-          const toolCalls = delta.tool_calls;
-          if (Array.isArray(toolCalls)) {
-            for (const call of toolCalls) {
-              const index = call.index ?? 0;
-              if (!toolCallBuffers[index]) {
-                toolCallBuffers[index] = {
-                  id: call.id || String(index),
-                  name: call.function?.name || '',
-                  args: ''
-                };
-              }
-              if (call.function?.name) {
-                toolCallBuffers[index].name = call.function.name;
-              }
-              if (call.function?.arguments) {
-                toolCallBuffers[index].args += call.function.arguments;
-              }
-            }
-          }
-        } catch {}
-      }
-
-      if (doneSignal) break;
     }
 
-    const toolCallEntries = Object.values(toolCallBuffers);
-    if (toolCallEntries.length > 0) {
-      for (const call of toolCallEntries) {
-        if (!call.name) continue;
-        try {
-          const input = call.args ? JSON.parse(call.args) : {};
-          yield { type: 'tool_use', toolId: call.id, toolName: call.name, toolInput: input };
-        } catch (e) {
-          logger.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
-        }
-      }
-    }
+    // 流式聊天
+    async* chatStream(messages: ChatMessage[], systemPrompt?: string, tools?: any[]): AsyncGenerator<StreamEvent> {
+        const formattedMessages = this.formatMessages(messages, systemPrompt);
 
-    // 发送 OpenAI usage 信息
-    if (totalInputTokens > 0 || totalOutputTokens > 0) {
-      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-    }
-
-    yield { type: 'done' };
-  }
-
-  // 自定义 API（兼容 OpenAI 格式）
-  private async customChat(messages: any[]): Promise<string> {
-    return this.openaiChat(messages);
-  }
-
-  private async *customChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
-    yield* this.openaiChatStream(messages, tools);
-  }
-
-  // Anthropic 兼容 API（支持自定义 baseUrl，如阿里云）
-  private async anthropicCompatibleChat(messages: any[]): Promise<string> {
-    const systemMessage = messages.find(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
-
-    const url = this.buildApiUrl();
-    logger.info('[LLM] 请求 URL:', url);
-    logger.info('[LLM] Model:', this.config.model);
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
-        system: systemMessage?.content,
-        messages: otherMessages
-      })
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      logger.error('[LLM] API 错误:', error);
-      throw new Error(`API error: ${error}`);
-    }
-
-    const data = await response.json();
-    logger.info('[LLM] 响应数据:', JSON.stringify(data).substring(0, 200));
-
-    // 处理阿里云格式的响应：content 可能包含 thinking 和 text 两种类型
-    if (data.content && Array.isArray(data.content)) {
-      const textBlock = data.content.find((block: any) => block.type === 'text');
-      if (textBlock && textBlock.text) {
-        return textBlock.text;
-      }
-      // 兼容标准 Anthropic 格式
-      if (data.content[0]?.text) {
-        return data.content[0].text;
-      }
-    }
-
-    throw new Error('Invalid response format');
-  }
-
-  // 构建 API URL（智能处理不同 provider 的路径格式）
-  private buildApiUrl(): string {
-    const baseUrl = this.config.baseUrl || '';
-
-    // 如果 baseUrl 已经包含完整路径（以 /v1/messages 结尾），直接使用
-    if (baseUrl.endsWith('/v1/messages')) {
-      return baseUrl;
-    }
-
-    // 如果 baseUrl 以 /v1 结尾，添加 /messages
-    if (baseUrl.endsWith('/v1')) {
-      return baseUrl + '/messages';
-    }
-
-    // 否则添加 /v1/messages
-    return baseUrl + '/v1/messages';
-  }
-
-  // Anthropic 兼容 API 流式
-  private async *anthropicCompatibleChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
-    const systemMessage = messages.find(m => m.role === 'system');
-    const otherMessages = messages.filter(m => m.role !== 'system');
-
-    const url = this.buildApiUrl();
-    logger.info('[LLM Stream] 请求 URL:', url);
-    logger.info('[LLM Stream] Model:', this.config.model);
-    if (tools) logger.info('[LLM Stream]提交的 Tools 数量 :', tools.length);
-
-    const requestBody: any = {
-      model: this.config.model,
-      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
-      system: systemMessage?.content,
-      messages: otherMessages,
-      stream: true
-    };
-
-    // 添加工具定义
-    if (tools && tools.length > 0) {
-      requestBody.tools = tools;
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.config.apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error('[LLM Stream] API 错误:', errorText);
-      yield { type: 'error', content: errorText };
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      yield { type: 'error', content: 'No response body' };
-      return;
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    // 用于聚合工具调用和追踪当前文本块
-    let currentToolCall: { id: string; name: string; inputJson: string, yielded: boolean } | null = null;
-    // 追踪当前是否在 thinking 块中
-    let isThinkingBlock: boolean = false;
-    // 累积的 token 使用量
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        // 处理 data: 开头的行
-        if (line.startsWith('data:')) {
-          const data = line.slice(5).trim();
-          if (data === '[DONE]') {
-            // 发送最终的 usage 信息
-            if (totalInputTokens > 0 || totalOutputTokens > 0) {
-              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-            }
-            yield { type: 'done' };
+        // 如果有 baseUrl，使用自定义 API
+        if (this.config.baseUrl) {
+            yield* this.anthropicCompatibleChatStream(formattedMessages, tools);
             return;
-          }
-
-          try {
-            const parsed = JSON.parse(data);
-
-            // 处理 message_start 事件（包含初始 usage）
-            if (parsed.type === 'message_start' && parsed.message?.usage) {
-              totalInputTokens = parsed.message.usage.input_tokens || 0;
-              if (totalInputTokens > 0) {
-                yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: 0 } };
-              }
-            }
-
-            // 处理 message_delta 事件（包含最终 usage）
-            if (parsed.type === 'message_delta' && parsed.usage) {
-              // 有些 API 在 delta 中同时返回 input 和 output tokens
-              if (parsed.usage.input_tokens) {
-                totalInputTokens = parsed.usage.input_tokens;
-              }
-              if (parsed.usage.output_tokens) {
-                totalOutputTokens = parsed.usage.output_tokens;
-              }
-              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-            }
-
-            // 处理 message_stop 事件（有些 API 在这里返回最终 usage）
-            if (parsed.type === 'message_stop' && parsed.message?.usage) {
-              totalInputTokens = parsed.message.usage.input_tokens || totalInputTokens;
-              totalOutputTokens = parsed.message.usage.output_tokens || totalOutputTokens;
-              yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
-            }
-
-            // 处理 content_block_start 事件
-            if (parsed.type === 'content_block_start' && parsed.content_block) {
-              if (parsed.content_block.type === 'tool_use') {
-                currentToolCall = {
-                  id: parsed.index?.toString() || '0',
-                  name: parsed.content_block.name,
-                  inputJson: '',
-                  yielded: false
-                };
-              }
-              // 检测 thinking 类型块（阿里云等模型支持）
-              if (parsed.content_block.type === 'thinking') {
-                isThinkingBlock = true;
-              }
-            }
-
-            // 处理 content_block_delta 事件
-            if (parsed.type === 'content_block_delta' && parsed.delta) {
-              // 标准格式：text_delta
-              if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
-                yield { type: 'text', content: parsed.delta.text };
-              }
-              // 阿里云格式：type 可能是 'text'
-              else if (parsed.delta.type === 'text' && parsed.delta.text) {
-                yield { type: 'text', content: parsed.delta.text };
-              }
-              // 兼容没有 type 但有 text 的情况
-              else if (parsed.delta.text && !parsed.delta.type) {
-                yield { type: 'text', content: parsed.delta.text };
-              }
-              // 处理 thinking_delta（思考过程）
-              if (parsed.delta.type === 'thinking_delta' && parsed.delta.thinking) {
-                yield { type: 'thinking', content: parsed.delta.thinking };
-              }
-              // 处理 input_json_delta（工具输入）
-              if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json) {
-                if (currentToolCall) {
-                  currentToolCall.inputJson += parsed.delta.partial_json;
-                }
-              }
-            }
-
-            // 处理 content_block_stop 事件
-            if (parsed.type === 'content_block_stop') {
-              if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
-                try {
-                  const input = JSON.parse(currentToolCall.inputJson);
-                  currentToolCall.yielded = true;
-                  yield { type: 'tool_use', toolId: currentToolCall.id, toolName: currentToolCall.name, toolInput: input };
-                } catch (e) {
-                  logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
-                }
-              }
-              currentToolCall = null;
-              isThinkingBlock = false;
-            }
-          } catch (e) {
-            // 忽略解析错误
-          }
         }
-      }
+
+        switch (this.config.provider) {
+            case 'anthropic':
+                yield* this.anthropicChatStream(formattedMessages, tools);
+                break;
+            case 'openai':
+                yield* this.openaiChatStream(formattedMessages, tools);
+                break;
+            case 'custom':
+                yield* this.customChatStream(formattedMessages, tools);
+                break;
+            default:
+                yield {type: 'error', content: `Unsupported provider: ${this.config.provider}`};
+        }
     }
 
-    // 发送最终的 usage 信息
-    if (totalInputTokens > 0 || totalOutputTokens > 0) {
-      yield { type: 'usage', usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+    private formatMessages(messages: ChatMessage[], systemPrompt?: string): any[] {
+        const formatted: any[] = [];
+
+        // 添加系统提示
+        if (systemPrompt) {
+            formatted.push({role: 'system', content: systemPrompt});
+        }
+
+        // 转换消息格式
+        for (const msg of messages) {
+            formatted.push({
+                role: msg.role,
+                content: msg.content
+            });
+        }
+
+        return formatted;
     }
-    yield { type: 'done' };
-  }
+
+    // Anthropic API
+    private async anthropicChat(messages: any[]): Promise<string> {
+        const systemMessage = messages.find(m => m.role === 'system');
+        const otherMessages = messages.filter(m => m.role !== 'system');
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.config.apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify({
+                model: this.config.model || 'claude-sonnet-4-20250514',
+                max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
+                system: systemMessage?.content,
+                messages: otherMessages
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Anthropic API error: ${error}`);
+        }
+
+        const data = await response.json();
+        return data.content[0].text;
+    }
+
+    // Anthropic 流式（支持工具调用）
+    private async* anthropicChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
+        const systemMessage = messages.find(m => m.role === 'system');
+        const otherMessages = messages.filter(m => m.role !== 'system');
+
+        const requestBody: any = {
+            model: this.config.model || 'claude-sonnet-4-20250514',
+            max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
+            system: systemMessage?.content,
+            messages: otherMessages,
+            stream: true
+        };
+
+        if (tools && tools.length > 0) {
+            requestBody.tools = tools;
+        }
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.config.apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-direct-browser-access': 'true'
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            yield {type: 'error', content: await response.text()};
+            return;
+        }
+
+        const reader = response.body?.getReader();
+
+        logger.info(`[WS] 开始 LLM 流式响应，上下文消息数==0: ${messages.length}`);
+
+        if (!reader) {
+            yield {type: 'error', content: 'No response body'};
+            return;
+        }
+
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        // 用于聚合工具调用
+        let currentToolCall: { id: string; name: string; inputJson: string; yielded: boolean } | null = null;
+
+        // 累积的 token 使用量
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+
+        let doneSignal = false;
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data:')) continue;
+                const data = line.slice(5).trim();
+                if (data === '[DONE]') {
+                    yield {type: 'done'};
+                    return;
+                }
+
+                try {
+                    const parsed = JSON.parse(data);
+
+                    // 处理 message_start 事件（包含初始 usage）
+                    if (parsed.type === 'message_start' && parsed.message?.usage) {
+                        totalInputTokens = parsed.message.usage.input_tokens || 0;
+                        if (totalInputTokens > 0) {
+                            yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: 0}};
+                        }
+                    }
+
+                    // 处理 message_delta 事件（包含最终 usage）
+                    if (parsed.type === 'message_delta' && parsed.usage) {
+                        if (parsed.usage.input_tokens) {
+                            totalInputTokens = parsed.usage.input_tokens;
+                        }
+                        if (parsed.usage.output_tokens) {
+                            totalOutputTokens = parsed.usage.output_tokens;
+                        }
+                        yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}};
+                    }
+
+                    if (parsed.type === 'content_block_start' && parsed.content_block?.type === 'tool_use') {
+                        currentToolCall = {
+                            id: parsed.index?.toString() || '0',
+                            name: parsed.content_block.name,
+                            inputJson: '',
+                            yielded: false
+                        };
+                    }
+
+                    if (parsed.type === 'content_block_delta' && parsed.delta) {
+                        if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
+                            yield {type: 'text', content: parsed.delta.text};
+                        } else if (parsed.delta.type === 'text' && parsed.delta.text) {
+                            yield {type: 'text', content: parsed.delta.text};
+                        } else if (parsed.delta.text && !parsed.delta.type) {
+                            yield {type: 'text', content: parsed.delta.text};
+                        }
+
+                        if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json && currentToolCall) {
+                            currentToolCall.inputJson += parsed.delta.partial_json;
+                        }
+                    }
+
+                    if (parsed.type === 'content_block_stop') {
+                        if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
+                            try {
+                                const input = JSON.parse(currentToolCall.inputJson);
+                                currentToolCall.yielded = true;
+                                yield {
+                                    type: 'tool_use',
+                                    toolId: currentToolCall.id,
+                                    toolName: currentToolCall.name,
+                                    toolInput: input
+                                };
+                            } catch (e) {
+                                logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
+                            }
+                        }
+                        currentToolCall = null;
+                    }
+                } catch {
+                }
+            }
+        }
+
+        // 发送最终的 usage 信息
+        if (totalInputTokens > 0 || totalOutputTokens > 0) {
+            yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}};
+        }
+        yield {type: 'done'};
+    }
+
+    // OpenAI 兼容 API
+    private async openaiChat(messages: any[]): Promise<string> {
+        const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
+
+        const body: any = {
+            model: this.config.model || 'gpt-4o',
+            messages: messages
+        };
+
+        // OpenAI 不强制设置 max_tokens，使用模型默认值
+        // 如果用户自定义了则使用
+        if (this.config.maxTokens) {
+            body.max_tokens = this.config.maxTokens;
+        }
+
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.config.apiKey}`
+            },
+            body: JSON.stringify(body)
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`OpenAI API error: ${error}`);
+        }
+
+        const data = await response.json();
+        return data.choices[0].message.content;
+    }
+
+    // OpenAI 流式（支持工具调用）
+    private async* openaiChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
+        const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
+
+        const requestBody: any = {
+            model: this.config.model || 'gpt-4o',
+            messages: messages,
+            stream: true,
+            stream_options: {include_usage: true}
+        };
+
+        // OpenAI 不强制设置 max_tokens，使用模型默认值
+        // 如果用户自定义了则使用
+        if (this.config.maxTokens) {
+            requestBody.max_tokens = this.config.maxTokens;
+        }
+
+        if (tools && tools.length > 0) {
+            requestBody.tools = tools;
+            requestBody.tool_choice = 'auto';
+        }
+
+        const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.config.apiKey}`
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            yield {type: 'error', content: await response.text()};
+            return;
+        }
+
+        const reader = response.body?.getReader();
+
+        logger.info(`[WS] 开始 LLM 流式响应，上下文消息数===1: ${messages.length}`);
+
+        if (!reader) {
+            yield {type: 'error', content: 'No response body'};
+            return;
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const toolCallBuffers: Record<number, { id: string; name: string; args: string }> = {};
+        let doneSignal = false;
+        // OpenAI usage tracking
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data:')) continue;
+                const data = line.slice(5).trim();
+                if (data === '[DONE]') {
+                    doneSignal = true;
+                    break;
+                }
+
+                try {
+                    const parsed = JSON.parse(data);
+                    const delta = parsed.choices?.[0]?.delta || {};
+
+                    // OpenAI usage (comes in final chunk with stream_options.include_usage)
+                    if (parsed.usage) {
+                        totalInputTokens = parsed.usage.prompt_tokens || 0;
+                        totalOutputTokens = parsed.usage.completion_tokens || 0;
+                    }
+
+                    if (delta.content) {
+                        yield {type: 'text', content: delta.content};
+                    }
+
+                    const toolCalls = delta.tool_calls;
+                    if (Array.isArray(toolCalls)) {
+                        for (const call of toolCalls) {
+                            const index = call.index ?? 0;
+                            if (!toolCallBuffers[index]) {
+                                toolCallBuffers[index] = {
+                                    id: call.id || String(index),
+                                    name: call.function?.name || '',
+                                    args: ''
+                                };
+                            }
+                            if (call.function?.name) {
+                                toolCallBuffers[index].name = call.function.name;
+                            }
+                            if (call.function?.arguments) {
+                                toolCallBuffers[index].args += call.function.arguments;
+                            }
+                        }
+                    }
+                } catch {
+                }
+            }
+
+            if (doneSignal) break;
+        }
+
+        const toolCallEntries = Object.values(toolCallBuffers);
+        if (toolCallEntries.length > 0) {
+            for (const call of toolCallEntries) {
+                if (!call.name) continue;
+                try {
+                    const input = call.args ? JSON.parse(call.args) : {};
+                    yield {type: 'tool_use', toolId: call.id, toolName: call.name, toolInput: input};
+                } catch (e) {
+                    logger.error('[LLM Stream] OpenAI 工具输入解析失败:', call.args);
+                }
+            }
+        }
+
+        // 发送 OpenAI usage 信息
+        if (totalInputTokens > 0 || totalOutputTokens > 0) {
+            yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}};
+        }
+
+        yield {type: 'done'};
+    }
+
+    // 自定义 API（兼容 OpenAI 格式）
+    private async customChat(messages: any[]): Promise<string> {
+        return this.openaiChat(messages);
+    }
+
+    private async* customChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
+        yield* this.openaiChatStream(messages, tools);
+    }
+
+    // Anthropic 兼容 API（支持自定义 baseUrl，如阿里云）
+    private async anthropicCompatibleChat(messages: any[]): Promise<string> {
+        const systemMessage = messages.find(m => m.role === 'system');
+        const otherMessages = messages.filter(m => m.role !== 'system');
+
+        const url = this.buildApiUrl();
+        logger.info('[LLM] 请求 URL:', url);
+        logger.info('[LLM] Model:', this.config.model);
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.config.apiKey,
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify({
+                model: this.config.model,
+                max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
+                system: systemMessage?.content,
+                messages: otherMessages
+            })
+        });
+        logger.info(`[WS] 开始 LLM 流式响应，上下文消息数===2: ${messages.length}`);
+        if (!response.ok) {
+            const error = await response.text();
+            logger.error('[LLM] API 错误:', error);
+            throw new Error(`API error: ${error}`);
+        }
+
+        const data = await response.json();
+        logger.info('[LLM] 响应数据:', JSON.stringify(data).substring(0, 200));
+
+        // 处理阿里云格式的响应：content 可能包含 thinking 和 text 两种类型
+        if (data.content && Array.isArray(data.content)) {
+            const textBlock = data.content.find((block: any) => block.type === 'text');
+            if (textBlock && textBlock.text) {
+                return textBlock.text;
+            }
+            // 兼容标准 Anthropic 格式
+            if (data.content[0]?.text) {
+                return data.content[0].text;
+            }
+        }
+
+        throw new Error('Invalid response format');
+    }
+
+    // 构建 API URL（智能处理不同 provider 的路径格式）
+    private buildApiUrl(): string {
+        const baseUrl = this.config.baseUrl || '';
+
+        // 如果 baseUrl 已经包含完整路径（以 /v1/messages 结尾），直接使用
+        if (baseUrl.endsWith('/v1/messages')) {
+            return baseUrl;
+        }
+
+        // 如果 baseUrl 以 /v1 结尾，添加 /messages
+        if (baseUrl.endsWith('/v1')) {
+            return baseUrl + '/messages';
+        }
+
+        // 否则添加 /v1/messages
+        return baseUrl + '/v1/messages';
+    }
+
+    // Anthropic 兼容 API 流式
+    private async* anthropicCompatibleChatStream(messages: any[], tools?: any[]): AsyncGenerator<StreamEvent> {
+        const systemMessage = messages.find(m => m.role === 'system');
+        const otherMessages = messages.filter(m => m.role !== 'system');
+
+        const url = this.buildApiUrl();
+        logger.info('[LLM Stream] 请求 URL:', url);
+        logger.info('[LLM Stream] Model:', this.config.model);
+        if (tools) logger.info('[LLM Stream]提交的 Tools 数量 :', tools.length);
+
+        const requestBody: any = {
+            model: this.config.model,
+            max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
+            system: systemMessage?.content,
+            messages: otherMessages,
+            stream: true
+        };
+
+        // 添加工具定义
+        if (tools && tools.length > 0) {
+            requestBody.tools = tools;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.config.apiKey,
+                'anthropic-version': '2023-06-01',
+            },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            logger.error('[LLM Stream] API 错误:', errorText);
+            yield {type: 'error', content: errorText};
+            return;
+        }
+
+        const reader = response.body?.getReader();
+
+        logger.info(`[WS] 开始 LLM 流式响应，上下文消息数===3: ${messages.length}`);
+
+
+        if (!reader) {
+            yield {type: 'error', content: 'No response body'};
+            return;
+        }
+
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        // 用于聚合工具调用和追踪当前文本块
+        let currentToolCall: { id: string; name: string; inputJson: string, yielded: boolean } | null = null;
+        // 追踪当前是否在 thinking 块中
+        let isThinkingBlock: boolean = false;
+        // 累积的 token 使用量
+        let totalInputTokens = 0;
+        let totalOutputTokens = 0;
+
+        while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, {stream: true});
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                // 处理 data: 开头的行
+                if (line.startsWith('data:')) {
+                    const data = line.slice(5).trim();
+                    if (data === '[DONE]') {
+                        // 发送最终的 usage 信息
+                        if (totalInputTokens > 0 || totalOutputTokens > 0) {
+                            yield {
+                                type: 'usage',
+                                usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}
+                            };
+                        }
+                        yield {type: 'done'};
+                        return;
+                    }
+
+                    try {
+                        const parsed = JSON.parse(data);
+
+                        // 处理 message_start 事件（包含初始 usage）
+                        if (parsed.type === 'message_start' && parsed.message?.usage) {
+                            totalInputTokens = parsed.message.usage.input_tokens || 0;
+                            if (totalInputTokens > 0) {
+                                yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: 0}};
+                            }
+                        }
+
+                        // 处理 message_delta 事件（包含最终 usage）
+                        if (parsed.type === 'message_delta' && parsed.usage) {
+                            // 有些 API 在 delta 中同时返回 input 和 output tokens
+                            if (parsed.usage.input_tokens) {
+                                totalInputTokens = parsed.usage.input_tokens;
+                            }
+                            if (parsed.usage.output_tokens) {
+                                totalOutputTokens = parsed.usage.output_tokens;
+                            }
+                            yield {
+                                type: 'usage',
+                                usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}
+                            };
+                        }
+
+                        // 处理 message_stop 事件（有些 API 在这里返回最终 usage）
+                        if (parsed.type === 'message_stop' && parsed.message?.usage) {
+                            totalInputTokens = parsed.message.usage.input_tokens || totalInputTokens;
+                            totalOutputTokens = parsed.message.usage.output_tokens || totalOutputTokens;
+                            yield {
+                                type: 'usage',
+                                usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}
+                            };
+                        }
+
+                        // 处理 content_block_start 事件
+                        if (parsed.type === 'content_block_start' && parsed.content_block) {
+                            if (parsed.content_block.type === 'tool_use') {
+                                currentToolCall = {
+                                    id: parsed.index?.toString() || '0',
+                                    name: parsed.content_block.name,
+                                    inputJson: '',
+                                    yielded: false
+                                };
+                            }
+                            // 检测 thinking 类型块（阿里云等模型支持）
+                            if (parsed.content_block.type === 'thinking') {
+                                isThinkingBlock = true;
+                            }
+                        }
+
+                        // 处理 content_block_delta 事件
+                        if (parsed.type === 'content_block_delta' && parsed.delta) {
+                            // 标准格式：text_delta
+                            if (parsed.delta.type === 'text_delta' && parsed.delta.text) {
+                                yield {type: 'text', content: parsed.delta.text};
+                            }
+                            // 阿里云格式：type 可能是 'text'
+                            else if (parsed.delta.type === 'text' && parsed.delta.text) {
+                                yield {type: 'text', content: parsed.delta.text};
+                            }
+                            // 兼容没有 type 但有 text 的情况
+                            else if (parsed.delta.text && !parsed.delta.type) {
+                                yield {type: 'text', content: parsed.delta.text};
+                            }
+                            // 处理 thinking_delta（思考过程）
+                            if (parsed.delta.type === 'thinking_delta' && parsed.delta.thinking) {
+                                yield {type: 'thinking', content: parsed.delta.thinking};
+                            }
+                            // 处理 input_json_delta（工具输入）
+                            if (parsed.delta.type === 'input_json_delta' && parsed.delta.partial_json) {
+                                if (currentToolCall) {
+                                    currentToolCall.inputJson += parsed.delta.partial_json;
+                                }
+                            }
+                        }
+
+                        // 处理 content_block_stop 事件
+                        if (parsed.type === 'content_block_stop') {
+                            if (currentToolCall && currentToolCall.inputJson && !currentToolCall.yielded) {
+                                try {
+                                    const input = JSON.parse(currentToolCall.inputJson);
+                                    currentToolCall.yielded = true;
+                                    yield {
+                                        type: 'tool_use',
+                                        toolId: currentToolCall.id,
+                                        toolName: currentToolCall.name,
+                                        toolInput: input
+                                    };
+                                } catch (e) {
+                                    logger.error('[LLM Stream] 工具输入解析失败:', currentToolCall.inputJson);
+                                }
+                            }
+                            currentToolCall = null;
+                            isThinkingBlock = false;
+                        }
+                    } catch (e) {
+                        // 忽略解析错误
+                    }
+                }
+            }
+        }
+
+        // 发送最终的 usage 信息
+        if (totalInputTokens > 0 || totalOutputTokens > 0) {
+            yield {type: 'usage', usage: {inputTokens: totalInputTokens, outputTokens: totalOutputTokens}};
+        }
+        yield {type: 'done'};
+    }
 }
 
 export default LLMService;

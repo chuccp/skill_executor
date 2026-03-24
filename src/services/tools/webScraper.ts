@@ -21,7 +21,7 @@ export async function httpRequest(
 ): Promise<{ status: number; headers: Record<string, string>; data: string }> {
   const response = await axios.get(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1',
       ...options?.headers
     },
     timeout: options?.timeout || 30000,

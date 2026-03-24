@@ -178,6 +178,11 @@ export async function handleChat(
                 break;
             }
 
+            // 保存助手响应（包括工具调用前的分析）
+            if (ctx.fullResponse) {
+                await conversationManager.addMessage(actualConversationId, 'assistant', ctx.fullResponse);
+            }
+
             // 流结束后，批量推送工具执行
             logger.info(`[WS] 流结束，开始执行 ${ctx.toolCalls.length} 个工具`);
             processor.pushToolResult(ctx.toolCalls, ctx.iteration);
@@ -224,6 +229,9 @@ function setupProcessors(
         lockManager?: any;
     }
 ) {
+    // 清除旧的处理器，防止累积
+    processor.clearHandlers();
+
     // 文本处理
     processor.on('text', (event) => {
         ws.send(JSON.stringify({type: 'text', content: event.payload}));

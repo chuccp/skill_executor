@@ -162,6 +162,13 @@ export class StreamProcessor {
   }
 
   /**
+   * 清除所有处理器
+   */
+  clearHandlers(): void {
+    this.handlers.clear();
+  }
+
+  /**
    * 注册事件处理器
    */
   on(eventType: string, handler: EventHandler): this {
