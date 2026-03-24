@@ -181,7 +181,7 @@ export async function handleChat(
       processor.pushToolResult(ctx.toolCalls, ctx.iteration);
 
       // 等待工具执行完成
-      await processor.waitUntilComplete(60000);
+      await processor.waitUntilComplete(600000);
 
       // 更新进度
       ws.send(JSON.stringify({ type: 'progress', progress: ctx.progressStats }));
@@ -192,7 +192,7 @@ export async function handleChat(
       processor.pushDone('max_iterations');
     }
 
-    await processor.waitUntilComplete(5000);
+    await processor.waitUntilComplete(50000);
 
   } catch (error: any) {
     logger.error('[WS] 异常:', error);
