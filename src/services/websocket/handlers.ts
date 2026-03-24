@@ -27,7 +27,6 @@ interface StreamContext {
     conversationId: string;
     fullResponse: string;
     toolCalls: any[];
-    pendingToolsCount: number; // 正在执行的工具数
     progressStats: {
         currentIteration: number;
         maxIterations: number;
@@ -101,7 +100,6 @@ export async function handleChat(
         conversationId: actualConversationId,
         fullResponse: '',
         toolCalls: [],
-        pendingToolsCount: 0,
         progressStats: {
             currentIteration: 0,
             maxIterations: LLM_MAX_ITERATIONS,
@@ -155,14 +153,11 @@ export async function handleChat(
             // 重置本轮状态
             ctx.fullResponse = '';
             ctx.toolCalls = [];
-            ctx.pendingToolsCount = 0;
             processor.resetToolCounters();
 
             // 收集流式事件
             const contextMessages = await conversationManager.buildContextMessages(actualConversationId, content);
             const stream = llmService.chatStream(contextMessages, systemPrompt, TOOLS);
-
-
 
             for await (const event of stream) {
                 if (stoppedConversations?.has(actualConversationId)) {
@@ -171,7 +166,7 @@ export async function handleChat(
                 }
 
                 // 将流事件推入 RxJS 处理器
-                const shouldContinue = processStreamEvent(event, processor, ctx, ctx.iteration);
+                const shouldContinue = processStreamEvent(event, processor, ctx);
                 if (!shouldContinue) break;
             }
 
@@ -183,12 +178,12 @@ export async function handleChat(
                 break;
             }
 
-            // 流结束后检查是否还有未完成的工具
-            // 如果有，等待完成（此时工具可能已经执行完了，会立即返回）
-            if (ctx.pendingToolsCount > 0) {
-                await processor.waitForTools(ctx.pendingToolsCount, TOOL_WAIT_TIMEOUT_MS);
-                ctx.pendingToolsCount = 0;
-            }
+            // 流结束后，批量推送工具执行
+            logger.info(`[WS] 流结束，开始执行 ${ctx.toolCalls.length} 个工具`);
+            processor.pushToolResult(ctx.toolCalls, ctx.iteration);
+
+            // 等待工具执行完成
+            await processor.waitForTools(ctx.toolCalls.length, TOOL_WAIT_TIMEOUT_MS);
 
             logger.info(`[WS] 第 ${ctx.iteration} 轮完成，准备下一轮`);
             // 更新进度
@@ -282,7 +277,7 @@ function setupProcessors(
 
 // ==================== 流事件处理 ====================
 
-function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamContext, iteration: number): boolean {
+function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamContext): boolean {
     if (event.type === 'text' && event.content) {
         ctx.fullResponse += event.content;
         processor.pushText(event.content);
@@ -295,17 +290,12 @@ function processStreamEvent(event: any, processor: StreamProcessor, ctx: StreamC
     }
 
     if (event.type === 'tool_use') {
-        const toolCall = {
+        // 只收集工具调用，流结束后统一执行
+        ctx.toolCalls.push({
             id: event.toolId,
             name: event.toolName,
             input: event.toolInput
-        };
-        ctx.toolCalls.push(toolCall);
-        ctx.pendingToolsCount++;
-
-        // 立即推送到队列执行，实现边输出边执行
-        logger.info(`[WS] 工具入队: ${toolCall.name} (iteration: ${iteration})`);
-        processor.pushToolResult([toolCall], iteration);
+        });
         return true;
     }
 
