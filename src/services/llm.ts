@@ -334,18 +334,25 @@ export class LLMService {
   // OpenAI 兼容 API
   private async openaiChat(messages: any[]): Promise<string> {
     const baseUrl = this.config.baseUrl || 'https://api.openai.com/v1';
-    
+
+    const body: any = {
+      model: this.config.model || 'gpt-4o',
+      messages: messages
+    };
+
+    // OpenAI 不强制设置 max_tokens，使用模型默认值
+    // 如果用户自定义了则使用
+    if (this.config.maxTokens) {
+      body.max_tokens = this.config.maxTokens;
+    }
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.config.apiKey}`
       },
-      body: JSON.stringify({
-        model: this.config.model || 'gpt-4o',
-        messages: messages,
-        max_tokens: getMaxTokens(this.config.model)
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -364,10 +371,15 @@ export class LLMService {
     const requestBody: any = {
       model: this.config.model || 'gpt-4o',
       messages: messages,
-      max_tokens: getMaxTokens(this.config.model, this.config.maxTokens),
       stream: true,
       stream_options: { include_usage: true }
     };
+
+    // OpenAI 不强制设置 max_tokens，使用模型默认值
+    // 如果用户自定义了则使用
+    if (this.config.maxTokens) {
+      requestBody.max_tokens = this.config.maxTokens;
+    }
 
     if (tools && tools.length > 0) {
       requestBody.tools = tools;
